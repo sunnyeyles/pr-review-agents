@@ -1,10 +1,11 @@
 import type {
-  ChangedFile,
   GithubInstallationClient,
   InstallationClientFactory,
-  PullRequestDetails,
 } from "@pr-review/github";
+import { renderCheckRun, validateFindings } from "@pr-review/reviewer";
 import { reviewJobSchema, type ReviewJob } from "@pr-review/schemas";
+
+import { sampleFindings } from "./sample-findings.js";
 
 /**
  * The slice of an SQS event the worker needs. Structurally compatible
@@ -56,23 +57,6 @@ function log(event: string, details: Record<string, unknown>): void {
   console.log(JSON.stringify({ event, ...details }));
 }
 
-function stubCheckRunOutput(
-  pullRequest: PullRequestDetails,
-  changedFiles: ChangedFile[],
-  diff: string,
-): { title: string; summary: string } {
-  return {
-    title: "AI review pending",
-    summary: [
-      "The AI review pipeline is connected, but automated findings are not generated yet.",
-      "",
-      `Loaded pull request #${pullRequest.number} ("${pullRequest.title}") with ` +
-        `${changedFiles.length} changed file(s) and a ${diff.length}-character diff. ` +
-        "AI findings will appear here in an upcoming release.",
-    ].join("\n"),
-  };
-}
-
 async function processJob(
   job: ReviewJob,
   client: GithubInstallationClient,
@@ -87,23 +71,44 @@ async function processJob(
     client.listChangedFiles(ref),
     client.getDiff(ref),
   ]);
+  log("review.loaded", {
+    repository: `${job.owner}/${job.repo}`,
+    pullRequestNumber: pullRequest.number,
+    changedFileCount: changedFiles.length,
+    diffLength: diff.length,
+  });
+
+  // PLACEHOLDER for the AI agents (tickets 06–08): the sample findings
+  // stand in for agent output. Everything below this line is the
+  // deterministic side-effect boundary — only validated findings ever
+  // reach the GitHub API, and only through application code.
+  const findings = validateFindings(sampleFindings, changedFiles);
+  const rendered = renderCheckRun(findings);
+
+  log("findings.validated", {
+    repository: `${job.owner}/${job.repo}`,
+    pullRequestNumber: job.pullRequestNumber,
+    candidateCount: sampleFindings.length,
+    findingCount: findings.length,
+  });
 
   await client.createCheckRun({
     owner: job.owner,
     repo: job.repo,
     headSha: job.headSha,
-    conclusion: "neutral",
-    output: stubCheckRunOutput(pullRequest, changedFiles, diff),
+    conclusion: rendered.conclusion,
+    output: rendered.output,
   });
 }
 
 /**
  * Builds the review Lambda handler: for each SQS record, validate the
  * review job, authenticate as its GitHub App installation, load the PR
- * (details, changed files, diff), and publish the stub "AI PR Review"
- * check run. Failed records are reported individually via the SQS
- * partial batch response so one bad message neither poisons the batch
- * nor gets silently dropped.
+ * (details, changed files, diff), run the candidate findings through
+ * the deterministic validation chain, and publish the rendered
+ * "AI PR Review" check run. Failed records are reported individually
+ * via the SQS partial batch response so one bad message neither
+ * poisons the batch nor gets silently dropped.
  */
 export function createWorkerHandler({
   createInstallationClient,

@@ -6,6 +6,7 @@ import {
   CHECK_RUN_NAME,
   type ChangedFile,
   type CheckRun,
+  type CheckRunAnnotation,
   type CreateCheckRunInput,
   type GithubInstallationClient,
   type InstallationClientFactory,
@@ -42,7 +43,12 @@ export interface OctokitLike {
         head_sha: string;
         status: "completed";
         conclusion: "success" | "failure" | "neutral";
-        output: { title: string; summary: string; text?: string };
+        output: {
+          title: string;
+          summary: string;
+          text?: string;
+          annotations?: CheckRunAnnotation[];
+        };
       }): Promise<{ data: unknown }>;
     };
   };
@@ -132,6 +138,18 @@ function createInstallationClient(octokit: OctokitLike): GithubInstallationClien
     },
 
     async createCheckRun(input: CreateCheckRunInput): Promise<CheckRun> {
+      const output: {
+        title: string;
+        summary: string;
+        text?: string;
+        annotations?: CheckRunAnnotation[];
+      } = { title: input.output.title, summary: input.output.summary };
+      if (input.output.text !== undefined) {
+        output.text = input.output.text;
+      }
+      if (input.output.annotations !== undefined && input.output.annotations.length > 0) {
+        output.annotations = input.output.annotations;
+      }
       const response = await octokit.rest.checks.create({
         owner: input.owner,
         repo: input.repo,
@@ -139,14 +157,7 @@ function createInstallationClient(octokit: OctokitLike): GithubInstallationClien
         head_sha: input.headSha,
         status: "completed",
         conclusion: input.conclusion,
-        output:
-          input.output.text === undefined
-            ? { title: input.output.title, summary: input.output.summary }
-            : {
-                title: input.output.title,
-                summary: input.output.summary,
-                text: input.output.text,
-              },
+        output,
       });
       return checkRunResponseSchema.parse(response.data);
     },

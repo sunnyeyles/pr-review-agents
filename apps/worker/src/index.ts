@@ -3,10 +3,11 @@
  *
  * Review Lambda entrypoint: consumes review jobs from SQS via the
  * injectable handler in handler.ts, authenticates as the GitHub App
- * installation, loads the PR, and publishes the "AI PR Review" check
- * run (stubbed until the review agents land). Configuration comes from
- * the environment; Secrets Manager wiring lands with the
- * infrastructure ticket.
+ * installation, loads the PR, runs candidate findings (hard-coded
+ * samples until the review agents land) through the deterministic
+ * validation chain, and publishes the rendered "AI PR Review" check
+ * run. Configuration comes from the environment; Secrets Manager
+ * wiring lands with the infrastructure ticket.
  */
 import { createGithubApp } from "@pr-review/github";
 import type { SQSHandler } from "aws-lambda";

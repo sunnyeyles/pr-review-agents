@@ -18,8 +18,10 @@ export {
 } from "./app.js";
 export {
   CHECK_RUN_NAME,
+  type AnnotationLevel,
   type ChangedFile,
   type CheckRun,
+  type CheckRunAnnotation,
   type CheckRunConclusion,
   type CheckRunOutput,
   type CreateCheckRunInput,

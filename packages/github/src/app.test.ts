@@ -83,7 +83,11 @@ function makeOctokit(options: StubOptions = {}) {
         ),
       },
       checks: {
-        create: vi.fn(async () => ({ data: { id: 987 } })),
+        create: vi.fn(
+          async (
+            _params: Parameters<OctokitLike["rest"]["checks"]["create"]>[0],
+          ) => ({ data: { id: 987 } }),
+        ),
       },
     },
   } satisfies OctokitLike;
@@ -317,6 +321,55 @@ describe("createCheckRun", () => {
       },
     });
     expect(checkRun).toEqual({ id: 987 });
+  });
+
+  it("passes inline annotations through to the checks API", async () => {
+    const { octokit, createInstallationClient } = makeApp();
+    const client = createInstallationClient(12345678);
+    const annotations = [
+      {
+        path: "src/auth/session.ts",
+        start_line: 84,
+        end_line: 84,
+        annotation_level: "failure" as const,
+        message: "Missing tenant validation.",
+        title: "Missing tenant validation",
+      },
+    ];
+
+    await client.createCheckRun({
+      owner: "octo-org",
+      repo: "example-service",
+      headSha,
+      conclusion: "neutral",
+      output: { title: "1 finding", summary: "One security finding.", annotations },
+    });
+
+    expect(octokit.rest.checks.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        output: {
+          title: "1 finding",
+          summary: "One security finding.",
+          annotations,
+        },
+      }),
+    );
+  });
+
+  it("omits the annotations field when the list is empty", async () => {
+    const { octokit, createInstallationClient } = makeApp();
+    const client = createInstallationClient(12345678);
+
+    await client.createCheckRun({
+      owner: "octo-org",
+      repo: "example-service",
+      headSha,
+      conclusion: "success",
+      output: { title: "No issues found", summary: "Clean.", annotations: [] },
+    });
+
+    const params = octokit.rest.checks.create.mock.calls[0]?.[0];
+    expect(params?.output).not.toHaveProperty("annotations");
   });
 
   it("rejects when the check run cannot be created", async () => {

@@ -37,10 +37,26 @@ export interface ChangedFile {
 
 export type CheckRunConclusion = "success" | "failure" | "neutral";
 
+export type AnnotationLevel = "notice" | "warning" | "failure";
+
+/**
+ * One inline annotation on a check run, in the shape the GitHub checks
+ * API expects. The API accepts at most 50 annotations per request.
+ */
+export interface CheckRunAnnotation {
+  path: string;
+  start_line: number;
+  end_line: number;
+  annotation_level: AnnotationLevel;
+  message: string;
+  title?: string | undefined;
+}
+
 export interface CheckRunOutput {
   title: string;
   summary: string;
   text?: string | undefined;
+  annotations?: CheckRunAnnotation[] | undefined;
 }
 
 /**

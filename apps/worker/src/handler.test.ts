@@ -9,6 +9,10 @@ import type { ReviewJob } from "@pr-review/schemas";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createWorkerHandler, type WorkerSqsEvent } from "./handler.js";
+import {
+  sampleFileLevelFinding,
+  sampleValidLineFinding,
+} from "./sample-findings.js";
 
 const job: ReviewJob = {
   installationId: 12345678,
@@ -100,7 +104,11 @@ describe("createWorkerHandler", () => {
     expect(client.getDiff).toHaveBeenCalledExactlyOnceWith(ref);
   });
 
-  it("publishes exactly one completed stub check run against the job's head SHA", async () => {
+  it("publishes exactly one clean check run when no sample finding survives validation", async () => {
+    // The default fixture PR does not contain the files the placeholder
+    // sample findings reference, so the whole list is dropped by the
+    // deterministic validation chain and the check run reports a clean
+    // result.
     const { handler, client } = makeHandler();
 
     await handler(sqsEvent(validRecord));
@@ -111,10 +119,54 @@ describe("createWorkerHandler", () => {
       owner: job.owner,
       repo: job.repo,
       headSha: job.headSha,
-      conclusion: "neutral",
+      conclusion: "success",
     });
-    expect(input?.output.title).toBeTruthy();
-    expect(input?.output.summary).toMatch(/review/i);
+    expect(input?.output.title).toMatch(/no issues found/i);
+    expect(input?.output.annotations).toBeUndefined();
+  });
+
+  it("renders surviving sample findings in the check run when the PR contains their file", async () => {
+    const { handler, client } = makeHandler();
+    // A PR that actually changes the file the samples reference, with a
+    // patch whose added lines are 42, 43, and 44 on the new side.
+    client.listChangedFiles.mockResolvedValueOnce([
+      {
+        filename: sampleValidLineFinding.file,
+        status: "modified",
+        additions: 3,
+        deletions: 0,
+        patch: [
+          "@@ -40,2 +40,5 @@",
+          " context line 40",
+          " context line 41",
+          "+added line 42",
+          "+added line 43",
+          "+added line 44",
+        ].join("\n"),
+      },
+    ]);
+
+    await handler(sqsEvent(validRecord));
+
+    expect(client.createCheckRun).toHaveBeenCalledTimes(1);
+    const input = client.createCheckRun.mock.calls[0]?.[0];
+    // Of the samples, only the valid line-anchored finding and the
+    // file-level finding survive: the wrong-file, low-confidence, and
+    // schema-invalid samples are dropped by the chain.
+    expect(input?.conclusion).toBe("neutral");
+    expect(input?.output.title).toBe("2 findings");
+    expect(input?.output.summary).toContain(sampleValidLineFinding.title);
+    expect(input?.output.summary).toContain(sampleFileLevelFinding.title);
+    expect(input?.output.summary).not.toMatch(/pipeline is connected/i);
+    expect(input?.output.annotations).toEqual([
+      expect.objectContaining({
+        path: sampleValidLineFinding.file,
+        start_line: sampleValidLineFinding.line,
+        end_line: sampleValidLineFinding.line,
+        annotation_level: "failure",
+        title: sampleValidLineFinding.title,
+      }),
+    ]);
   });
 
   it("reports a batch item failure for an unparseable message body and publishes nothing", async () => {
