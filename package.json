@@ -1,0 +1,20 @@
+{
+  "name": "pr-review-agents",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.20.0",
+  "engines": {
+    "node": ">=22 <26",
+    "pnpm": ">=10"
+  },
+  "scripts": {
+    "typecheck": "pnpm -r typecheck",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.5",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.10"
+  }
+}

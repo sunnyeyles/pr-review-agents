@@ -4,9 +4,9 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] `pnpm install` followed by typecheck and test commands succeed from a fresh clone
-- [ ] Workspace contains both apps and all four shared packages, each importable from the others where appropriate
-- [ ] A trivial placeholder test passes under Vitest in at least one app and one package
-- [ ] CI workflow runs install, typecheck, and tests, and is green
+- [x] `pnpm install` followed by typecheck and test commands succeed from a fresh clone
+- [x] Workspace contains both apps and all four shared packages, each importable from the others where appropriate
+- [x] A trivial placeholder test passes under Vitest in at least one app and one package
+- [ ] CI workflow runs install, typecheck, and tests, and is green — `.github/workflows/ci.yml` exists and mirrors the verified local commands; it will run once a GitHub remote is added (no remote configured yet, so CI cannot execute).

@@ -1,0 +1,16 @@
+{
+  "name": "@pr-review/webhook",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@pr-review/github": "workspace:*",
+    "@pr-review/schemas": "workspace:*"
+  }
+}

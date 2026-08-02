@@ -1,0 +1,17 @@
+{
+  "name": "@pr-review/reviewer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@pr-review/ai": "workspace:*",
+    "@pr-review/github": "workspace:*",
+    "@pr-review/schemas": "workspace:*"
+  }
+}
