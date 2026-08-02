@@ -16,10 +16,10 @@ type ReviewJob = {
 
 **Blocked by:** 01 — Monorepo scaffold with green CI.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A correctly signed PR opened/updated/reopened payload results in exactly one review job on the queue
-- [ ] A payload with a bad or missing signature is rejected and nothing is enqueued
-- [ ] Non-PR events and unsupported PR actions are acknowledged but not enqueued
-- [ ] Unit tests cover signature verification (valid, invalid, missing) and event filtering
-- [ ] The review-job schema is defined once in the shared schemas package and validated with Zod
+- [x] A correctly signed PR opened/updated/reopened payload results in exactly one review job on the queue
+- [x] A payload with a bad or missing signature is rejected and nothing is enqueued
+- [x] Non-PR events and unsupported PR actions are acknowledged but not enqueued
+- [x] Unit tests cover signature verification (valid, invalid, missing) and event filtering
+- [x] The review-job schema is defined once in the shared schemas package and validated with Zod
