@@ -10,6 +10,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@pr-review/schemas": "workspace:*"
+    "@octokit/auth-app": "^8.2.0",
+    "@octokit/rest": "^22.0.1",
+    "@pr-review/schemas": "workspace:*",
+    "zod": "^4.4.3"
   }
 }

@@ -1,20 +1,46 @@
 /**
  * @pr-review/worker
  *
- * Review Lambda: consumes review jobs from SQS, runs the review agents,
- * and publishes GitHub Check Runs. Populated in later tickets; this
- * placeholder only wires the app into the workspace.
+ * Review Lambda entrypoint: consumes review jobs from SQS via the
+ * injectable handler in handler.ts, authenticates as the GitHub App
+ * installation, loads the PR, and publishes the "AI PR Review" check
+ * run (stubbed until the review agents land). Configuration comes from
+ * the environment; Secrets Manager wiring lands with the
+ * infrastructure ticket.
  */
-import { AI_PACKAGE } from "@pr-review/ai";
-import { GITHUB_PACKAGE } from "@pr-review/github";
-import { REVIEWER_PACKAGE } from "@pr-review/reviewer";
-import { SCHEMAS_PACKAGE } from "@pr-review/schemas";
+import { createGithubApp } from "@pr-review/github";
+import type { SQSHandler } from "aws-lambda";
 
-export const WORKER_APP = "@pr-review/worker";
+import { createWorkerHandler, type WorkerHandler } from "./handler.js";
 
-export const workerAppDependencies = [
-  SCHEMAS_PACKAGE,
-  GITHUB_PACKAGE,
-  AI_PACKAGE,
-  REVIEWER_PACKAGE,
-] as const;
+export {
+  createWorkerHandler,
+  type WorkerHandler,
+  type WorkerHandlerDeps,
+  type WorkerSqsBatchResponse,
+  type WorkerSqsEvent,
+  type WorkerSqsRecord,
+} from "./handler.js";
+
+function requireEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`Missing required environment variable: ${name}`);
+  }
+  return value;
+}
+
+// Built lazily so importing this module (e.g. in tests) does not require
+// worker configuration to be present. The GitHub App factory caches
+// installation clients, so warm invocations reuse authenticated clients.
+let workerHandler: WorkerHandler | undefined;
+
+export const handler: SQSHandler = async (event) => {
+  workerHandler ??= createWorkerHandler({
+    createInstallationClient: createGithubApp({
+      appId: requireEnv("GITHUB_APP_ID"),
+      privateKey: requireEnv("GITHUB_APP_PRIVATE_KEY"),
+    }),
+  });
+  return workerHandler(event);
+};

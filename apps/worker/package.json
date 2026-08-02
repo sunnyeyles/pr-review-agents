@@ -14,5 +14,8 @@
     "@pr-review/github": "workspace:*",
     "@pr-review/reviewer": "workspace:*",
     "@pr-review/schemas": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.162"
   }
 }
