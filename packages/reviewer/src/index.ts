@@ -2,9 +2,9 @@
  * @pr-review/reviewer
  *
  * The review pipeline: the orchestrator that runs the review agents
- * over a loaded PR context, the deterministic findings validation
- * chain, and check-run rendering. The security/architecture agents and
- * the synthesiser land in later tickets.
+ * over a loaded PR context, the AI Synthesiser that refines their raw
+ * candidates (spec §16), the deterministic findings validation chain,
+ * and check-run rendering.
  */
 import { AI_PACKAGE } from "@pr-review/ai";
 import { GITHUB_PACKAGE } from "@pr-review/github";
@@ -24,6 +24,14 @@ export {
   type AgentFailure,
   type ReviewRunResult,
 } from "./orchestrator.js";
+export {
+  SYNTHESIS_SYSTEM_PROMPT,
+  SynthesisError,
+  buildSynthesisMessage,
+  createSynthesiser,
+  type Synthesiser,
+  type SynthesiserDeps,
+} from "./synthesiser.js";
 export {
   CONFIDENCE_THRESHOLD,
   MAX_FINDINGS,

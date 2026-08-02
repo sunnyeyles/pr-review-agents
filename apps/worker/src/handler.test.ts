@@ -124,9 +124,36 @@ function makeHandler(reviewResult: ReviewRunResult = { candidates: [], agentFail
     async (_client: GithubInstallationClient, _context: ReviewContext) =>
       reviewResult,
   );
-  const handler = createWorkerHandler({ createInstallationClient, runReview });
-  return { handler, client, createInstallationClient, runReview };
+  // Passthrough synthesiser by default: tests that exercise synthesis
+  // script it per test.
+  const synthesise = vi.fn(
+    async (candidates: readonly unknown[]) => candidates,
+  );
+  const handler = createWorkerHandler({
+    createInstallationClient,
+    runReview,
+    synthesise,
+  });
+  return { handler, client, createInstallationClient, runReview, synthesise };
 }
+
+/** A PR whose diff adds lines 42-44 of the candidates' file. */
+const changedFilesWithAddedLines: ChangedFile[] = [
+  {
+    filename: validLineFinding.file,
+    status: "modified",
+    additions: 3,
+    deletions: 0,
+    patch: [
+      "@@ -40,2 +40,5 @@",
+      " context line 40",
+      " context line 41",
+      "+added line 42",
+      "+added line 43",
+      "+added line 44",
+    ].join("\n"),
+  },
+];
 
 function sqsEvent(...records: { messageId: string; body: string }[]): WorkerSqsEvent {
   return { Records: records };
@@ -220,22 +247,7 @@ describe("createWorkerHandler", () => {
     });
     // A PR that actually changes the file the candidates reference,
     // with added lines 42-44 on the new side.
-    client.listChangedFiles.mockResolvedValueOnce([
-      {
-        filename: validLineFinding.file,
-        status: "modified",
-        additions: 3,
-        deletions: 0,
-        patch: [
-          "@@ -40,2 +40,5 @@",
-          " context line 40",
-          " context line 41",
-          "+added line 42",
-          "+added line 43",
-          "+added line 44",
-        ].join("\n"),
-      },
-    ]);
+    client.listChangedFiles.mockResolvedValueOnce(changedFilesWithAddedLines);
 
     await handler(sqsEvent(validRecord));
 
@@ -316,22 +328,7 @@ describe("createWorkerHandler", () => {
       candidates: [validLineFinding, architectureFinding],
       agentFailures: [{ agent: "security", error: "model unavailable" }],
     });
-    client.listChangedFiles.mockResolvedValueOnce([
-      {
-        filename: validLineFinding.file,
-        status: "modified",
-        additions: 3,
-        deletions: 0,
-        patch: [
-          "@@ -40,2 +40,5 @@",
-          " context line 40",
-          " context line 41",
-          "+added line 42",
-          "+added line 43",
-          "+added line 44",
-        ].join("\n"),
-      },
-    ]);
+    client.listChangedFiles.mockResolvedValueOnce(changedFilesWithAddedLines);
 
     const response = await handler(sqsEvent(validRecord));
 
@@ -347,6 +344,92 @@ describe("createWorkerHandler", () => {
     expect(consoleError).toHaveBeenCalledWith(
       expect.stringContaining("agent.failed"),
     );
+  });
+
+  it("pipes the raw candidates through the synthesiser and publishes the synthesised findings", async () => {
+    const combinedFinding: ReviewFinding = {
+      ...validLineFinding,
+      title: "Combined: admin gate always passes",
+    };
+    const { handler, client, synthesise } = makeHandler({
+      // Two lenses reporting the same underlying issue.
+      candidates: [
+        validLineFinding,
+        { ...validLineFinding, category: "security" as const },
+      ],
+      agentFailures: [],
+    });
+    synthesise.mockResolvedValueOnce([combinedFinding]);
+    client.listChangedFiles.mockResolvedValueOnce(changedFilesWithAddedLines);
+
+    await handler(sqsEvent(validRecord));
+
+    expect(synthesise).toHaveBeenCalledExactlyOnceWith([
+      validLineFinding,
+      { ...validLineFinding, category: "security" },
+    ]);
+    const input = client.createCheckRun.mock.calls[0]?.[0];
+    // One combined finding, not the two raw duplicates.
+    expect(input?.output.title).toBe("1 finding");
+    expect(input?.output.summary).toContain(combinedFinding.title);
+    expect(input?.output.summary).not.toContain(validLineFinding.title);
+  });
+
+  it("still drops a synthesised finding pointing at a non-PR file via the deterministic chain", async () => {
+    // KEY: the synthesiser is not the final authority. Even when it
+    // returns a finding for a file outside the PR, validateFindings
+    // drops it before anything reaches GitHub.
+    const { handler, client, synthesise } = makeHandler({
+      candidates: [validLineFinding],
+      agentFailures: [],
+    });
+    synthesise.mockResolvedValueOnce([wrongFileFinding]);
+    client.listChangedFiles.mockResolvedValueOnce(changedFilesWithAddedLines);
+
+    await handler(sqsEvent(validRecord));
+
+    expect(client.createCheckRun).toHaveBeenCalledTimes(1);
+    const input = client.createCheckRun.mock.calls[0]?.[0];
+    expect(input?.conclusion).toBe("success");
+    expect(input?.output.title).toMatch(/no issues found/i);
+    expect(input?.output.summary).not.toContain(wrongFileFinding.title);
+  });
+
+  it("falls back to the validated raw findings and logs synthesis.failed when synthesis fails", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { handler, client, synthesise } = makeHandler({
+      candidates: [validLineFinding],
+      agentFailures: [],
+    });
+    synthesise.mockRejectedValueOnce(new Error("anthropic unavailable"));
+    client.listChangedFiles.mockResolvedValueOnce(changedFilesWithAddedLines);
+
+    const response = await handler(sqsEvent(validRecord));
+
+    // The review does not die: the raw finding is validated and
+    // published, and the failure is a log line, not a batch failure.
+    expect(response.batchItemFailures).toEqual([]);
+    expect(client.createCheckRun).toHaveBeenCalledTimes(1);
+    const input = client.createCheckRun.mock.calls[0]?.[0];
+    expect(input?.output.title).toBe("1 finding");
+    expect(input?.output.summary).toContain(validLineFinding.title);
+    expect(consoleError).toHaveBeenCalledWith(
+      expect.stringContaining("synthesis.failed"),
+    );
+  });
+
+  it("skips the synthesis call entirely when the agents produced no candidates", async () => {
+    const { handler, client, synthesise } = makeHandler({
+      candidates: [],
+      agentFailures: [],
+    });
+
+    await handler(sqsEvent(validRecord));
+
+    // Nothing to refine: no synthesis model call for a clean review.
+    expect(synthesise).not.toHaveBeenCalled();
+    expect(client.createCheckRun).toHaveBeenCalledTimes(1);
+    expect(client.createCheckRun.mock.calls[0]?.[0]?.conclusion).toBe("success");
   });
 
   it("reports a batch item failure for an unparseable message body and publishes nothing", async () => {

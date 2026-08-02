@@ -42,6 +42,16 @@ export interface WorkerHandlerDeps {
     client: GithubInstallationClient,
     context: ReviewContext,
   ) => Promise<ReviewRunResult>;
+  /**
+   * The AI Synthesiser (spec §16): refines the raw candidate findings
+   * (dedupe, merge overlaps, drop weak ones, correct severity,
+   * prioritise) before deterministic validation. Its output is still
+   * UNTRUSTED candidate data and passes through the entire validation
+   * chain unchanged. When it rejects, the handler logs
+   * synthesis.failed and falls back to validating the RAW candidates —
+   * a synthesis failure never fails the review.
+   */
+  synthesise: (candidates: readonly unknown[]) => Promise<readonly unknown[]>;
 }
 
 export type WorkerHandler = (
@@ -75,10 +85,53 @@ function logError(event: string, details: Record<string, unknown>): void {
   console.error(JSON.stringify({ event, ...details }));
 }
 
+/**
+ * Runs the §16 synthesis step over the raw candidates, with the two
+ * deliberate non-model paths:
+ *
+ * - No candidates: the model call is skipped entirely — there is
+ *   nothing to refine, and a clean review should not spend a model
+ *   round trip or gain a failure mode (logged as synthesis.skipped).
+ * - Synthesis failure (API error, invalid output, timeout): logged as
+ *   synthesis.failed and the RAW candidates are returned, so the
+ *   review falls back to publishing the validated raw findings.
+ */
+async function synthesiseCandidates(
+  synthesise: WorkerHandlerDeps["synthesise"],
+  rawCandidates: readonly unknown[],
+  logContext: Record<string, unknown>,
+): Promise<readonly unknown[]> {
+  if (rawCandidates.length === 0) {
+    log("synthesis.skipped", { ...logContext, reason: "no candidate findings" });
+    return rawCandidates;
+  }
+
+  log("synthesis.started", {
+    ...logContext,
+    candidateCount: rawCandidates.length,
+  });
+  try {
+    const refined = await synthesise(rawCandidates);
+    log("synthesis.completed", {
+      ...logContext,
+      candidateCount: rawCandidates.length,
+      refinedCount: refined.length,
+    });
+    return refined;
+  } catch (error) {
+    logError("synthesis.failed", {
+      ...logContext,
+      error: error instanceof Error ? error.message : String(error),
+      fallback: "publishing validated raw findings",
+    });
+    return rawCandidates;
+  }
+}
+
 async function processJob(
   job: ReviewJob,
   client: GithubInstallationClient,
-  runReview: WorkerHandlerDeps["runReview"],
+  { runReview, synthesise }: Pick<WorkerHandlerDeps, "runReview" | "synthesise">,
 ): Promise<void> {
   const repository = `${job.owner}/${job.repo}`;
   const ref = {
@@ -118,7 +171,16 @@ async function processJob(
     });
   }
 
-  const findings = validateFindings(review.candidates, changedFiles);
+  // The §16 synthesis step sits between the raw agent output and the
+  // deterministic chain. Its output is never the final authority: it
+  // goes through the exact same validateFindings the raw candidates
+  // would, so a fabricated file/line or padded list still dies here.
+  const candidates = await synthesiseCandidates(synthesise, review.candidates, {
+    repository,
+    pullRequestNumber: job.pullRequestNumber,
+  });
+
+  const findings = validateFindings(candidates, changedFiles);
   // Failed lenses are noted in the check run by name only; the error
   // detail stays in the agent.failed logs above.
   const rendered = renderCheckRun(findings, review.agentFailures);
@@ -126,7 +188,7 @@ async function processJob(
   log("findings.validated", {
     repository,
     pullRequestNumber: job.pullRequestNumber,
-    candidateCount: review.candidates.length,
+    candidateCount: candidates.length,
     findingCount: findings.length,
   });
 
@@ -143,16 +205,19 @@ async function processJob(
  * Builds the review Lambda handler: for each SQS record, validate the
  * review job, authenticate as its GitHub App installation, load the PR
  * (details, changed files, diff), run the review agents through the
- * injected orchestrator, pipe their candidate findings through the
- * deterministic validation chain, and publish the rendered
- * "AI PR Review" check run. Failed records — including jobs whose
- * review failed outright (e.g. the only agent produced invalid
- * output) — are reported individually via the SQS partial batch
- * response so they are retried and eventually dead-lettered.
+ * injected orchestrator, refine their raw candidates through the AI
+ * Synthesiser (falling back to the raw candidates when synthesis
+ * fails), pipe the result through the deterministic validation chain,
+ * and publish the rendered "AI PR Review" check run. Failed records —
+ * including jobs whose review failed outright (e.g. every agent
+ * produced invalid output) — are reported individually via the SQS
+ * partial batch response so they are retried and eventually
+ * dead-lettered.
  */
 export function createWorkerHandler({
   createInstallationClient,
   runReview,
+  synthesise,
 }: WorkerHandlerDeps): WorkerHandler {
   return async (event) => {
     const batchItemFailures: { itemIdentifier: string }[] = [];
@@ -165,7 +230,10 @@ export function createWorkerHandler({
           pullRequestNumber: job.pullRequestNumber,
           headSha: job.headSha,
         });
-        await processJob(job, createInstallationClient(job.installationId), runReview);
+        await processJob(job, createInstallationClient(job.installationId), {
+          runReview,
+          synthesise,
+        });
         log("review.published", {
           repository: `${job.owner}/${job.repo}`,
           pullRequestNumber: job.pullRequestNumber,

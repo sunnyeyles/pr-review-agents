@@ -5,9 +5,11 @@
  * injectable handler in handler.ts, authenticates as the GitHub App
  * installation, loads the PR, runs the three review agents —
  * Correctness, Security, Architecture — concurrently through the
- * orchestrator (spec §20 partial-failure semantics), pipes their
- * combined candidate findings through the deterministic validation
- * chain, and publishes the rendered "AI PR Review" check run.
+ * orchestrator (spec §20 partial-failure semantics), refines their
+ * combined raw candidates through the AI Synthesiser (spec §16; a
+ * synthesis failure falls back to the raw candidates), pipes the
+ * result through the deterministic validation chain, and publishes the
+ * rendered "AI PR Review" check run.
  *
  * Configuration: the GitHub App private key and the Anthropic API key
  * are read from Secrets Manager at runtime when their *_SECRET_ARN
@@ -23,7 +25,7 @@ import {
 } from "@pr-review/ai";
 import { requireEnv, resolveSecret } from "@pr-review/config";
 import { createGithubApp } from "@pr-review/github";
-import { runReview } from "@pr-review/reviewer";
+import { createSynthesiser, runReview } from "@pr-review/reviewer";
 import type { SQSHandler } from "aws-lambda";
 
 import { createWorkerHandler, type WorkerHandler } from "./handler.js";
@@ -42,6 +44,11 @@ async function buildWorkerHandler(): Promise<WorkerHandler> {
     apiKey: await resolveSecret("ANTHROPIC_API_KEY"),
   });
   const model = requireEnv("ANTHROPIC_MODEL");
+  // The Synthesiser (spec §16) shares the agents' client and model:
+  // §16 defines no separate model configuration, so ANTHROPIC_MODEL is
+  // reused. It is installation-independent (no GitHub tools), so one
+  // instance serves every job.
+  const synthesiser = createSynthesiser({ anthropic, model });
 
   return createWorkerHandler({
     createInstallationClient: createGithubApp({
@@ -53,6 +60,7 @@ async function buildWorkerHandler(): Promise<WorkerHandler> {
     // job's installation-authenticated GitHub client.
     runReview: (client, context) =>
       runReview(createReviewAgents({ anthropic, model, github: client }), context),
+    synthesise: (candidates) => synthesiser.synthesise(candidates),
   });
 }
 
