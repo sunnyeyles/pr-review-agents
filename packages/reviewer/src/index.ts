@@ -1,10 +1,10 @@
 /**
  * @pr-review/reviewer
  *
- * The review pipeline: the deterministic findings validation chain and
- * check-run rendering (this ticket), plus the orchestrator, review
- * agents (correctness, security, architecture), and synthesiser in
- * later tickets.
+ * The review pipeline: the orchestrator that runs the review agents
+ * over a loaded PR context, the deterministic findings validation
+ * chain, and check-run rendering. The security/architecture agents and
+ * the synthesiser land in later tickets.
  */
 import { AI_PACKAGE } from "@pr-review/ai";
 import { GITHUB_PACKAGE } from "@pr-review/github";
@@ -19,6 +19,11 @@ export const reviewerPackageDependencies = [
 ] as const;
 
 export { buildChangedLineIndex, changedLinesFromPatch } from "./diff-lines.js";
+export {
+  runReview,
+  type AgentFailure,
+  type ReviewRunResult,
+} from "./orchestrator.js";
 export {
   CONFIDENCE_THRESHOLD,
   MAX_FINDINGS,

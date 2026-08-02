@@ -7,7 +7,10 @@ import {
   type ChangedFile,
   type CheckRun,
   type CheckRunAnnotation,
+  type CodeSearchMatch,
+  type CodeSearchRequest,
   type CreateCheckRunInput,
+  type FileContentsRequest,
   type GithubInstallationClient,
   type InstallationClientFactory,
   type PullRequestDetails,
@@ -34,6 +37,17 @@ export interface OctokitLike {
         per_page: number;
         page: number;
       }): Promise<{ data: unknown }>;
+    };
+    repos: {
+      getContent(params: {
+        owner: string;
+        repo: string;
+        path: string;
+        ref: string;
+      }): Promise<{ data: unknown }>;
+    };
+    search: {
+      code(params: { q: string; per_page: number }): Promise<{ data: unknown }>;
     };
     checks: {
       create(params: {
@@ -65,6 +79,9 @@ export interface GithubAppConfig {
 
 const FILES_PER_PAGE = 100;
 
+/** Code search results returned per query; agents need hints, not dumps. */
+const SEARCH_RESULTS_PER_PAGE = 20;
+
 /** The fields of a pulls.get response we map into PullRequestDetails. */
 const pullResponseSchema = z.object({
   number: z.number(),
@@ -72,7 +89,7 @@ const pullResponseSchema = z.object({
   body: z.string().nullable(),
   state: z.string(),
   user: z.object({ login: z.string() }).nullable(),
-  base: z.object({ ref: z.string() }),
+  base: z.object({ ref: z.string(), sha: z.string() }),
   head: z.object({ ref: z.string(), sha: z.string() }),
 });
 
@@ -87,6 +104,23 @@ const changedFilesSchema = z.array(
 );
 
 const checkRunResponseSchema = z.object({ id: z.number() });
+
+/** A repos.getContent response for a single (non-directory) entry. */
+const fileContentsSchema = z.object({
+  type: z.string(),
+  encoding: z.string(),
+  content: z.string(),
+});
+
+const codeSearchSchema = z.object({
+  items: z.array(
+    z.object({
+      name: z.string(),
+      path: z.string(),
+      repository: z.object({ full_name: z.string() }),
+    }),
+  ),
+});
 
 function createInstallationClient(octokit: OctokitLike): GithubInstallationClient {
   return {
@@ -104,6 +138,7 @@ function createInstallationClient(octokit: OctokitLike): GithubInstallationClien
         state: data.state,
         author: data.user?.login ?? null,
         baseRef: data.base.ref,
+        baseSha: data.base.sha,
         headRef: data.head.ref,
         headSha: data.head.sha,
       };
@@ -135,6 +170,47 @@ function createInstallationClient(octokit: OctokitLike): GithubInstallationClien
         mediaType: { format: "diff" },
       });
       return z.string().parse(response.data);
+    },
+
+    async getFileContents(request: FileContentsRequest): Promise<string> {
+      const response = await octokit.rest.repos.getContent({
+        owner: request.owner,
+        repo: request.repo,
+        path: request.path,
+        ref: request.ref,
+      });
+      if (Array.isArray(response.data)) {
+        throw new Error(`${request.path} is a directory, not a file`);
+      }
+      const data = fileContentsSchema.parse(response.data);
+      if (data.type !== "file") {
+        throw new Error(`${request.path} is a ${data.type}, not a file`);
+      }
+      if (data.encoding !== "base64") {
+        throw new Error(
+          `${request.path} has unsupported content encoding "${data.encoding}"` +
+            " (the file may be too large to fetch)",
+        );
+      }
+      return Buffer.from(data.content, "base64").toString("utf8");
+    },
+
+    async searchCode(request: CodeSearchRequest): Promise<CodeSearchMatch[]> {
+      const repository = `${request.owner}/${request.repo}`;
+      const response = await octokit.rest.search.code({
+        q: `${request.query} repo:${repository}`,
+        per_page: SEARCH_RESULTS_PER_PAGE,
+      });
+      const data = codeSearchSchema.parse(response.data);
+      // The query is already repo-scoped; the filter is belt and braces
+      // so nothing outside the PR's repository can ever be returned.
+      return data.items
+        .filter(
+          (item) =>
+            item.repository.full_name.toLowerCase() ===
+            repository.toLowerCase(),
+        )
+        .map((item) => ({ path: item.path, name: item.name }));
     },
 
     async createCheckRun(input: CreateCheckRunInput): Promise<CheckRun> {

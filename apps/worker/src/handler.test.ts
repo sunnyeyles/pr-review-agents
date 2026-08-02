@@ -1,3 +1,4 @@
+import type { ReviewContext } from "@pr-review/ai";
 import type {
   ChangedFile,
   CreateCheckRunInput,
@@ -5,14 +6,11 @@ import type {
   PullRequestDetails,
   PullRequestRef,
 } from "@pr-review/github";
-import type { ReviewJob } from "@pr-review/schemas";
+import type { ReviewRunResult } from "@pr-review/reviewer";
+import type { ReviewFinding, ReviewJob } from "@pr-review/schemas";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createWorkerHandler, type WorkerSqsEvent } from "./handler.js";
-import {
-  sampleFileLevelFinding,
-  sampleValidLineFinding,
-} from "./sample-findings.js";
 
 const job: ReviewJob = {
   installationId: 12345678,
@@ -29,6 +27,7 @@ const pullRequest: PullRequestDetails = {
   state: "open",
   author: "octocat",
   baseRef: "main",
+  baseSha: "0000000000000000000000000000000000000000",
   headRef: "feature/rate-limit",
   headSha: job.headSha,
 };
@@ -45,20 +44,88 @@ const changedFiles: ChangedFile[] = [
 
 const diff = "diff --git a/src/sessions.ts b/src/sessions.ts\n";
 
+// Candidate-finding fixtures (formerly the placeholder sample
+// findings): they exercise the deterministic validation chain exactly
+// as real agent output does.
+
+/** Survives validation when the PR adds line 42 of this file. */
+const validLineFinding: ReviewFinding = {
+  file: "src/sample/session-service.ts",
+  line: 42,
+  category: "correctness",
+  severity: "high",
+  title: "Assignment instead of comparison in admin check",
+  explanation:
+    "The if condition assigns true to user.isAdmin instead of comparing, so every user passes the check.",
+  suggestedFix: "Use === instead of = in the condition.",
+  confidence: 0.9,
+};
+
+/** Survives validation when the PR contains this file; no annotation. */
+const fileLevelFinding: ReviewFinding = {
+  file: "src/sample/session-service.ts",
+  category: "correctness",
+  severity: "medium",
+  title: "Session expiry errors are swallowed",
+  explanation:
+    "Expiry failures are caught and ignored, so expired sessions keep working.",
+  confidence: 0.8,
+};
+
+/** Dropped: references a file that is not part of the pull request. */
+const wrongFileFinding: ReviewFinding = {
+  file: "src/not-part-of-this-pr.ts",
+  line: 7,
+  category: "correctness",
+  severity: "high",
+  title: "Error swallowed in catch block",
+  explanation: "The catch block returns an empty result instead of failing.",
+  confidence: 0.95,
+};
+
+/** Dropped: confidence is below the 0.70 threshold. */
+const lowConfidenceFinding: ReviewFinding = {
+  file: "src/sample/session-service.ts",
+  line: 43,
+  category: "correctness",
+  severity: "low",
+  title: "Possible off-by-one in session TTL comparison",
+  explanation: "The TTL comparison may exclude the final second.",
+  confidence: 0.4,
+};
+
+/** Dropped by Zod: confidence is outside the allowed 0..1 range. */
+const schemaInvalidFinding: unknown = {
+  file: "src/sample/session-service.ts",
+  category: "correctness",
+  severity: "high",
+  title: "Malformed candidate with out-of-range confidence",
+  explanation: "This candidate must be rejected by schema validation.",
+  confidence: 1.5,
+};
+
 function makeClient() {
   return {
     getPullRequest: vi.fn(async (_ref: PullRequestRef) => pullRequest),
     listChangedFiles: vi.fn(async (_ref: PullRequestRef) => changedFiles),
     getDiff: vi.fn(async (_ref: PullRequestRef) => diff),
+    getFileContents: vi.fn(async () => "export const sessions = [];\n"),
+    searchCode: vi.fn(async () => [
+      { path: "src/sessions.ts", name: "sessions.ts" },
+    ]),
     createCheckRun: vi.fn(async (_input: CreateCheckRunInput) => ({ id: 987 })),
   } satisfies GithubInstallationClient;
 }
 
-function makeHandler() {
+function makeHandler(reviewResult: ReviewRunResult = { candidates: [], agentFailures: [] }) {
   const client = makeClient();
   const createInstallationClient = vi.fn(() => client);
-  const handler = createWorkerHandler({ createInstallationClient });
-  return { handler, client, createInstallationClient };
+  const runReview = vi.fn(
+    async (_client: GithubInstallationClient, _context: ReviewContext) =>
+      reviewResult,
+  );
+  const handler = createWorkerHandler({ createInstallationClient, runReview });
+  return { handler, client, createInstallationClient, runReview };
 }
 
 function sqsEvent(...records: { messageId: string; body: string }[]): WorkerSqsEvent {
@@ -104,12 +171,27 @@ describe("createWorkerHandler", () => {
     expect(client.getDiff).toHaveBeenCalledExactlyOnceWith(ref);
   });
 
-  it("publishes exactly one clean check run when no sample finding survives validation", async () => {
-    // The default fixture PR does not contain the files the placeholder
-    // sample findings reference, so the whole list is dropped by the
-    // deterministic validation chain and the check run reports a clean
-    // result.
-    const { handler, client } = makeHandler();
+  it("runs the review against the loaded context with the installation client", async () => {
+    const { handler, client, runReview } = makeHandler();
+
+    await handler(sqsEvent(validRecord));
+
+    expect(runReview).toHaveBeenCalledExactlyOnceWith(client, {
+      owner: job.owner,
+      repo: job.repo,
+      pullRequest,
+      changedFiles,
+      diff,
+    });
+  });
+
+  it("publishes a clean check run when no candidate survives validation", async () => {
+    // None of these candidates reference the PR's actual changed file,
+    // so the deterministic chain drops them all.
+    const { handler, client } = makeHandler({
+      candidates: [schemaInvalidFinding, wrongFileFinding, lowConfidenceFinding],
+      agentFailures: [],
+    });
 
     await handler(sqsEvent(validRecord));
 
@@ -125,13 +207,22 @@ describe("createWorkerHandler", () => {
     expect(input?.output.annotations).toBeUndefined();
   });
 
-  it("renders surviving sample findings in the check run when the PR contains their file", async () => {
-    const { handler, client } = makeHandler();
-    // A PR that actually changes the file the samples reference, with a
-    // patch whose added lines are 42, 43, and 44 on the new side.
+  it("publishes surviving agent findings through validation and rendering", async () => {
+    const { handler, client } = makeHandler({
+      candidates: [
+        schemaInvalidFinding,
+        wrongFileFinding,
+        lowConfidenceFinding,
+        validLineFinding,
+        fileLevelFinding,
+      ],
+      agentFailures: [],
+    });
+    // A PR that actually changes the file the candidates reference,
+    // with added lines 42-44 on the new side.
     client.listChangedFiles.mockResolvedValueOnce([
       {
-        filename: sampleValidLineFinding.file,
+        filename: validLineFinding.file,
         status: "modified",
         additions: 3,
         deletions: 0,
@@ -150,23 +241,54 @@ describe("createWorkerHandler", () => {
 
     expect(client.createCheckRun).toHaveBeenCalledTimes(1);
     const input = client.createCheckRun.mock.calls[0]?.[0];
-    // Of the samples, only the valid line-anchored finding and the
-    // file-level finding survive: the wrong-file, low-confidence, and
-    // schema-invalid samples are dropped by the chain.
+    // Only the valid line-anchored and file-level candidates survive:
+    // the wrong-file, low-confidence, and schema-invalid ones are
+    // dropped by the deterministic chain.
     expect(input?.conclusion).toBe("neutral");
     expect(input?.output.title).toBe("2 findings");
-    expect(input?.output.summary).toContain(sampleValidLineFinding.title);
-    expect(input?.output.summary).toContain(sampleFileLevelFinding.title);
-    expect(input?.output.summary).not.toMatch(/pipeline is connected/i);
+    expect(input?.output.summary).toContain(validLineFinding.title);
+    expect(input?.output.summary).toContain(fileLevelFinding.title);
     expect(input?.output.annotations).toEqual([
       expect.objectContaining({
-        path: sampleValidLineFinding.file,
-        start_line: sampleValidLineFinding.line,
-        end_line: sampleValidLineFinding.line,
+        path: validLineFinding.file,
+        start_line: validLineFinding.line,
+        end_line: validLineFinding.line,
         annotation_level: "failure",
-        title: sampleValidLineFinding.title,
+        title: validLineFinding.title,
       }),
     ]);
+  });
+
+  it("reports a batch item failure when the review (all agents) fails, without publishing", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const { handler, client, runReview } = makeHandler();
+    runReview.mockRejectedValueOnce(
+      new Error("every review agent failed — correctness: invalid JSON"),
+    );
+
+    const response = await handler(sqsEvent(validRecord));
+
+    expect(response.batchItemFailures).toEqual([
+      { itemIdentifier: "msg-valid" },
+    ]);
+    expect(client.createCheckRun).not.toHaveBeenCalled();
+  });
+
+  it("still publishes when some agents failed but candidates survived", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { handler, client } = makeHandler({
+      candidates: [],
+      agentFailures: [{ agent: "security", error: "model unavailable" }],
+    });
+
+    const response = await handler(sqsEvent(validRecord));
+
+    expect(response.batchItemFailures).toEqual([]);
+    expect(client.createCheckRun).toHaveBeenCalledTimes(1);
+    // The failed agent is surfaced in the logs.
+    expect(consoleError).toHaveBeenCalledWith(
+      expect.stringContaining("agent.failed"),
+    );
   });
 
   it("reports a batch item failure for an unparseable message body and publishes nothing", async () => {
@@ -220,9 +342,9 @@ describe("createWorkerHandler", () => {
     expect(client.createCheckRun).toHaveBeenCalledTimes(1);
   });
 
-  it("reports a batch item failure when loading the PR fails, without publishing", async () => {
+  it("reports a batch item failure when loading the PR fails, without running the review", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
-    const { handler, client } = makeHandler();
+    const { handler, client, runReview } = makeHandler();
     client.getDiff.mockRejectedValueOnce(new Error("github unavailable"));
 
     const response = await handler(sqsEvent(validRecord));
@@ -230,6 +352,7 @@ describe("createWorkerHandler", () => {
     expect(response.batchItemFailures).toEqual([
       { itemIdentifier: "msg-valid" },
     ]);
+    expect(runReview).not.toHaveBeenCalled();
     expect(client.createCheckRun).not.toHaveBeenCalled();
   });
 

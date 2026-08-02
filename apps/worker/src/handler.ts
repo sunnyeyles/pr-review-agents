@@ -1,11 +1,14 @@
+import type { ReviewContext } from "@pr-review/ai";
 import type {
   GithubInstallationClient,
   InstallationClientFactory,
 } from "@pr-review/github";
-import { renderCheckRun, validateFindings } from "@pr-review/reviewer";
+import {
+  renderCheckRun,
+  validateFindings,
+  type ReviewRunResult,
+} from "@pr-review/reviewer";
 import { reviewJobSchema, type ReviewJob } from "@pr-review/schemas";
-
-import { sampleFindings } from "./sample-findings.js";
 
 /**
  * The slice of an SQS event the worker needs. Structurally compatible
@@ -28,6 +31,17 @@ export interface WorkerSqsBatchResponse {
 
 export interface WorkerHandlerDeps {
   createInstallationClient: InstallationClientFactory;
+  /**
+   * Runs the review agents against the loaded PR context (the
+   * orchestrator from @pr-review/reviewer, wired with the configured
+   * agents by the entrypoint). Throws when the review as a whole
+   * fails, which makes the job a batch item failure so SQS retry/DLQ
+   * semantics apply.
+   */
+  runReview: (
+    client: GithubInstallationClient,
+    context: ReviewContext,
+  ) => Promise<ReviewRunResult>;
 }
 
 export type WorkerHandler = (
@@ -57,10 +71,16 @@ function log(event: string, details: Record<string, unknown>): void {
   console.log(JSON.stringify({ event, ...details }));
 }
 
+function logError(event: string, details: Record<string, unknown>): void {
+  console.error(JSON.stringify({ event, ...details }));
+}
+
 async function processJob(
   job: ReviewJob,
   client: GithubInstallationClient,
+  runReview: WorkerHandlerDeps["runReview"],
 ): Promise<void> {
+  const repository = `${job.owner}/${job.repo}`;
   const ref = {
     owner: job.owner,
     repo: job.repo,
@@ -72,23 +92,39 @@ async function processJob(
     client.getDiff(ref),
   ]);
   log("review.loaded", {
-    repository: `${job.owner}/${job.repo}`,
+    repository,
     pullRequestNumber: pullRequest.number,
     changedFileCount: changedFiles.length,
     diffLength: diff.length,
   });
 
-  // PLACEHOLDER for the AI agents (tickets 06–08): the sample findings
-  // stand in for agent output. Everything below this line is the
-  // deterministic side-effect boundary — only validated findings ever
-  // reach the GitHub API, and only through application code.
-  const findings = validateFindings(sampleFindings, changedFiles);
+  // The AI boundary: agents only ever PROPOSE candidate findings.
+  // Everything below is the deterministic side-effect boundary — only
+  // validated findings ever reach the GitHub API, and only through
+  // application code.
+  const review = await runReview(client, {
+    owner: job.owner,
+    repo: job.repo,
+    pullRequest,
+    changedFiles,
+    diff,
+  });
+  for (const failure of review.agentFailures) {
+    logError("agent.failed", {
+      repository,
+      pullRequestNumber: job.pullRequestNumber,
+      agent: failure.agent,
+      error: failure.error,
+    });
+  }
+
+  const findings = validateFindings(review.candidates, changedFiles);
   const rendered = renderCheckRun(findings);
 
   log("findings.validated", {
-    repository: `${job.owner}/${job.repo}`,
+    repository,
     pullRequestNumber: job.pullRequestNumber,
-    candidateCount: sampleFindings.length,
+    candidateCount: review.candidates.length,
     findingCount: findings.length,
   });
 
@@ -104,14 +140,17 @@ async function processJob(
 /**
  * Builds the review Lambda handler: for each SQS record, validate the
  * review job, authenticate as its GitHub App installation, load the PR
- * (details, changed files, diff), run the candidate findings through
- * the deterministic validation chain, and publish the rendered
- * "AI PR Review" check run. Failed records are reported individually
- * via the SQS partial batch response so one bad message neither
- * poisons the batch nor gets silently dropped.
+ * (details, changed files, diff), run the review agents through the
+ * injected orchestrator, pipe their candidate findings through the
+ * deterministic validation chain, and publish the rendered
+ * "AI PR Review" check run. Failed records — including jobs whose
+ * review failed outright (e.g. the only agent produced invalid
+ * output) — are reported individually via the SQS partial batch
+ * response so they are retried and eventually dead-lettered.
  */
 export function createWorkerHandler({
   createInstallationClient,
+  runReview,
 }: WorkerHandlerDeps): WorkerHandler {
   return async (event) => {
     const batchItemFailures: { itemIdentifier: string }[] = [];
@@ -124,20 +163,17 @@ export function createWorkerHandler({
           pullRequestNumber: job.pullRequestNumber,
           headSha: job.headSha,
         });
-        await processJob(job, createInstallationClient(job.installationId));
+        await processJob(job, createInstallationClient(job.installationId), runReview);
         log("review.published", {
           repository: `${job.owner}/${job.repo}`,
           pullRequestNumber: job.pullRequestNumber,
           headSha: job.headSha,
         });
       } catch (error) {
-        console.error(
-          JSON.stringify({
-            event: "review.failed",
-            messageId: record.messageId,
-            error: error instanceof Error ? error.message : String(error),
-          }),
-        );
+        logError("review.failed", {
+          messageId: record.messageId,
+          error: error instanceof Error ? error.message : String(error),
+        });
         batchItemFailures.push({ itemIdentifier: record.messageId });
       }
     }

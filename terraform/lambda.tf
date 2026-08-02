@@ -58,9 +58,8 @@ resource "aws_lambda_function" "worker" {
     variables = {
       GITHUB_APP_ID                     = var.github_app_id
       GITHUB_APP_PRIVATE_KEY_SECRET_ARN = aws_secretsmanager_secret.github_app_private_key.arn
-      # Not read by the worker yet; wired now so the review agents
-      # (later tickets) only need code changes, not infra changes.
-      ANTHROPIC_API_KEY_SECRET_ARN = aws_secretsmanager_secret.anthropic_api_key.arn
+      ANTHROPIC_API_KEY_SECRET_ARN      = aws_secretsmanager_secret.anthropic_api_key.arn
+      ANTHROPIC_MODEL                   = var.anthropic_model
     }
   }
 

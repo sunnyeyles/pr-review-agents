@@ -14,6 +14,12 @@ variable "github_app_id" {
   type        = string
 }
 
+variable "anthropic_model" {
+  description = "Anthropic model id the review agents use (worker env ANTHROPIC_MODEL; never hard-coded in the application)."
+  type        = string
+  default     = "claude-sonnet-5"
+}
+
 variable "log_retention_days" {
   description = "CloudWatch log retention for both Lambdas."
   type        = number

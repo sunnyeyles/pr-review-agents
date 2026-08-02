@@ -7,7 +7,10 @@ describe("@pr-review/ai", () => {
     expect(AI_PACKAGE).toBe("@pr-review/ai");
   });
 
-  it("imports from @pr-review/schemas", () => {
-    expect(aiPackageDependencies).toContain("@pr-review/schemas");
+  it("imports from the schemas and github packages", () => {
+    expect(aiPackageDependencies).toEqual([
+      "@pr-review/schemas",
+      "@pr-review/github",
+    ]);
   });
 });

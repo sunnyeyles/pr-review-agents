@@ -50,10 +50,44 @@ function makeFile(index: number) {
   };
 }
 
+/** A repos.getContent file response for src/sessions.ts at some ref. */
+const fileContentsResponse = {
+  type: "file",
+  encoding: "base64",
+  name: "sessions.ts",
+  path: "src/sessions.ts",
+  content: Buffer.from("export const sessions = [];\n", "utf8").toString(
+    "base64",
+  ),
+  sha: "def456",
+};
+
+/** A search.code response with one in-repo match and one foreign match. */
+const codeSearchResponse = {
+  total_count: 2,
+  incomplete_results: false,
+  items: [
+    {
+      name: "sessions.ts",
+      path: "src/sessions.ts",
+      sha: "abc",
+      repository: { full_name: "octo-org/example-service" },
+    },
+    {
+      name: "other.ts",
+      path: "src/other.ts",
+      sha: "def",
+      repository: { full_name: "someone-else/other-repo" },
+    },
+  ],
+};
+
 interface StubOptions {
   filePages?: unknown[][];
   pullData?: unknown;
   diffData?: unknown;
+  contentData?: unknown;
+  searchData?: unknown;
 }
 
 function makeOctokit(options: StubOptions = {}) {
@@ -81,6 +115,18 @@ function makeOctokit(options: StubOptions = {}) {
             page: number;
           }) => ({ data: filePages[params.page - 1] ?? [] }),
         ),
+      },
+      repos: {
+        getContent: vi.fn(
+          async (_params: { owner: string; repo: string; path: string; ref: string }) => ({
+            data: options.contentData ?? fileContentsResponse,
+          }),
+        ),
+      },
+      search: {
+        code: vi.fn(async (_params: { q: string; per_page: number }) => ({
+          data: options.searchData ?? codeSearchResponse,
+        })),
       },
       checks: {
         create: vi.fn(
@@ -163,6 +209,7 @@ describe("getPullRequest", () => {
       state: "open",
       author: "octocat",
       baseRef: "main",
+      baseSha: "0000000000000000000000000000000000000000",
       headRef: "feature/rate-limit",
       headSha,
     });
@@ -287,6 +334,122 @@ describe("getDiff", () => {
     const client = createInstallationClient(12345678);
 
     await expect(client.getDiff(ref)).rejects.toThrow();
+  });
+});
+
+describe("getFileContents", () => {
+  it("requests the path at the given ref and decodes the base64 content", async () => {
+    const { octokit, createInstallationClient } = makeApp();
+    const client = createInstallationClient(12345678);
+
+    const contents = await client.getFileContents({
+      owner: "octo-org",
+      repo: "example-service",
+      path: "src/sessions.ts",
+      ref: headSha,
+    });
+
+    expect(contents).toBe("export const sessions = [];\n");
+    expect(octokit.rest.repos.getContent).toHaveBeenCalledExactlyOnceWith({
+      owner: "octo-org",
+      repo: "example-service",
+      path: "src/sessions.ts",
+      ref: headSha,
+    });
+  });
+
+  it("rejects when the path is a directory (array response)", async () => {
+    const { createInstallationClient } = makeApp({
+      contentData: [fileContentsResponse],
+    });
+    const client = createInstallationClient(12345678);
+
+    await expect(
+      client.getFileContents({
+        owner: "octo-org",
+        repo: "example-service",
+        path: "src",
+        ref: headSha,
+      }),
+    ).rejects.toThrow(/directory/i);
+  });
+
+  it("rejects when the entry is not a plain file (e.g. a submodule)", async () => {
+    const { createInstallationClient } = makeApp({
+      contentData: { ...fileContentsResponse, type: "submodule" },
+    });
+    const client = createInstallationClient(12345678);
+
+    await expect(
+      client.getFileContents({
+        owner: "octo-org",
+        repo: "example-service",
+        path: "vendored",
+        ref: headSha,
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("rejects content with an unsupported encoding (e.g. too-large files)", async () => {
+    const { createInstallationClient } = makeApp({
+      contentData: { ...fileContentsResponse, encoding: "none", content: "" },
+    });
+    const client = createInstallationClient(12345678);
+
+    await expect(
+      client.getFileContents({
+        owner: "octo-org",
+        repo: "example-service",
+        path: "big.bin",
+        ref: headSha,
+      }),
+    ).rejects.toThrow(/encoding/i);
+  });
+});
+
+describe("searchCode", () => {
+  it("scopes the query to the repository with a repo: qualifier", async () => {
+    const { octokit, createInstallationClient } = makeApp();
+    const client = createInstallationClient(12345678);
+
+    await client.searchCode({
+      owner: "octo-org",
+      repo: "example-service",
+      query: "createSession",
+    });
+
+    expect(octokit.rest.search.code).toHaveBeenCalledExactlyOnceWith({
+      q: "createSession repo:octo-org/example-service",
+      per_page: 20,
+    });
+  });
+
+  it("returns matches from the target repository only", async () => {
+    const { createInstallationClient } = makeApp();
+    const client = createInstallationClient(12345678);
+
+    const matches = await client.searchCode({
+      owner: "octo-org",
+      repo: "example-service",
+      query: "createSession",
+    });
+
+    expect(matches).toEqual([{ path: "src/sessions.ts", name: "sessions.ts" }]);
+  });
+
+  it("rejects a malformed search response", async () => {
+    const { createInstallationClient } = makeApp({
+      searchData: { items: "not-an-array" },
+    });
+    const client = createInstallationClient(12345678);
+
+    await expect(
+      client.searchCode({
+        owner: "octo-org",
+        repo: "example-service",
+        query: "createSession",
+      }),
+    ).rejects.toThrow();
   });
 });
 

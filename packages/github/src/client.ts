@@ -22,8 +22,34 @@ export interface PullRequestDetails {
   state: string;
   author: string | null;
   baseRef: string;
+  baseSha: string;
   headRef: string;
   headSha: string;
+}
+
+/** A request for one file's contents at a specific commit SHA or ref. */
+export interface FileContentsRequest {
+  owner: string;
+  repo: string;
+  /** Repository-relative path, e.g. "src/index.ts". */
+  path: string;
+  /** Commit SHA (or ref) to read the file at. */
+  ref: string;
+}
+
+/** A code search request; always scoped to the single named repository. */
+export interface CodeSearchRequest {
+  owner: string;
+  repo: string;
+  query: string;
+}
+
+/** One code search match within the requested repository. */
+export interface CodeSearchMatch {
+  /** Repository-relative path of the matching file. */
+  path: string;
+  /** Base name of the matching file. */
+  name: string;
 }
 
 /** One changed file in a PR; patch is absent for e.g. binary files. */
@@ -77,12 +103,19 @@ export interface CheckRun {
 
 /**
  * A GitHub client authenticated as one App installation. Everything is
- * read-only except createCheckRun, the system's single write path.
+ * read-only except createCheckRun, the system's single write path. The
+ * read-only surface (including getFileContents and searchCode, which
+ * back the review agents' tools) is always repository-scoped: every
+ * method takes an explicit owner/repo and never reaches beyond it.
  */
 export interface GithubInstallationClient {
   getPullRequest(ref: PullRequestRef): Promise<PullRequestDetails>;
   listChangedFiles(ref: PullRequestRef): Promise<ChangedFile[]>;
   getDiff(ref: PullRequestRef): Promise<string>;
+  /** Reads one file's decoded contents at a specific SHA. Read-only. */
+  getFileContents(request: FileContentsRequest): Promise<string>;
+  /** Searches code within the single named repository. Read-only. */
+  searchCode(request: CodeSearchRequest): Promise<CodeSearchMatch[]>;
   createCheckRun(input: CreateCheckRunInput): Promise<CheckRun>;
 }
 
