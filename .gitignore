@@ -3,3 +3,5 @@ dist/
 .env
 *.tfstate*
 .terraform/
+terraform/backend.hcl
+tfplan
