@@ -3,12 +3,14 @@
  * against one loaded PR context and returns their combined CANDIDATE
  * findings for the deterministic validation chain.
  *
+ * All agents run CONCURRENTLY over the same context: Promise.allSettled
+ * over runs that all start before any is awaited.
+ *
  * Partial-failure semantics (spec §20): one failed agent does not fail
  * the review while any other agent succeeded — its failure is recorded
- * and the surviving candidates are returned. When EVERY agent fails
- * (which with today's single Correctness agent means any agent
- * failure), the review itself fails so the job is retried and
- * eventually dead-lettered by SQS.
+ * and the surviving candidates are returned. When EVERY agent fails,
+ * the review itself fails so the job is retried and eventually
+ * dead-lettered by SQS.
  */
 import type { ReviewAgent, ReviewContext } from "@pr-review/ai";
 

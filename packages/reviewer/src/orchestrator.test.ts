@@ -67,6 +67,76 @@ describe("runReview", () => {
     ]);
   });
 
+  it("starts all three agents before any of them resolves (real concurrency)", async () => {
+    const starts: string[] = [];
+    const resolvers: (() => void)[] = [];
+    const gated = (name: string) =>
+      agent(name, () => {
+        starts.push(name);
+        return new Promise((resolve) => {
+          resolvers.push(() => resolve([{ from: name }]));
+        });
+      });
+
+    const pending = runReview(
+      [gated("correctness"), gated("security"), gated("architecture")],
+      context,
+    );
+
+    // Every agent has already started even though none has resolved:
+    // the orchestrator must never await one agent before starting the
+    // next.
+    expect(starts).toEqual(["correctness", "security", "architecture"]);
+
+    for (const resolve of resolvers) {
+      resolve();
+    }
+    const result = await pending;
+    expect(result.candidates).toEqual([
+      { from: "correctness" },
+      { from: "security" },
+      { from: "architecture" },
+    ]);
+    expect(result.agentFailures).toEqual([]);
+  });
+
+  it("with one of three agents failing, keeps the other two lenses' candidates", async () => {
+    const result = await runReview(
+      [
+        agent("correctness", async () => [{ category: "correctness" }]),
+        agent("security", async () => {
+          throw new Error("model unavailable");
+        }),
+        agent("architecture", async () => [{ category: "architecture" }]),
+      ],
+      context,
+    );
+
+    expect(result.candidates).toEqual([
+      { category: "correctness" },
+      { category: "architecture" },
+    ]);
+    expect(result.agentFailures).toEqual([
+      { agent: "security", error: "model unavailable" },
+    ]);
+  });
+
+  it("throws when all three agents fail, naming every lens", async () => {
+    const failing = (name: string) =>
+      agent(name, async () => {
+        throw new Error(`${name} exploded`);
+      });
+
+    await expect(
+      runReview(
+        [failing("correctness"), failing("security"), failing("architecture")],
+        context,
+      ),
+    ).rejects.toThrow(
+      /correctness: correctness exploded.*security: security exploded.*architecture: architecture exploded/s,
+    );
+  });
+
   it("throws when every agent fails (single-agent failure fails the review)", async () => {
     const failing = agent("correctness", async () => {
       throw new Error("invalid findings JSON");

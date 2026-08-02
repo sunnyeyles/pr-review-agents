@@ -119,7 +119,9 @@ async function processJob(
   }
 
   const findings = validateFindings(review.candidates, changedFiles);
-  const rendered = renderCheckRun(findings);
+  // Failed lenses are noted in the check run by name only; the error
+  // detail stays in the agent.failed logs above.
+  const rendered = renderCheckRun(findings, review.agentFailures);
 
   log("findings.validated", {
     repository,

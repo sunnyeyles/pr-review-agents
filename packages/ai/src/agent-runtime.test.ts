@@ -1,46 +1,26 @@
+/**
+ * The shared agent-runtime behaviours (loop, tool wiring, output
+ * parsing, failure semantics), exercised through the Correctness agent
+ * exactly as they were when it was the only agent — these tests
+ * predate the runtime extraction and keep it refactor-safe.
+ */
 import type Anthropic from "@anthropic-ai/sdk";
-import type {
-  ChangedFile,
-  GithubInstallationClient,
-  PullRequestDetails,
-} from "@pr-review/github";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
-import { AgentRunError, createCorrectnessAgent } from "./correctness-agent.js";
-import type { ReviewContext } from "./review-types.js";
-
-const headSha = "6dcb09b5b57875f334f61aebed695e2e4193db5e";
-const baseSha = "0000000000000000000000000000000000000000";
-
-const pullRequest: PullRequestDetails = {
-  number: 42,
-  title: "Add admin gating to the sessions endpoint",
-  body: "Gates session listing behind an admin check.",
-  state: "open",
-  author: "octocat",
-  baseRef: "main",
-  baseSha,
-  headRef: "feature/admin-gate",
+import { AgentRunError } from "./agent-runtime.js";
+import {
+  context,
+  finalFindingsJson,
   headSha,
-};
-
-const changedFiles: ChangedFile[] = [
-  {
-    filename: "src/sessions.ts",
-    status: "modified",
-    additions: 3,
-    deletions: 0,
-    patch: "@@ -40,2 +40,5 @@",
-  },
-];
-
-const context: ReviewContext = {
-  owner: "octo-org",
-  repo: "example-service",
+  makeAnthropic,
+  makeFinding,
+  makeGithub,
+  message,
   pullRequest,
-  changedFiles,
-  diff: "diff --git a/src/sessions.ts b/src/sessions.ts\n+if ((user.isAdmin = true)) {\n",
-};
+  textBlock,
+  toolUseBlock,
+} from "./agent-test-support.js";
+import { createCorrectnessAgent } from "./agents.js";
 
 const finding = {
   file: "src/sessions.ts",
@@ -53,71 +33,6 @@ const finding = {
 };
 
 const finalJson = JSON.stringify({ findings: [finding] });
-
-function textBlock(text: string): Anthropic.Messages.TextBlock {
-  return { type: "text", text, citations: null };
-}
-
-function toolUseBlock(
-  id: string,
-  name: string,
-  input: unknown,
-): Anthropic.Messages.ToolUseBlock {
-  return { type: "tool_use", id, name, input, caller: { type: "direct" } };
-}
-
-function message(
-  content: Anthropic.Messages.ContentBlock[],
-  stopReason: Anthropic.Messages.Message["stop_reason"],
-): Anthropic.Messages.Message {
-  return {
-    id: "msg_test",
-    type: "message",
-    role: "assistant",
-    model: "claude-test-model",
-    container: null,
-    content,
-    stop_reason: stopReason,
-    stop_details: null,
-    stop_sequence: null,
-    usage: {
-      input_tokens: 1,
-      output_tokens: 1,
-      cache_creation: null,
-      cache_creation_input_tokens: null,
-      cache_read_input_tokens: null,
-      inference_geo: null,
-      output_tokens_details: null,
-      server_tool_use: null,
-      service_tier: null,
-    },
-  };
-}
-
-function makeAnthropic(responses: Anthropic.Messages.Message[]) {
-  const queue = [...responses];
-  const create = vi.fn(
-    async (_params: Anthropic.Messages.MessageCreateParamsNonStreaming) => {
-      const next = queue.shift();
-      if (!next) {
-        throw new Error("fake anthropic client ran out of scripted responses");
-      }
-      return next;
-    },
-  );
-  return { anthropic: { messages: { create } }, create };
-}
-
-function makeGithub() {
-  return {
-    getPullRequest: vi.fn(async () => pullRequest),
-    listChangedFiles: vi.fn(async () => changedFiles),
-    getDiff: vi.fn(async () => context.diff),
-    getFileContents: vi.fn(async () => "export const sessions = [];\n"),
-    searchCode: vi.fn(async () => [{ path: "src/sessions.ts", name: "sessions.ts" }]),
-    createCheckRun: vi.fn(async () => ({ id: 987 })),
-  } satisfies GithubInstallationClient;
-}
 
 function makeAgent(
   responses: Anthropic.Messages.Message[],
@@ -344,5 +259,40 @@ describe("createCorrectnessAgent", () => {
     });
 
     await expect(agent.run(context)).rejects.toThrow("529 overloaded");
+  });
+});
+
+describe("category integrity", () => {
+  // Decision (ticket 07): the runtime FILTERS the final findings to the
+  // agent's own category rather than re-stamping leaked ones. Stamping
+  // would fabricate a claim the model never made (a security-worded
+  // finding relabelled "correctness" misleads rendering and synthesis);
+  // filtering keeps category provenance deterministic — downstream code
+  // can trust that every candidate an agent contributes carries that
+  // agent's lens — and an out-of-role finding sits outside the agent's
+  // assigned review role (§21) anyway, so it is dropped, not laundered.
+  it("drops findings outside the agent's own category and keeps its own", async () => {
+    const own = makeFinding("correctness");
+    const leakedSecurity = makeFinding("security", { line: 43 });
+    const leakedArchitecture = makeFinding("architecture", { line: 44 });
+    const { agent } = makeAgent([
+      message(
+        [textBlock(finalFindingsJson([leakedSecurity, own, leakedArchitecture]))],
+        "end_turn",
+      ),
+    ]);
+
+    await expect(agent.run(context)).resolves.toEqual([own]);
+  });
+
+  it("returns an empty set when every finding leaked out of category", async () => {
+    const { agent } = makeAgent([
+      message(
+        [textBlock(finalFindingsJson([makeFinding("security")]))],
+        "end_turn",
+      ),
+    ]);
+
+    await expect(agent.run(context)).resolves.toEqual([]);
   });
 });

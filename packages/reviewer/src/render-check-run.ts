@@ -7,6 +7,11 @@
  * - Findings: conclusion "neutral" (the review is advisory; the app
  *   must not block or approve merges), a summary listing every finding
  *   strongest first, and inline annotations for line-anchored findings.
+ * - Agent failures (spec §20 partial failure): the summary notes which
+ *   lens did not complete — by name only, error details stay in the
+ *   logs — and the conclusion is "neutral" even with zero findings,
+ *   because an incomplete review must not publish a clean bill of
+ *   health.
  */
 import type {
   AnnotationLevel,
@@ -16,6 +21,7 @@ import type {
 } from "@pr-review/github";
 import type { ReviewFinding } from "@pr-review/schemas";
 
+import type { AgentFailure } from "./orchestrator.js";
 import { compareFindingStrength } from "./validate-findings.js";
 
 /** The GitHub checks API accepts at most 50 annotations per request. */
@@ -77,20 +83,45 @@ function annotate(finding: ReviewFinding, line: number): CheckRunAnnotation {
 }
 
 /**
+ * The lens name in prose. Agent names are the finding categories; an
+ * unrecognised name falls through verbatim.
+ */
+function lensLabel(agent: string): string {
+  return (categoryLabels as Record<string, string | undefined>)[agent] ?? agent;
+}
+
+/**
+ * The partial-failure notes for the summary: which lenses did not
+ * complete. Names only — failure error strings are internal detail and
+ * never reach GitHub (the worker logs them as agent.failed).
+ */
+function failureNotes(agentFailures: readonly AgentFailure[]): string[] {
+  return agentFailures.map(
+    (failure) =>
+      `> **Note:** The ${lensLabel(failure.agent)} review did not complete, so its findings are missing from this run.`,
+  );
+}
+
+/**
  * Builds the completed check-run payload for a set of validated
- * findings. Findings are rendered strongest first (severity rank, then
- * confidence); line-anchored findings additionally become inline
- * annotations, capped at MAX_ANNOTATIONS_PER_REQUEST.
+ * findings and the lenses that failed to produce any. Findings are
+ * rendered strongest first (severity rank, then confidence);
+ * line-anchored findings additionally become inline annotations,
+ * capped at MAX_ANNOTATIONS_PER_REQUEST.
  */
 export function renderCheckRun(
   findings: readonly ReviewFinding[],
+  agentFailures: readonly AgentFailure[] = [],
 ): RenderedCheckRun {
   if (findings.length === 0) {
     return {
-      conclusion: "success",
+      conclusion: agentFailures.length === 0 ? "success" : "neutral",
       output: {
         title: "No issues found",
-        summary: "The AI review found no issues in this pull request.",
+        summary: [
+          "The AI review found no issues in this pull request.",
+          ...failureNotes(agentFailures),
+        ].join("\n\n"),
       },
     };
   }
@@ -98,7 +129,12 @@ export function renderCheckRun(
   const ordered = [...findings].sort(compareFindingStrength);
   const count = findings.length;
   const title = count === 1 ? "1 finding" : `${count} findings`;
-  const summary = [`**${title}**`, "", ...ordered.map(summarise)].join("\n\n");
+  const summary = [
+    `**${title}**`,
+    "",
+    ...ordered.map(summarise),
+    ...failureNotes(agentFailures),
+  ].join("\n\n");
 
   const annotations: CheckRunAnnotation[] = [];
   for (const finding of ordered) {

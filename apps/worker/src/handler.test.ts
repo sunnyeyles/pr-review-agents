@@ -259,11 +259,14 @@ describe("createWorkerHandler", () => {
     ]);
   });
 
-  it("reports a batch item failure when the review (all agents) fails, without publishing", async () => {
+  it("reports a batch item failure when the review (all three agents) fails, without publishing", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const { handler, client, runReview } = makeHandler();
     runReview.mockRejectedValueOnce(
-      new Error("every review agent failed — correctness: invalid JSON"),
+      new Error(
+        "every review agent failed — correctness: invalid JSON; " +
+          "security: model unavailable; architecture: turn cap exceeded",
+      ),
     );
 
     const response = await handler(sqsEvent(validRecord));
@@ -285,7 +288,62 @@ describe("createWorkerHandler", () => {
 
     expect(response.batchItemFailures).toEqual([]);
     expect(client.createCheckRun).toHaveBeenCalledTimes(1);
-    // The failed agent is surfaced in the logs.
+    // The failed agent is surfaced in the logs and in the check run,
+    // without the error detail leaking to GitHub.
+    expect(consoleError).toHaveBeenCalledWith(
+      expect.stringContaining("agent.failed"),
+    );
+    const input = client.createCheckRun.mock.calls[0]?.[0];
+    expect(input?.output.summary).toMatch(
+      /security review.*(did not complete|failed)/is,
+    );
+    expect(input?.output.summary).not.toContain("model unavailable");
+  });
+
+  it("with one agent failed, publishes the other two lenses' findings and notes the failed lens", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const architectureFinding: ReviewFinding = {
+      file: validLineFinding.file,
+      line: 43,
+      category: "architecture",
+      severity: "medium",
+      title: "Session logic reimplemented outside the session service",
+      explanation:
+        "The session lookup duplicates the existing session-service helper instead of reusing it.",
+      confidence: 0.8,
+    };
+    const { handler, client } = makeHandler({
+      candidates: [validLineFinding, architectureFinding],
+      agentFailures: [{ agent: "security", error: "model unavailable" }],
+    });
+    client.listChangedFiles.mockResolvedValueOnce([
+      {
+        filename: validLineFinding.file,
+        status: "modified",
+        additions: 3,
+        deletions: 0,
+        patch: [
+          "@@ -40,2 +40,5 @@",
+          " context line 40",
+          " context line 41",
+          "+added line 42",
+          "+added line 43",
+          "+added line 44",
+        ].join("\n"),
+      },
+    ]);
+
+    const response = await handler(sqsEvent(validRecord));
+
+    expect(response.batchItemFailures).toEqual([]);
+    expect(client.createCheckRun).toHaveBeenCalledTimes(1);
+    const input = client.createCheckRun.mock.calls[0]?.[0];
+    expect(input?.output.title).toBe("2 findings");
+    expect(input?.output.summary).toContain(validLineFinding.title);
+    expect(input?.output.summary).toContain(architectureFinding.title);
+    expect(input?.output.summary).toMatch(
+      /security review.*(did not complete|failed)/is,
+    );
     expect(consoleError).toHaveBeenCalledWith(
       expect.stringContaining("agent.failed"),
     );

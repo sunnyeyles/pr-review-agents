@@ -3,10 +3,11 @@
  *
  * Review Lambda entrypoint: consumes review jobs from SQS via the
  * injectable handler in handler.ts, authenticates as the GitHub App
- * installation, loads the PR, runs the Correctness review agent
- * through the orchestrator, pipes its candidate findings through the
- * deterministic validation chain, and publishes the rendered
- * "AI PR Review" check run.
+ * installation, loads the PR, runs the three review agents —
+ * Correctness, Security, Architecture — concurrently through the
+ * orchestrator (spec §20 partial-failure semantics), pipes their
+ * combined candidate findings through the deterministic validation
+ * chain, and publishes the rendered "AI PR Review" check run.
  *
  * Configuration: the GitHub App private key and the Anthropic API key
  * are read from Secrets Manager at runtime when their *_SECRET_ARN
@@ -17,7 +18,7 @@
  */
 import {
   createAnthropicClient,
-  createCorrectnessAgent,
+  createReviewAgents,
   type AnthropicLike,
 } from "@pr-review/ai";
 import { requireEnv, resolveSecret } from "@pr-review/config";
@@ -47,14 +48,11 @@ async function buildWorkerHandler(): Promise<WorkerHandler> {
       appId: requireEnv("GITHUB_APP_ID"),
       privateKey: await resolveSecret("GITHUB_APP_PRIVATE_KEY"),
     }),
-    // The orchestrator runs the agents for one job; the agent is built
-    // per call because its tools must dispatch to that job's
-    // installation-authenticated GitHub client.
+    // The orchestrator runs the agents for one job; all three agents
+    // are built per call because their tools must dispatch to that
+    // job's installation-authenticated GitHub client.
     runReview: (client, context) =>
-      runReview(
-        [createCorrectnessAgent({ anthropic, model, github: client })],
-        context,
-      ),
+      runReview(createReviewAgents({ anthropic, model, github: client }), context),
   });
 }
 

@@ -180,3 +180,57 @@ describe("renderCheckRun with findings", () => {
     expect(output.annotations?.[0]?.start_line).toBe(55);
   });
 });
+
+describe("renderCheckRun with agent failures", () => {
+  const failure = {
+    agent: "security",
+    error: "model unavailable at https://internal-host.example",
+  };
+
+  it("notes the failed lens in the summary alongside the surviving findings", () => {
+    const rendered = renderCheckRun([finding()], [failure]);
+
+    expect(rendered.conclusion).toBe("neutral");
+    expect(rendered.output.title).toBe("1 finding");
+    expect(rendered.output.summary).toContain(
+      "API failures are being returned as empty results.",
+    );
+    expect(rendered.output.summary).toMatch(
+      /security review.*(did not complete|failed)/is,
+    );
+  });
+
+  it("notes the failed lens even when no finding survived, without claiming success", () => {
+    const rendered = renderCheckRun([], [failure]);
+
+    // A review missing a whole lens must not publish a clean bill of
+    // health: the conclusion drops from "success" to "neutral".
+    expect(rendered.conclusion).toBe("neutral");
+    expect(rendered.output.title).toMatch(/no issues found/i);
+    expect(rendered.output.summary).toMatch(
+      /security review.*(did not complete|failed)/is,
+    );
+  });
+
+  it("lists every failed lens", () => {
+    const rendered = renderCheckRun(
+      [],
+      [failure, { agent: "architecture", error: "turn cap exceeded" }],
+    );
+
+    expect(rendered.output.summary).toMatch(/security/i);
+    expect(rendered.output.summary).toMatch(/architecture/i);
+  });
+
+  it("never leaks the failure error detail into the check run", () => {
+    const rendered = renderCheckRun([finding()], [failure]);
+
+    expect(rendered.output.summary).not.toContain("internal-host.example");
+    expect(rendered.output.summary).not.toContain("model unavailable");
+  });
+
+  it("changes nothing when there are no failures", () => {
+    expect(renderCheckRun([finding()], [])).toEqual(renderCheckRun([finding()]));
+    expect(renderCheckRun([], [])).toEqual(renderCheckRun([]));
+  });
+});
