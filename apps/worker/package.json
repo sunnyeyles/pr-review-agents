@@ -7,10 +7,13 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build": "node ../../scripts/build-lambda.mjs"
   },
   "dependencies": {
+    "@aws-sdk/client-secrets-manager": "^3.1101.0",
     "@pr-review/ai": "workspace:*",
+    "@pr-review/config": "workspace:*",
     "@pr-review/github": "workspace:*",
     "@pr-review/reviewer": "workspace:*",
     "@pr-review/schemas": "workspace:*"

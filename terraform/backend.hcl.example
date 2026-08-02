@@ -1,0 +1,12 @@
+# S3 backend configuration — copy to backend.hcl (gitignored) and fill
+# in your account-specific values, then:
+#
+#   terraform init -backend-config=backend.hcl
+#
+# CI passes the same values as -backend-config flags from repository
+# variables instead of using this file.
+
+bucket       = "YOUR-terraform-state-bucket"
+key          = "pr-review-agents/terraform.tfstate"
+region       = "eu-central-1"
+use_lockfile = true
