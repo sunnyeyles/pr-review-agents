@@ -32,6 +32,9 @@ importers:
       '@pr-review/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@pr-review/logging':
+        specifier: workspace:*
+        version: link:../../packages/logging
       '@pr-review/schemas':
         specifier: workspace:*
         version: link:../../packages/schemas
@@ -57,6 +60,9 @@ importers:
       '@pr-review/github':
         specifier: workspace:*
         version: link:../../packages/github
+      '@pr-review/logging':
+        specifier: workspace:*
+        version: link:../../packages/logging
       '@pr-review/reviewer':
         specifier: workspace:*
         version: link:../../packages/reviewer
@@ -76,6 +82,9 @@ importers:
       '@pr-review/github':
         specifier: workspace:*
         version: link:../github
+      '@pr-review/logging':
+        specifier: workspace:*
+        version: link:../logging
       '@pr-review/schemas':
         specifier: workspace:*
         version: link:../schemas
@@ -103,6 +112,8 @@ importers:
       zod:
         specifier: ^4.4.3
         version: 4.4.3
+
+  packages/logging: {}
 
   packages/reviewer:
     dependencies:

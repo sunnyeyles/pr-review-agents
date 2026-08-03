@@ -29,6 +29,7 @@ export {
   SynthesisError,
   buildSynthesisMessage,
   createSynthesiser,
+  type SynthesisResult,
   type Synthesiser,
   type SynthesiserDeps,
 } from "./synthesiser.js";

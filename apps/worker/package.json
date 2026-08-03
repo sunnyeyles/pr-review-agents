@@ -15,6 +15,7 @@
     "@pr-review/ai": "workspace:*",
     "@pr-review/config": "workspace:*",
     "@pr-review/github": "workspace:*",
+    "@pr-review/logging": "workspace:*",
     "@pr-review/reviewer": "workspace:*",
     "@pr-review/schemas": "workspace:*"
   },

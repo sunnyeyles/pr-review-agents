@@ -5,6 +5,7 @@
  * context. Model calls are always scripted fakes — no real network.
  */
 import type Anthropic from "@anthropic-ai/sdk";
+import { createCapturingLogger } from "@pr-review/logging";
 import { describe, expect, it, vi } from "vitest";
 
 import type { ReviewAgentDeps } from "./agent-runtime.js";
@@ -50,6 +51,7 @@ function makeDeps(responses: Anthropic.Messages.Message[]) {
     anthropic: { messages: { create } },
     model: "claude-test-model",
     github: makeGithub(),
+    logger: createCapturingLogger().logger,
   };
   return { deps, create };
 }
@@ -213,6 +215,7 @@ describe("three lenses over one PR context", () => {
         },
         model: "claude-test-model",
         github: makeGithub(),
+        logger: createCapturingLogger().logger,
       };
       return { agent: { correctness: createCorrectnessAgent, security: createSecurityAgent, architecture: createArchitectureAgent }[lens](deps), finding };
     }

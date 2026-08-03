@@ -25,7 +25,13 @@
  * logs synthesis.failed and falls back to validating the RAW
  * candidates — a synthesis failure never kills the review.
  */
-import { extractAgentOutput, type AnthropicLike } from "@pr-review/ai";
+import {
+  addTokenUsage,
+  emptyTokenUsage,
+  extractAgentOutput,
+  type AnthropicLike,
+  type TokenUsage,
+} from "@pr-review/ai";
 import { reviewFindingSchema, type ReviewFinding } from "@pr-review/schemas";
 
 /** A synthesis-level failure (the model broke the output contract). */
@@ -85,13 +91,24 @@ export interface SynthesiserDeps {
   model: string;
 }
 
+/**
+ * The outcome of one synthesis run: the refined findings plus the token
+ * usage of the single model call (spec §26 — the caller reports it on
+ * the synthesis.completed event). Skipped runs report zero usage.
+ */
+export interface SynthesisResult {
+  /** Refined findings — still UNTRUSTED candidate data. */
+  findings: ReviewFinding[];
+  usage: TokenUsage;
+}
+
 export interface Synthesiser {
   /**
    * Refines raw candidate findings into the synthesised list. The
-   * result is still UNTRUSTED candidate output and must pass
+   * findings are still UNTRUSTED candidate output and must pass
    * validateFindings before anything reaches GitHub.
    */
-  synthesise(candidates: readonly unknown[]): Promise<ReviewFinding[]>;
+  synthesise(candidates: readonly unknown[]): Promise<SynthesisResult>;
 }
 
 /** Builds the Synthesiser over the shared Anthropic seam. */
@@ -111,7 +128,7 @@ export function createSynthesiser(deps: SynthesiserDeps): Synthesiser {
       if (wellFormed.length === 0) {
         // Nothing to refine: skip the model call entirely (see the
         // module doc comment for the documented choice).
-        return [];
+        return { findings: [], usage: emptyTokenUsage() };
       }
 
       const response = await deps.anthropic.messages.create({
@@ -120,6 +137,7 @@ export function createSynthesiser(deps: SynthesiserDeps): Synthesiser {
         system: SYNTHESIS_SYSTEM_PROMPT,
         messages: [{ role: "user", content: buildSynthesisMessage(wellFormed) }],
       });
+      const usage = addTokenUsage(emptyTokenUsage(), response.usage);
 
       const text = response.content
         .flatMap((block) => (block.type === "text" ? [block.text] : []))
@@ -131,7 +149,7 @@ export function createSynthesiser(deps: SynthesiserDeps): Synthesiser {
             `(stop_reason: ${response.stop_reason ?? "unknown"}): ${output.error}`,
         );
       }
-      return output.findings;
+      return { findings: output.findings, usage };
     },
   };
 }

@@ -28,7 +28,7 @@ data "aws_iam_policy_document" "webhook" {
     actions   = ["logs:CreateLogStream", "logs:PutLogEvents"]
     resources = ["${aws_cloudwatch_log_group.webhook.arn}:*"]
   }
-
+ 
   statement {
     sid       = "EnqueueReviewJobs"
     actions   = ["sqs:SendMessage"]

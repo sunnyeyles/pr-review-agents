@@ -52,12 +52,19 @@ const combinedFinding = makeFinding({
 
 type CreateParams = Parameters<AnthropicLike["messages"]["create"]>[0];
 
+/** One scripted response: text, optionally with explicit token usage. */
+type ScriptedResponse =
+  | string
+  | Error
+  | { text: string; inputTokens: number; outputTokens: number };
+
 /**
  * A scripted fake Anthropic client for the single-turn synthesis call.
- * Each entry is either the text of the next response or an Error to
- * reject with. Captures every create() params object for assertions.
+ * Each entry is the text of the next response (optionally with token
+ * usage) or an Error to reject with. Captures every create() params
+ * object for assertions.
  */
-function makeAnthropic(script: readonly (string | Error)[]) {
+function makeAnthropic(script: readonly ScriptedResponse[]) {
   const queue = [...script];
   const calls: CreateParams[] = [];
   const anthropic: AnthropicLike = {
@@ -71,19 +78,23 @@ function makeAnthropic(script: readonly (string | Error)[]) {
         if (next instanceof Error) {
           throw next;
         }
+        const scripted =
+          typeof next === "string"
+            ? { text: next, inputTokens: 1, outputTokens: 1 }
+            : next;
         return {
           id: "msg_synthesis",
           type: "message",
           role: "assistant",
           model: params.model,
           container: null,
-          content: [{ type: "text", text: next, citations: null }],
+          content: [{ type: "text", text: scripted.text, citations: null }],
           stop_reason: "end_turn",
           stop_details: null,
           stop_sequence: null,
           usage: {
-            input_tokens: 1,
-            output_tokens: 1,
+            input_tokens: scripted.inputTokens,
+            output_tokens: scripted.outputTokens,
             cache_creation: null,
             cache_creation_input_tokens: null,
             cache_read_input_tokens: null,
@@ -108,12 +119,30 @@ describe("createSynthesiser", () => {
     const { anthropic } = makeAnthropic([findingsJson([combinedFinding])]);
     const synthesiser = createSynthesiser({ anthropic, model });
 
-    const refined = await synthesiser.synthesise([
+    const { findings } = await synthesiser.synthesise([
       correctnessDuplicate,
       securityDuplicate,
     ]);
 
-    expect(refined).toEqual([combinedFinding]);
+    expect(findings).toEqual([combinedFinding]);
+  });
+
+  it("reports the single model call's token usage on the result (spec §26)", async () => {
+    const { anthropic } = makeAnthropic([
+      {
+        text: findingsJson([combinedFinding]),
+        inputTokens: 321,
+        outputTokens: 45,
+      },
+    ]);
+    const synthesiser = createSynthesiser({ anthropic, model });
+
+    const { usage } = await synthesiser.synthesise([
+      correctnessDuplicate,
+      securityDuplicate,
+    ]);
+
+    expect(usage).toEqual({ inputTokens: 321, outputTokens: 45 });
   });
 
   it("makes exactly one single-turn model call with no tools", async () => {
@@ -173,9 +202,9 @@ describe("createSynthesiser", () => {
     const { anthropic } = makeAnthropic([findingsJson([strong])]);
     const synthesiser = createSynthesiser({ anthropic, model });
 
-    const refined = await synthesiser.synthesise([strong, weak]);
+    const { findings } = await synthesiser.synthesise([strong, weak]);
 
-    expect(refined).toEqual([strong]);
+    expect(findings).toEqual([strong]);
   });
 
   it("propagates the model's severity corrections", async () => {
@@ -184,19 +213,22 @@ describe("createSynthesiser", () => {
     const { anthropic } = makeAnthropic([findingsJson([corrected])]);
     const synthesiser = createSynthesiser({ anthropic, model });
 
-    const refined = await synthesiser.synthesise([overstated]);
+    const { findings } = await synthesiser.synthesise([overstated]);
 
-    expect(refined).toEqual([corrected]);
-    expect(refined[0]?.severity).toBe("medium");
+    expect(findings).toEqual([corrected]);
+    expect(findings[0]?.severity).toBe("medium");
   });
 
-  it("skips the model call entirely when there are no candidates", async () => {
+  it("skips the model call entirely when there are no candidates, reporting zero usage", async () => {
     const { anthropic, calls } = makeAnthropic([]);
     const synthesiser = createSynthesiser({ anthropic, model });
 
-    const refined = await synthesiser.synthesise([]);
+    const result = await synthesiser.synthesise([]);
 
-    expect(refined).toEqual([]);
+    expect(result).toEqual({
+      findings: [],
+      usage: { inputTokens: 0, outputTokens: 0 },
+    });
     expect(calls).toHaveLength(0);
   });
 
@@ -204,12 +236,15 @@ describe("createSynthesiser", () => {
     const { anthropic, calls } = makeAnthropic([]);
     const synthesiser = createSynthesiser({ anthropic, model });
 
-    const refined = await synthesiser.synthesise([
+    const result = await synthesiser.synthesise([
       { nonsense: true },
       "not a finding",
     ]);
 
-    expect(refined).toEqual([]);
+    expect(result).toEqual({
+      findings: [],
+      usage: { inputTokens: 0, outputTokens: 0 },
+    });
     expect(calls).toHaveLength(0);
   });
 
@@ -259,10 +294,10 @@ describe("createSynthesiser", () => {
       },
     ];
 
-    const refined = await synthesiser.synthesise([correctnessDuplicate]);
-    const validated = validateFindings(refined, changedFiles);
+    const { findings } = await synthesiser.synthesise([correctnessDuplicate]);
+    const validated = validateFindings(findings, changedFiles);
 
-    expect(refined).toEqual([fabricated]);
+    expect(findings).toEqual([fabricated]);
     expect(validated).toEqual([]);
   });
 });

@@ -20,12 +20,14 @@
  */
 import type Anthropic from "@anthropic-ai/sdk";
 import type { GithubInstallationClient } from "@pr-review/github";
+import { createConsoleLogger, type StructuredLogger } from "@pr-review/logging";
 import type { FindingCategory } from "@pr-review/schemas";
 
 import { extractAgentOutput } from "./agent-output.js";
 import type { AnthropicLike } from "./anthropic.js";
 import type { ReviewAgent, ReviewContext } from "./review-types.js";
 import { dispatchReviewTool, reviewTools, type ReviewToolScope } from "./tools.js";
+import { addTokenUsage, emptyTokenUsage } from "./usage.js";
 
 /** An agent-level failure (bad final output, turn cap, ...). */
 export class AgentRunError extends Error {
@@ -162,6 +164,14 @@ export interface ReviewAgentDeps {
   model: string;
   github: GithubInstallationClient;
   maxTurns?: number | undefined;
+  /**
+   * Structured lifecycle logger (spec §26): the runtime emits
+   * agent.started / agent.completed / agent.failed here, carrying the
+   * review's correlation fields plus per-run duration and aggregated
+   * token usage. Defaults to the console logger (single-line JSON for
+   * CloudWatch); tests inject a capturing logger.
+   */
+  logger?: StructuredLogger | undefined;
 }
 
 /**
@@ -174,6 +184,7 @@ export function createReviewAgent(
 ): ReviewAgent {
   const maxTurns = deps.maxTurns ?? DEFAULT_MAX_TURNS;
   const systemPrompt = buildReviewSystemPrompt(lens);
+  const logger = deps.logger ?? createConsoleLogger();
 
   return {
     name: lens.category,
@@ -187,79 +198,118 @@ export function createReviewAgent(
         baseSha: context.pullRequest.baseSha,
       };
 
-      const messages: Anthropic.Messages.MessageParam[] = [
-        { role: "user", content: buildOpeningMessage(context) },
-      ];
+      // Spec §26: every event of one agent run carries the review's
+      // correlation fields plus the agent name, and the completed /
+      // failed events add duration and the token usage aggregated
+      // across every model call of the run.
+      const eventFields = {
+        repository: `${context.owner}/${context.repo}`,
+        pullRequestNumber: context.pullRequest.number,
+        headSha: context.pullRequest.headSha,
+        agent: lens.category,
+      };
+      logger.info("agent.started", eventFields);
+      const startedAt = Date.now();
+      let usage = emptyTokenUsage();
 
-      for (let turn = 0; turn < maxTurns; turn += 1) {
-        const response = await deps.anthropic.messages.create({
-          model: deps.model,
-          max_tokens: MAX_OUTPUT_TOKENS,
-          system: systemPrompt,
-          tools: anthropicToolDefinitions,
-          messages,
-        });
+      const runLoop = async (): Promise<readonly unknown[]> => {
+        const messages: Anthropic.Messages.MessageParam[] = [
+          { role: "user", content: buildOpeningMessage(context) },
+        ];
 
-        const toolUses = response.content.filter(
-          (block): block is Anthropic.Messages.ToolUseBlock =>
-            block.type === "tool_use",
-        );
+        for (let turn = 0; turn < maxTurns; turn += 1) {
+          const response = await deps.anthropic.messages.create({
+            model: deps.model,
+            max_tokens: MAX_OUTPUT_TOKENS,
+            system: systemPrompt,
+            tools: anthropicToolDefinitions,
+            messages,
+          });
+          usage = addTokenUsage(usage, response.usage);
 
-        if (toolUses.length > 0) {
-          // Replay the assistant content verbatim (thinking blocks
-          // included), then answer every tool_use in one user turn.
-          messages.push({ role: "assistant", content: response.content });
-          const results: Anthropic.Messages.ToolResultBlockParam[] = [];
-          for (const toolUse of toolUses) {
-            const outcome = await dispatchReviewTool(
-              deps.github,
-              scope,
-              toolUse.name,
-              toolUse.input,
-            );
-            results.push(
-              outcome.ok
-                ? {
-                    type: "tool_result",
-                    tool_use_id: toolUse.id,
-                    content: outcome.content,
-                  }
-                : {
-                    type: "tool_result",
-                    tool_use_id: toolUse.id,
-                    content: outcome.error,
-                    is_error: true,
-                  },
+          const toolUses = response.content.filter(
+            (block): block is Anthropic.Messages.ToolUseBlock =>
+              block.type === "tool_use",
+          );
+
+          if (toolUses.length > 0) {
+            // Replay the assistant content verbatim (thinking blocks
+            // included), then answer every tool_use in one user turn.
+            messages.push({ role: "assistant", content: response.content });
+            const results: Anthropic.Messages.ToolResultBlockParam[] = [];
+            for (const toolUse of toolUses) {
+              const outcome = await dispatchReviewTool(
+                deps.github,
+                scope,
+                toolUse.name,
+                toolUse.input,
+              );
+              results.push(
+                outcome.ok
+                  ? {
+                      type: "tool_result",
+                      tool_use_id: toolUse.id,
+                      content: outcome.content,
+                    }
+                  : {
+                      type: "tool_result",
+                      tool_use_id: toolUse.id,
+                      content: outcome.error,
+                      is_error: true,
+                    },
+              );
+            }
+            messages.push({ role: "user", content: results });
+            continue;
+          }
+
+          const text = response.content
+            .filter(
+              (block): block is Anthropic.Messages.TextBlock =>
+                block.type === "text",
+            )
+            .map((block) => block.text)
+            .join("\n");
+          const output = extractAgentOutput(text);
+          if (!output.ok) {
+            throw new AgentRunError(
+              `${lens.category} agent produced invalid findings output ` +
+                `(stop_reason: ${response.stop_reason ?? "unknown"}): ${output.error}`,
             );
           }
-          messages.push({ role: "user", content: results });
-          continue;
-        }
-
-        const text = response.content
-          .filter(
-            (block): block is Anthropic.Messages.TextBlock =>
-              block.type === "text",
-          )
-          .map((block) => block.text)
-          .join("\n");
-        const output = extractAgentOutput(text);
-        if (!output.ok) {
-          throw new AgentRunError(
-            `${lens.category} agent produced invalid findings output ` +
-              `(stop_reason: ${response.stop_reason ?? "unknown"}): ${output.error}`,
+          // Category integrity: an agent only ever contributes findings
+          // in its own category (see the module doc comment).
+          return output.findings.filter(
+            (finding) => finding.category === lens.category,
           );
         }
-        // Category integrity: an agent only ever contributes findings
-        // in its own category (see the module doc comment).
-        return output.findings.filter(
-          (finding) => finding.category === lens.category,
-        );
-      }
 
-      throw new AgentRunError(
-        `${lens.category} agent exceeded the ${maxTurns}-turn cap without returning findings`,
-      );
+        throw new AgentRunError(
+          `${lens.category} agent exceeded the ${maxTurns}-turn cap without returning findings`,
+        );
+      };
+
+      try {
+        const findings = await runLoop();
+        logger.info("agent.completed", {
+          ...eventFields,
+          durationMs: Date.now() - startedAt,
+          inputTokens: usage.inputTokens,
+          outputTokens: usage.outputTokens,
+          findingCount: findings.length,
+        });
+        return findings;
+      } catch (error) {
+        logger.error("agent.failed", {
+          ...eventFields,
+          durationMs: Date.now() - startedAt,
+          inputTokens: usage.inputTokens,
+          outputTokens: usage.outputTokens,
+          error: error instanceof Error ? error.message : String(error),
+          errorName: error instanceof Error ? error.name : "Error",
+        });
+        throw error;
+      }
     },
   };
 }

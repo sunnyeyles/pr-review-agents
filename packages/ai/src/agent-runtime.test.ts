@@ -5,6 +5,7 @@
  * predate the runtime extraction and keep it refactor-safe.
  */
 import type Anthropic from "@anthropic-ai/sdk";
+import { createCapturingLogger } from "@pr-review/logging";
 import { describe, expect, it } from "vitest";
 
 import { AgentRunError } from "./agent-runtime.js";
@@ -40,13 +41,15 @@ function makeAgent(
 ) {
   const { anthropic, create } = makeAnthropic(responses);
   const github = makeGithub();
+  const { logger, entries } = createCapturingLogger();
   const agent = createCorrectnessAgent({
     anthropic,
     model: "claude-test-model",
     github,
+    logger,
     ...(options.maxTurns !== undefined ? { maxTurns: options.maxTurns } : {}),
   });
-  return { agent, create, github };
+  return { agent, create, github, entries };
 }
 
 describe("createCorrectnessAgent", () => {
@@ -256,6 +259,7 @@ describe("createCorrectnessAgent", () => {
       anthropic,
       model: "claude-test-model",
       github: makeGithub(),
+      logger: createCapturingLogger().logger,
     });
 
     await expect(agent.run(context)).rejects.toThrow("529 overloaded");
@@ -294,5 +298,137 @@ describe("category integrity", () => {
     ]);
 
     await expect(agent.run(context)).resolves.toEqual([]);
+  });
+});
+
+describe("lifecycle events (spec §26)", () => {
+  // Every event of one agent run carries the review's identity plus
+  // the agent name, so an operator can correlate it with the rest of
+  // the review's events in CloudWatch.
+  const correlation = {
+    repository: "octo-org/example-service",
+    pullRequestNumber: 42,
+    headSha,
+    agent: "correctness",
+  };
+
+  it("emits agent.started with the correlation fields before any model call", async () => {
+    const { agent, entries } = makeAgent([
+      message([textBlock(finalJson)], "end_turn"),
+    ]);
+
+    await agent.run(context);
+
+    expect(entries[0]).toMatchObject({
+      level: "info",
+      event: "agent.started",
+      ...correlation,
+    });
+  });
+
+  it("emits agent.completed with duration, aggregated token usage, and finding count", async () => {
+    // A two-turn run: usage must be SUMMED across both model calls.
+    const { agent, entries } = makeAgent([
+      message([toolUseBlock("toolu_1", "get_diff", {})], "tool_use", {
+        inputTokens: 100,
+        outputTokens: 10,
+      }),
+      message([textBlock(finalJson)], "end_turn", {
+        inputTokens: 250,
+        outputTokens: 25,
+      }),
+    ]);
+
+    await agent.run(context);
+
+    expect(entries.map((entry) => entry.event)).toEqual([
+      "agent.started",
+      "agent.completed",
+    ]);
+    const completed = entries[1];
+    expect(completed).toMatchObject({
+      level: "info",
+      event: "agent.completed",
+      ...correlation,
+      inputTokens: 350,
+      outputTokens: 35,
+      findingCount: 1,
+    });
+    expect(typeof completed?.["durationMs"]).toBe("number");
+  });
+
+  it("emits agent.failed with the error and usage so far when the final output is invalid", async () => {
+    const { agent, entries } = makeAgent([
+      message([textBlock("prose, not JSON")], "end_turn", {
+        inputTokens: 80,
+        outputTokens: 8,
+      }),
+    ]);
+
+    await expect(agent.run(context)).rejects.toThrow(AgentRunError);
+
+    expect(entries.map((entry) => entry.event)).toEqual([
+      "agent.started",
+      "agent.failed",
+    ]);
+    const failed = entries[1];
+    expect(failed).toMatchObject({
+      level: "error",
+      event: "agent.failed",
+      ...correlation,
+      errorName: "AgentRunError",
+      inputTokens: 80,
+      outputTokens: 8,
+    });
+    expect(failed?.["error"]).toMatch(/invalid findings output/i);
+    expect(typeof failed?.["durationMs"]).toBe("number");
+  });
+
+  it("emits agent.failed when the model API call rejects", async () => {
+    const { anthropic } = makeAnthropic([]);
+    anthropic.messages.create.mockRejectedValueOnce(new Error("529 overloaded"));
+    const { logger, entries } = createCapturingLogger();
+    const agent = createCorrectnessAgent({
+      anthropic,
+      model: "claude-test-model",
+      github: makeGithub(),
+      logger,
+    });
+
+    await expect(agent.run(context)).rejects.toThrow("529 overloaded");
+
+    expect(entries[1]).toMatchObject({
+      level: "error",
+      event: "agent.failed",
+      ...correlation,
+      error: "529 overloaded",
+      errorName: "Error",
+      inputTokens: 0,
+      outputTokens: 0,
+    });
+  });
+
+  it("emits agent.failed when the turn cap is exceeded, with the usage burned so far", async () => {
+    const toolTurn = () =>
+      message([toolUseBlock("toolu_1", "get_diff", {})], "tool_use", {
+        inputTokens: 40,
+        outputTokens: 4,
+      });
+    const { agent, entries } = makeAgent([toolTurn(), toolTurn(), toolTurn()], {
+      maxTurns: 2,
+    });
+
+    await expect(agent.run(context)).rejects.toThrow(/turn/i);
+
+    const failed = entries[1];
+    expect(failed).toMatchObject({
+      level: "error",
+      event: "agent.failed",
+      ...correlation,
+      errorName: "AgentRunError",
+      inputTokens: 80,
+      outputTokens: 8,
+    });
+    expect(failed?.["error"]).toMatch(/turn/i);
   });
 });

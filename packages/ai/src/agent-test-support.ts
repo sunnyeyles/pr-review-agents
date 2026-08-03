@@ -86,6 +86,10 @@ export function toolUseBlock(
 export function message(
   content: Anthropic.Messages.ContentBlock[],
   stopReason: Anthropic.Messages.Message["stop_reason"],
+  usage: { inputTokens: number; outputTokens: number } = {
+    inputTokens: 1,
+    outputTokens: 1,
+  },
 ): Anthropic.Messages.Message {
   return {
     id: "msg_test",
@@ -98,8 +102,8 @@ export function message(
     stop_details: null,
     stop_sequence: null,
     usage: {
-      input_tokens: 1,
-      output_tokens: 1,
+      input_tokens: usage.inputTokens,
+      output_tokens: usage.outputTokens,
       cache_creation: null,
       cache_creation_input_tokens: null,
       cache_read_input_tokens: null,

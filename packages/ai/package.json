@@ -12,6 +12,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.115.0",
     "@pr-review/github": "workspace:*",
+    "@pr-review/logging": "workspace:*",
     "@pr-review/schemas": "workspace:*",
     "zod": "^4.4.3"
   }

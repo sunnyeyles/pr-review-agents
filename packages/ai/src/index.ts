@@ -10,11 +10,16 @@
  * @pr-review/reviewer and the worker.
  */
 import { GITHUB_PACKAGE } from "@pr-review/github";
+import { LOGGING_PACKAGE } from "@pr-review/logging";
 import { SCHEMAS_PACKAGE } from "@pr-review/schemas";
 
 export const AI_PACKAGE = "@pr-review/ai";
 
-export const aiPackageDependencies = [SCHEMAS_PACKAGE, GITHUB_PACKAGE] as const;
+export const aiPackageDependencies = [
+  SCHEMAS_PACKAGE,
+  GITHUB_PACKAGE,
+  LOGGING_PACKAGE,
+] as const;
 
 export {
   createAnthropicClient,
@@ -28,6 +33,7 @@ export {
   type AgentOutputResult,
 } from "./agent-output.js";
 export type { ReviewAgent, ReviewContext } from "./review-types.js";
+export { addTokenUsage, emptyTokenUsage, type TokenUsage } from "./usage.js";
 export {
   MAX_TOOL_RESULT_CHARS,
   dispatchReviewTool,
