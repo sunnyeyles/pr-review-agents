@@ -6,6 +6,17 @@
  * six read-only tools, and reports findings ONLY as a final JSON
  * object validated by agentOutputSchema.
  *
+ * The loop itself is a LangGraph StateGraph with two nodes — callModel
+ * and callTools — wired exactly like the classic LangGraph tool-calling
+ * agent: callModel either stops the run (final answer or an exceeded
+ * turn cap) or hands off to callTools, which dispatches every requested
+ * tool and loops back to callModel. Using LangGraph here buys the
+ * orchestration (message-state threading, conditional routing, the
+ * turn-by-turn graph a `runReviewPipeline` step can compose alongside
+ * the other agents) without touching the model contract: the Anthropic
+ * seam (AnthropicLike), the read-only tools, and the §15 output
+ * contract are unchanged.
+ *
  * Category integrity (ticket 07 decision): the runtime FILTERS the
  * validated findings to the lens's own category. Leaked cross-category
  * findings are dropped, not re-stamped — re-stamping would fabricate a
@@ -22,12 +33,13 @@ import type Anthropic from "@anthropic-ai/sdk";
 import type { GithubInstallationClient } from "@pr-review/github";
 import { createConsoleLogger, type StructuredLogger } from "@pr-review/logging";
 import type { FindingCategory } from "@pr-review/schemas";
+import { Annotation, END, START, StateGraph } from "@langchain/langgraph";
 
 import { extractAgentOutput } from "./agent-output.js";
 import type { AnthropicLike } from "./anthropic.js";
 import type { ReviewAgent, ReviewContext } from "./review-types.js";
 import { dispatchReviewTool, reviewTools, type ReviewToolScope } from "./tools.js";
-import { addTokenUsage, emptyTokenUsage } from "./usage.js";
+import { addTokenUsage, emptyTokenUsage, type TokenUsage } from "./usage.js";
 
 /** An agent-level failure (bad final output, turn cap, ...). */
 export class AgentRunError extends Error {
@@ -174,6 +186,40 @@ export interface ReviewAgentDeps {
   logger?: StructuredLogger | undefined;
 }
 
+/** Why callModel stopped: hand off to tools, a final answer, or the turn cap. */
+type StopReason = "toolUse" | "final" | "turnCap";
+
+/**
+ * The per-agent loop's graph state. `messages` threads the Anthropic
+ * conversation exactly as the manual loop did (assistant content
+ * replayed verbatim, tool results answered in one user turn); `turn`
+ * and `usage` are running totals a node overwrites with the new total
+ * on every call.
+ */
+const AgentLoopState = Annotation.Root({
+  messages: Annotation<Anthropic.Messages.MessageParam[]>({
+    reducer: (left, right) => left.concat(right),
+    default: () => [],
+  }),
+  turn: Annotation<number>({
+    reducer: (_left, right) => right,
+    default: () => 0,
+  }),
+  usage: Annotation<TokenUsage>({
+    reducer: (_left, right) => right,
+    default: emptyTokenUsage,
+  }),
+  stopReason: Annotation<StopReason | undefined>({
+    reducer: (_left, right) => right,
+    default: () => undefined,
+  }),
+  /** The Anthropic API's own stop_reason for the last model call, for diagnostics. */
+  apiStopReason: Annotation<string | undefined>({
+    reducer: (_left, right) => right,
+    default: () => undefined,
+  }),
+});
+
 /**
  * Builds one review agent: the given lens over the shared runtime,
  * with its tools bound to one installation's GitHub client.
@@ -212,85 +258,131 @@ export function createReviewAgent(
       const startedAt = Date.now();
       let usage = emptyTokenUsage();
 
-      const runLoop = async (): Promise<readonly unknown[]> => {
-        const messages: Anthropic.Messages.MessageParam[] = [
-          { role: "user", content: buildOpeningMessage(context) },
-        ];
+      // callModel: makes one model call (unless the turn cap is
+      // already exhausted, in which case it stops WITHOUT spending a
+      // call) and decides whether to hand off to callTools or stop.
+      async function callModel(
+        state: typeof AgentLoopState.State,
+      ): Promise<typeof AgentLoopState.Update> {
+        const turn = state.turn + 1;
+        if (turn > maxTurns) {
+          return { turn, stopReason: "turnCap" };
+        }
 
-        for (let turn = 0; turn < maxTurns; turn += 1) {
-          const response = await deps.anthropic.messages.create({
-            model: deps.model,
-            max_tokens: MAX_OUTPUT_TOKENS,
-            system: systemPrompt,
-            tools: anthropicToolDefinitions,
-            messages,
-          });
-          usage = addTokenUsage(usage, response.usage);
+        const response = await deps.anthropic.messages.create({
+          model: deps.model,
+          max_tokens: MAX_OUTPUT_TOKENS,
+          system: systemPrompt,
+          tools: anthropicToolDefinitions,
+          messages: state.messages,
+        });
+        const nextUsage = addTokenUsage(state.usage, response.usage);
 
-          const toolUses = response.content.filter(
-            (block): block is Anthropic.Messages.ToolUseBlock =>
-              block.type === "tool_use",
+        const toolUses = response.content.filter(
+          (block): block is Anthropic.Messages.ToolUseBlock =>
+            block.type === "tool_use",
+        );
+
+        return {
+          messages: [{ role: "assistant", content: response.content }],
+          turn,
+          usage: nextUsage,
+          stopReason: toolUses.length > 0 ? "toolUse" : "final",
+          apiStopReason: response.stop_reason ?? undefined,
+        };
+      }
+
+      // callTools: answers every tool_use in the last assistant message
+      // in one user turn, then loops back to callModel.
+      async function callTools(
+        state: typeof AgentLoopState.State,
+      ): Promise<typeof AgentLoopState.Update> {
+        const last = state.messages[state.messages.length - 1];
+        const content =
+          last?.role === "assistant" && Array.isArray(last.content)
+            ? last.content
+            : [];
+        const toolUses = content.filter(
+          (block): block is Anthropic.Messages.ToolUseBlock =>
+            typeof block === "object" && block !== null && "type" in block &&
+            block.type === "tool_use",
+        );
+
+        const results: Anthropic.Messages.ToolResultBlockParam[] = [];
+        for (const toolUse of toolUses) {
+          const outcome = await dispatchReviewTool(
+            deps.github,
+            scope,
+            toolUse.name,
+            toolUse.input,
           );
+          results.push(
+            outcome.ok
+              ? {
+                  type: "tool_result",
+                  tool_use_id: toolUse.id,
+                  content: outcome.content,
+                }
+              : {
+                  type: "tool_result",
+                  tool_use_id: toolUse.id,
+                  content: outcome.error,
+                  is_error: true,
+                },
+          );
+        }
+        return { messages: [{ role: "user", content: results }] };
+      }
 
-          if (toolUses.length > 0) {
-            // Replay the assistant content verbatim (thinking blocks
-            // included), then answer every tool_use in one user turn.
-            messages.push({ role: "assistant", content: response.content });
-            const results: Anthropic.Messages.ToolResultBlockParam[] = [];
-            for (const toolUse of toolUses) {
-              const outcome = await dispatchReviewTool(
-                deps.github,
-                scope,
-                toolUse.name,
-                toolUse.input,
-              );
-              results.push(
-                outcome.ok
-                  ? {
-                      type: "tool_result",
-                      tool_use_id: toolUse.id,
-                      content: outcome.content,
-                    }
-                  : {
-                      type: "tool_result",
-                      tool_use_id: toolUse.id,
-                      content: outcome.error,
-                      is_error: true,
-                    },
-              );
-            }
-            messages.push({ role: "user", content: results });
-            continue;
-          }
+      const graph = new StateGraph(AgentLoopState)
+        .addNode("callModel", callModel)
+        .addNode("callTools", callTools)
+        .addEdge(START, "callModel")
+        .addConditionalEdges(
+          "callModel",
+          (state) => (state.stopReason === "toolUse" ? "callTools" : END),
+          { callTools: "callTools", [END]: END },
+        )
+        .addEdge("callTools", "callModel")
+        .compile();
 
-          const text = response.content
-            .filter(
-              (block): block is Anthropic.Messages.TextBlock =>
-                block.type === "text",
-            )
-            .map((block) => block.text)
-            .join("\n");
-          const output = extractAgentOutput(text);
-          if (!output.ok) {
-            throw new AgentRunError(
-              `${lens.category} agent produced invalid findings output ` +
-                `(stop_reason: ${response.stop_reason ?? "unknown"}): ${output.error}`,
-            );
-          }
-          // Category integrity: an agent only ever contributes findings
-          // in its own category (see the module doc comment).
-          return output.findings.filter(
-            (finding) => finding.category === lens.category,
+      try {
+        const finalState = await graph.invoke({
+          messages: [{ role: "user", content: buildOpeningMessage(context) }],
+        });
+        usage = finalState.usage;
+
+        if (finalState.stopReason === "turnCap") {
+          throw new AgentRunError(
+            `${lens.category} agent exceeded the ${maxTurns}-turn cap without returning findings`,
           );
         }
 
-        throw new AgentRunError(
-          `${lens.category} agent exceeded the ${maxTurns}-turn cap without returning findings`,
+        const last = finalState.messages[finalState.messages.length - 1];
+        const text =
+          last?.role === "assistant" && Array.isArray(last.content)
+            ? last.content
+                .filter(
+                  (block): block is Anthropic.Messages.TextBlock =>
+                    typeof block === "object" && block !== null && "type" in block &&
+                    block.type === "text",
+                )
+                .map((block) => block.text)
+                .join("\n")
+            : "";
+        const output = extractAgentOutput(text);
+        if (!output.ok) {
+          throw new AgentRunError(
+            `${lens.category} agent produced invalid findings output ` +
+              `(stop_reason: ${finalState.apiStopReason ?? "unknown"}): ${output.error}`,
+          );
+        }
+        // Category integrity: an agent only ever contributes findings
+        // in its own category (see the module doc comment).
+        const findings = output.findings.filter(
+          (finding) => finding.category === lens.category,
         );
-      };
 
-      try {
-        const findings = await runLoop();
         logger.info("agent.completed", {
           ...eventFields,
           durationMs: Date.now() - startedAt,
