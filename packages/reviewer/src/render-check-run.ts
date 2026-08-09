@@ -21,7 +21,7 @@ import type {
 } from "@pr-review/github";
 import type { ReviewFinding } from "@pr-review/schemas";
 
-import type { AgentFailure } from "./orchestrator.js";
+import type { AgentFailure } from "./review-graph.js";
 import { compareFindingStrength } from "./validate-findings.js";
 
 /** The GitHub checks API accepts at most 50 annotations per request. */

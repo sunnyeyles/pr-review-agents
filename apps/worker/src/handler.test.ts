@@ -7,7 +7,7 @@ import type {
   PullRequestRef,
 } from "@pr-review/github";
 import { createCapturingLogger } from "@pr-review/logging";
-import type { ReviewRunResult } from "@pr-review/reviewer";
+import type { ReviewPipelineResult } from "@pr-review/reviewer";
 import type { ReviewFinding, ReviewJob } from "@pr-review/schemas";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -118,32 +118,45 @@ function makeClient() {
   } satisfies GithubInstallationClient;
 }
 
-function makeHandler(reviewResult: ReviewRunResult = { candidates: [], agentFailures: [] }) {
+/**
+ * Builds a ReviewPipelineResult fixture: candidates default to a clean
+ * review (no candidates, no failures), and `findings` defaults to
+ * whatever `validateFindings` would keep from `candidates` against
+ * `changedFilesWithAddedLines` — but since these tests script the
+ * pipeline's OUTPUT directly (the pipeline itself is unit-tested in
+ * @pr-review/reviewer's review-graph.test.ts), callers pass `findings`
+ * explicitly whenever it should differ from `candidates`.
+ */
+function reviewResult(overrides: Partial<ReviewPipelineResult> = {}): ReviewPipelineResult {
+  const candidates = overrides.candidates ?? [];
+  return {
+    candidates,
+    agentFailures: [],
+    synthesisedCandidateCount: candidates.length,
+    synthesisOutcome: candidates.length === 0 ? "skipped" : "completed",
+    synthesisUsage: { inputTokens: 0, outputTokens: 0 },
+    findings: candidates as ReviewFinding[],
+    ...overrides,
+  };
+}
+
+function makeHandler(review: ReviewPipelineResult = reviewResult()) {
   const client = makeClient();
   const createInstallationClient = vi.fn(() => client);
-  const runReview = vi.fn(
-    async (_client: GithubInstallationClient, _context: ReviewContext) =>
-      reviewResult,
+  const runReviewPipeline = vi.fn(
+    async (_client: GithubInstallationClient, _context: ReviewContext) => review,
   );
-  // Passthrough synthesiser by default: tests that exercise synthesis
-  // script it per test.
-  const synthesise = vi.fn(async (candidates: readonly unknown[]) => ({
-    findings: candidates,
-    usage: { inputTokens: 0, outputTokens: 0 },
-  }));
   const { logger, entries } = createCapturingLogger();
   const handler = createWorkerHandler({
     createInstallationClient,
-    runReview,
-    synthesise,
+    runReviewPipeline,
     logger,
   });
   return {
     handler,
     client,
     createInstallationClient,
-    runReview,
-    synthesise,
+    runReviewPipeline,
     entries,
   };
 }
@@ -209,12 +222,12 @@ describe("createWorkerHandler", () => {
     expect(client.getDiff).toHaveBeenCalledExactlyOnceWith(ref);
   });
 
-  it("runs the review against the loaded context with the installation client", async () => {
-    const { handler, client, runReview } = makeHandler();
+  it("runs the review pipeline against the loaded context with the installation client", async () => {
+    const { handler, client, runReviewPipeline } = makeHandler();
 
     await handler(sqsEvent(validRecord));
 
-    expect(runReview).toHaveBeenCalledExactlyOnceWith(client, {
+    expect(runReviewPipeline).toHaveBeenCalledExactlyOnceWith(client, {
       owner: job.owner,
       repo: job.repo,
       pullRequest,
@@ -225,11 +238,13 @@ describe("createWorkerHandler", () => {
 
   it("publishes a clean check run when no candidate survives validation", async () => {
     // None of these candidates reference the PR's actual changed file,
-    // so the deterministic chain drops them all.
-    const { handler, client } = makeHandler({
-      candidates: [schemaInvalidFinding, wrongFileFinding, lowConfidenceFinding],
-      agentFailures: [],
-    });
+    // so the deterministic chain (inside the pipeline) drops them all.
+    const { handler, client } = makeHandler(
+      reviewResult({
+        candidates: [schemaInvalidFinding, wrongFileFinding, lowConfidenceFinding],
+        findings: [],
+      }),
+    );
 
     await handler(sqsEvent(validRecord));
 
@@ -245,28 +260,27 @@ describe("createWorkerHandler", () => {
     expect(input?.output.annotations).toBeUndefined();
   });
 
-  it("publishes surviving agent findings through validation and rendering", async () => {
-    const { handler, client } = makeHandler({
-      candidates: [
-        schemaInvalidFinding,
-        wrongFileFinding,
-        lowConfidenceFinding,
-        validLineFinding,
-        fileLevelFinding,
-      ],
-      agentFailures: [],
-    });
-    // A PR that actually changes the file the candidates reference,
-    // with added lines 42-44 on the new side.
-    client.listChangedFiles.mockResolvedValueOnce(changedFilesWithAddedLines);
+  it("publishes the pipeline's validated findings through rendering", async () => {
+    const { handler, client } = makeHandler(
+      reviewResult({
+        candidates: [
+          schemaInvalidFinding,
+          wrongFileFinding,
+          lowConfidenceFinding,
+          validLineFinding,
+          fileLevelFinding,
+        ],
+        // Only the valid line-anchored and file-level candidates survive
+        // the pipeline's deterministic chain: the wrong-file,
+        // low-confidence, and schema-invalid ones are dropped.
+        findings: [validLineFinding, fileLevelFinding],
+      }),
+    );
 
     await handler(sqsEvent(validRecord));
 
     expect(client.createCheckRun).toHaveBeenCalledTimes(1);
     const input = client.createCheckRun.mock.calls[0]?.[0];
-    // Only the valid line-anchored and file-level candidates survive:
-    // the wrong-file, low-confidence, and schema-invalid ones are
-    // dropped by the deterministic chain.
     expect(input?.conclusion).toBe("neutral");
     expect(input?.output.title).toBe("2 findings");
     expect(input?.output.summary).toContain(validLineFinding.title);
@@ -282,9 +296,9 @@ describe("createWorkerHandler", () => {
     ]);
   });
 
-  it("reports a batch item failure when the review (all three agents) fails, without publishing", async () => {
-    const { handler, client, runReview } = makeHandler();
-    runReview.mockRejectedValueOnce(
+  it("reports a batch item failure when the review pipeline (all three agents) fails, without publishing", async () => {
+    const { handler, client, runReviewPipeline } = makeHandler();
+    runReviewPipeline.mockRejectedValueOnce(
       new Error(
         "every review agent failed — correctness: invalid JSON; " +
           "security: model unavailable; architecture: turn cap exceeded",
@@ -300,10 +314,13 @@ describe("createWorkerHandler", () => {
   });
 
   it("still publishes when some agents failed but candidates survived", async () => {
-    const { handler, client } = makeHandler({
-      candidates: [],
-      agentFailures: [{ agent: "security", error: "model unavailable" }],
-    });
+    const { handler, client } = makeHandler(
+      reviewResult({
+        candidates: [],
+        findings: [],
+        agentFailures: [{ agent: "security", error: "model unavailable" }],
+      }),
+    );
 
     const response = await handler(sqsEvent(validRecord));
 
@@ -330,11 +347,13 @@ describe("createWorkerHandler", () => {
         "The session lookup duplicates the existing session-service helper instead of reusing it.",
       confidence: 0.8,
     };
-    const { handler, client } = makeHandler({
-      candidates: [validLineFinding, architectureFinding],
-      agentFailures: [{ agent: "security", error: "model unavailable" }],
-    });
-    client.listChangedFiles.mockResolvedValueOnce(changedFilesWithAddedLines);
+    const { handler, client } = makeHandler(
+      reviewResult({
+        candidates: [validLineFinding, architectureFinding],
+        findings: [validLineFinding, architectureFinding],
+        agentFailures: [{ agent: "security", error: "model unavailable" }],
+      }),
+    );
 
     const response = await handler(sqsEvent(validRecord));
 
@@ -349,31 +368,27 @@ describe("createWorkerHandler", () => {
     );
   });
 
-  it("pipes the raw candidates through the synthesiser and publishes the synthesised findings", async () => {
+  it("publishes the pipeline's synthesised findings", async () => {
     const combinedFinding: ReviewFinding = {
       ...validLineFinding,
       title: "Combined: admin gate always passes",
     };
-    const { handler, client, synthesise } = makeHandler({
-      // Two lenses reporting the same underlying issue.
-      candidates: [
-        validLineFinding,
-        { ...validLineFinding, category: "security" as const },
-      ],
-      agentFailures: [],
-    });
-    synthesise.mockResolvedValueOnce({
-      findings: [combinedFinding],
-      usage: { inputTokens: 10, outputTokens: 2 },
-    });
-    client.listChangedFiles.mockResolvedValueOnce(changedFilesWithAddedLines);
+    const { handler, client } = makeHandler(
+      reviewResult({
+        // Two lenses reporting the same underlying issue, refined by
+        // the pipeline's synthesise node into one combined finding.
+        candidates: [
+          validLineFinding,
+          { ...validLineFinding, category: "security" as const },
+        ],
+        synthesisOutcome: "completed",
+        synthesisedCandidateCount: 1,
+        findings: [combinedFinding],
+      }),
+    );
 
     await handler(sqsEvent(validRecord));
 
-    expect(synthesise).toHaveBeenCalledExactlyOnceWith([
-      validLineFinding,
-      { ...validLineFinding, category: "security" },
-    ]);
     const input = client.createCheckRun.mock.calls[0]?.[0];
     // One combined finding, not the two raw duplicates.
     expect(input?.output.title).toBe("1 finding");
@@ -381,19 +396,19 @@ describe("createWorkerHandler", () => {
     expect(input?.output.summary).not.toContain(validLineFinding.title);
   });
 
-  it("still drops a synthesised finding pointing at a non-PR file via the deterministic chain", async () => {
-    // KEY: the synthesiser is not the final authority. Even when it
-    // returns a finding for a file outside the PR, validateFindings
-    // drops it before anything reaches GitHub.
-    const { handler, client, synthesise } = makeHandler({
-      candidates: [validLineFinding],
-      agentFailures: [],
-    });
-    synthesise.mockResolvedValueOnce({
-      findings: [wrongFileFinding],
-      usage: { inputTokens: 10, outputTokens: 2 },
-    });
-    client.listChangedFiles.mockResolvedValueOnce(changedFilesWithAddedLines);
+  it("publishes whatever the pipeline's deterministic chain validated, even after synthesis", async () => {
+    // KEY: the synthesiser is not the final authority — the pipeline's
+    // own validate node is (exercised directly in
+    // review-graph.test.ts). Here the pipeline reports that a
+    // synthesised, fabricated finding was already dropped.
+    const { handler, client } = makeHandler(
+      reviewResult({
+        candidates: [validLineFinding],
+        synthesisOutcome: "completed",
+        synthesisedCandidateCount: 1,
+        findings: [],
+      }),
+    );
 
     await handler(sqsEvent(validRecord));
 
@@ -404,18 +419,23 @@ describe("createWorkerHandler", () => {
     expect(input?.output.summary).not.toContain(wrongFileFinding.title);
   });
 
-  it("falls back to the validated raw findings and logs synthesis.failed when synthesis fails", async () => {
-    const { handler, client, synthesise, entries } = makeHandler({
-      candidates: [validLineFinding],
-      agentFailures: [],
-    });
-    synthesise.mockRejectedValueOnce(new Error("anthropic unavailable"));
-    client.listChangedFiles.mockResolvedValueOnce(changedFilesWithAddedLines);
+  it("publishes the validated raw findings and logs synthesis.failed when synthesis failed", async () => {
+    const { handler, client, entries } = makeHandler(
+      reviewResult({
+        candidates: [validLineFinding],
+        synthesisOutcome: "failed",
+        synthesisError: "anthropic unavailable",
+        synthesisErrorName: "Error",
+        synthesisDurationMs: 12,
+        findings: [validLineFinding],
+      }),
+    );
 
     const response = await handler(sqsEvent(validRecord));
 
-    // The review does not die: the raw finding is validated and
-    // published, and the failure is a log event, not a batch failure.
+    // The review does not die: the raw finding is validated (by the
+    // pipeline) and published, and the failure is a log event, not a
+    // batch failure.
     expect(response.batchItemFailures).toEqual([]);
     expect(client.createCheckRun).toHaveBeenCalledTimes(1);
     const input = client.createCheckRun.mock.calls[0]?.[0];
@@ -434,15 +454,12 @@ describe("createWorkerHandler", () => {
   });
 
   it("skips the synthesis call entirely when the agents produced no candidates", async () => {
-    const { handler, client, synthesise } = makeHandler({
-      candidates: [],
-      agentFailures: [],
-    });
+    const { handler, client, entries } = makeHandler(reviewResult());
 
     await handler(sqsEvent(validRecord));
 
-    // Nothing to refine: no synthesis model call for a clean review.
-    expect(synthesise).not.toHaveBeenCalled();
+    // Nothing to refine: no synthesis.started/completed for a clean review.
+    expect(entries.map((entry) => entry.event)).not.toContain("synthesis.started");
     expect(client.createCheckRun).toHaveBeenCalledTimes(1);
     expect(client.createCheckRun.mock.calls[0]?.[0]?.conclusion).toBe("success");
   });
@@ -496,7 +513,7 @@ describe("createWorkerHandler", () => {
   });
 
   it("reports a batch item failure when loading the PR fails, without running the review", async () => {
-    const { handler, client, runReview } = makeHandler();
+    const { handler, client, runReviewPipeline } = makeHandler();
     client.getDiff.mockRejectedValueOnce(new Error("github unavailable"));
 
     const response = await handler(sqsEvent(validRecord));
@@ -504,7 +521,7 @@ describe("createWorkerHandler", () => {
     expect(response.batchItemFailures).toEqual([
       { itemIdentifier: "msg-valid" },
     ]);
-    expect(runReview).not.toHaveBeenCalled();
+    expect(runReviewPipeline).not.toHaveBeenCalled();
     expect(client.createCheckRun).not.toHaveBeenCalled();
   });
 
@@ -548,11 +565,12 @@ describe("review lifecycle events (spec §26)", () => {
   });
 
   it("emits review.published with the final finding count", async () => {
-    const { handler, client, entries } = makeHandler({
-      candidates: [validLineFinding, fileLevelFinding],
-      agentFailures: [],
-    });
-    client.listChangedFiles.mockResolvedValueOnce(changedFilesWithAddedLines);
+    const { handler, entries } = makeHandler(
+      reviewResult({
+        candidates: [validLineFinding, fileLevelFinding],
+        findings: [validLineFinding, fileLevelFinding],
+      }),
+    );
 
     await handler(sqsEvent(validRecord));
 
@@ -565,15 +583,16 @@ describe("review lifecycle events (spec §26)", () => {
   });
 
   it("emits synthesis.started/completed with duration and the synthesiser's token usage", async () => {
-    const { handler, client, synthesise, entries } = makeHandler({
-      candidates: [validLineFinding, fileLevelFinding],
-      agentFailures: [],
-    });
-    synthesise.mockResolvedValueOnce({
-      findings: [validLineFinding],
-      usage: { inputTokens: 512, outputTokens: 64 },
-    });
-    client.listChangedFiles.mockResolvedValueOnce(changedFilesWithAddedLines);
+    const { handler, entries } = makeHandler(
+      reviewResult({
+        candidates: [validLineFinding, fileLevelFinding],
+        synthesisOutcome: "completed",
+        synthesisedCandidateCount: 1,
+        synthesisUsage: { inputTokens: 512, outputTokens: 64 },
+        synthesisDurationMs: 7,
+        findings: [validLineFinding],
+      }),
+    );
 
     await handler(sqsEvent(validRecord));
 
@@ -595,10 +614,13 @@ describe("review lifecycle events (spec §26)", () => {
   });
 
   it("on the partial-failure path still ends in review.published without duplicating agent.failed", async () => {
-    const { handler, entries } = makeHandler({
-      candidates: [],
-      agentFailures: [{ agent: "security", error: "model unavailable" }],
-    });
+    const { handler, entries } = makeHandler(
+      reviewResult({
+        candidates: [],
+        findings: [],
+        agentFailures: [{ agent: "security", error: "model unavailable" }],
+      }),
+    );
 
     await handler(sqsEvent(validRecord));
 
@@ -612,8 +634,8 @@ describe("review lifecycle events (spec §26)", () => {
   });
 
   it("emits review.failed with correlation fields and diagnostic context when the review dies after parsing", async () => {
-    const { handler, runReview, entries } = makeHandler();
-    runReview.mockRejectedValueOnce(
+    const { handler, runReviewPipeline, entries } = makeHandler();
+    runReviewPipeline.mockRejectedValueOnce(
       new Error("every review agent failed — correctness: invalid JSON"),
     );
 

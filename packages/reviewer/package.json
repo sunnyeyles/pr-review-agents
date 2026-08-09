@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@langchain/langgraph": "^1.4.9",
     "@pr-review/ai": "workspace:*",
     "@pr-review/github": "workspace:*",
     "@pr-review/schemas": "workspace:*"

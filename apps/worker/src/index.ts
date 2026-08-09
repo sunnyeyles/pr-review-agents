@@ -3,13 +3,14 @@
  *
  * Review Lambda entrypoint: consumes review jobs from SQS via the
  * injectable handler in handler.ts, authenticates as the GitHub App
- * installation, loads the PR, runs the three review agents —
- * Correctness, Security, Architecture — concurrently through the
- * orchestrator (spec §20 partial-failure semantics), refines their
- * combined raw candidates through the AI Synthesiser (spec §16; a
- * synthesis failure falls back to the raw candidates), pipes the
- * result through the deterministic validation chain, and publishes the
- * rendered "AI PR Review" check run.
+ * installation, loads the PR, and runs the full review pipeline — one
+ * LangGraph StateGraph (@pr-review/reviewer) that fans the three review
+ * agents — Correctness, Security, Architecture — out concurrently
+ * (spec §20 partial-failure semantics), refines their combined raw
+ * candidates through the AI Synthesiser (spec §16; a synthesis failure
+ * falls back to the raw candidates), and runs the deterministic
+ * validation chain — before publishing the rendered "AI PR Review"
+ * check run.
  *
  * Configuration: the GitHub App private key and the Anthropic API key
  * are read from Secrets Manager at runtime when their *_SECRET_ARN
@@ -25,7 +26,7 @@ import {
 } from "@pr-review/ai";
 import { requireEnv, resolveSecret } from "@pr-review/config";
 import { createGithubApp } from "@pr-review/github";
-import { createSynthesiser, runReview } from "@pr-review/reviewer";
+import { createSynthesiser, runReviewPipeline } from "@pr-review/reviewer";
 import type { SQSHandler } from "aws-lambda";
 
 import { createWorkerHandler, type WorkerHandler } from "./handler.js";
@@ -55,12 +56,17 @@ async function buildWorkerHandler(): Promise<WorkerHandler> {
       appId: requireEnv("GITHUB_APP_ID"),
       privateKey: await resolveSecret("GITHUB_APP_PRIVATE_KEY"),
     }),
-    // The orchestrator runs the agents for one job; all three agents
-    // are built per call because their tools must dispatch to that
-    // job's installation-authenticated GitHub client.
-    runReview: (client, context) =>
-      runReview(createReviewAgents({ anthropic, model, github: client }), context),
-    synthesise: (candidates) => synthesiser.synthesise(candidates),
+    // The pipeline graph runs the agents, the Synthesiser, and the
+    // deterministic validation chain for one job; all three agents are
+    // built per call because their tools must dispatch to that job's
+    // installation-authenticated GitHub client.
+    runReviewPipeline: (client, context) =>
+      runReviewPipeline(
+        createReviewAgents({ anthropic, model, github: client }),
+        synthesiser,
+        context,
+        context.changedFiles,
+      ),
   });
 }
 

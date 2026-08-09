@@ -1,10 +1,11 @@
 /**
  * @pr-review/reviewer
  *
- * The review pipeline: the orchestrator that runs the review agents
- * over a loaded PR context, the AI Synthesiser that refines their raw
- * candidates (spec §16), the deterministic findings validation chain,
- * and check-run rendering.
+ * The review pipeline: a LangGraph StateGraph that fans the review
+ * agents out over a loaded PR context, joins their candidates with
+ * spec §20 partial-failure semantics, refines them through the AI
+ * Synthesiser (spec §16), and runs the deterministic findings
+ * validation chain (spec §17) — plus check-run rendering.
  */
 import { AI_PACKAGE } from "@pr-review/ai";
 import { GITHUB_PACKAGE } from "@pr-review/github";
@@ -20,10 +21,11 @@ export const reviewerPackageDependencies = [
 
 export { buildChangedLineIndex, changedLinesFromPatch } from "./diff-lines.js";
 export {
-  runReview,
+  buildReviewGraph,
+  runReviewPipeline,
   type AgentFailure,
-  type ReviewRunResult,
-} from "./orchestrator.js";
+  type ReviewPipelineResult,
+} from "./review-graph.js";
 export {
   SYNTHESIS_SYSTEM_PROMPT,
   SynthesisError,
