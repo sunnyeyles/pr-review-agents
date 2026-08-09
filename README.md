@@ -180,7 +180,9 @@ pnpm build            # esbuild → apps/*/dist/index.mjs (nodejs22.x, ESM)
 Workspace packages are consumed as TypeScript source and compiled into each
 Lambda bundle by `scripts/build-lambda.mjs`; only the AWS SDK v3 is left
 external, since the `nodejs22.x` runtime provides it. Zipping happens in
-Terraform via `archive_file`.
+Terraform via `archive_file`, which reads `apps/*/dist/index.mjs` directly —
+so `pnpm build` must run **before** `terraform plan`, or you will plan against
+a stale (or missing) bundle.
 
 Put local secret values in `.env.local` (gitignored) when exercising the
 handlers outside AWS.
@@ -227,7 +229,8 @@ Structured single-line JSON logs land in CloudWatch under lifecycle event
 names: `review.started`, `review.loaded`, `agent.started`, `agent.thinking`,
 `agent.message`, `agent.completed`, `agent.failed`, `synthesis.started`,
 `synthesis.skipped`, `synthesis.completed`, `synthesis.failed`,
-`review.published`, and `review.failed`. Events carry the repository, PR
+`findings.validated`, `review.published`, and `review.failed`. Events carry the
+repository, PR
 number, head SHA, agent name, duration, finding count, and token usage, so a
 single review is greppable end to end by `headSha`.
 
