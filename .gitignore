@@ -5,3 +5,5 @@ dist/
 .terraform/
 terraform/backend.hcl
 tfplan
+.claude/worktrees/
+.env.local
