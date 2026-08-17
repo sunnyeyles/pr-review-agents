@@ -1,8 +1,8 @@
 /**
- * The six read-only, repository-scoped review tools from spec §13 —
+ * The six read-only, repository-scoped review tools from —
  * the ONLY tools any review agent ever gets. There is no write,
  * comment, approve, merge, or execute tool anywhere in this package,
- * so the §14 restrictions hold by construction.
+ * so the restrictions hold by construction.
  *
  * Every tool input is Zod-validated BEFORE it touches the GitHub
  * client; malformed or out-of-repo requests come back as error
@@ -143,7 +143,7 @@ function pullRef(scope: ReviewToolScope) {
   };
 }
 
-/** Exactly the six read-only tools of spec §13. Order matches the spec. */
+/** Exactly the six read-only tools, in spec order. */
 export const reviewTools: readonly ReviewTool[] = [
   defineTool({
     name: "get_pull_request",

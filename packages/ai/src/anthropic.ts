@@ -4,7 +4,7 @@
  * tests inject scripted fakes so no model calls happen in tests.
  *
  * The model id is NEVER hard-coded: it always arrives via
- * configuration (the ANTHROPIC_MODEL environment variable — spec §12).
+ * configuration (the ANTHROPIC_MODEL environment variable �).
  */
 import Anthropic from "@anthropic-ai/sdk";
 

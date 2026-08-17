@@ -1,5 +1,5 @@
 /**
- * Token-usage accounting for model calls (spec §26 observability):
+ * Token-usage accounting for model calls (observability):
  * every Anthropic response carries a `usage` block; the agent runtime
  * aggregates it across the turns of one agent run, and the Synthesiser
  * reports it for its single call, so agent.completed /

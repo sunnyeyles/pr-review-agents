@@ -8,7 +8,11 @@ import type Anthropic from "@anthropic-ai/sdk";
 import { createCapturingLogger } from "@pr-review/logging";
 import { describe, expect, it, vi } from "vitest";
 
-import type { ReviewAgentDeps } from "./agent-runtime.js";
+import {
+  buildReviewSystemPrompt,
+  createReviewAgent,
+  type ReviewAgentDeps,
+} from "./agent-runtime.js";
 import {
   context,
   finalFindingsJson,
@@ -18,14 +22,15 @@ import {
   textBlock,
 } from "./agent-test-support.js";
 import {
-  ARCHITECTURE_SYSTEM_PROMPT,
-  CORRECTNESS_SYSTEM_PROMPT,
-  SECURITY_SYSTEM_PROMPT,
-  createArchitectureAgent,
-  createCorrectnessAgent,
+  architectureLens,
+  correctnessLens,
   createReviewAgents,
-  createSecurityAgent,
+  reviewLenses,
+  securityLens,
 } from "./agents.js";
+
+const SECURITY_SYSTEM_PROMPT = buildReviewSystemPrompt(securityLens);
+const ARCHITECTURE_SYSTEM_PROMPT = buildReviewSystemPrompt(architectureLens);
 
 const SIX_TOOL_NAMES = [
   "get_base_file",
@@ -71,9 +76,9 @@ describe("agent names", () => {
   it("names each agent after its lens", () => {
     const { deps } = makeDeps([]);
 
-    expect(createCorrectnessAgent(deps).name).toBe("correctness");
-    expect(createSecurityAgent(deps).name).toBe("security");
-    expect(createArchitectureAgent(deps).name).toBe("architecture");
+    for (const lens of reviewLenses) {
+      expect(createReviewAgent(lens, deps).name).toBe(lens.category);
+    }
   });
 
   it("createReviewAgents returns the three lenses in spec order", () => {
@@ -146,34 +151,26 @@ describe("the Architecture lens prompt", () => {
 
 describe("prompt wiring", () => {
   it("each agent sends its own lens prompt to the model", async () => {
-    const prompts: Record<string, string> = {
-      correctness: CORRECTNESS_SYSTEM_PROMPT,
-      security: SECURITY_SYSTEM_PROMPT,
-      architecture: ARCHITECTURE_SYSTEM_PROMPT,
-    };
-
-    for (const [lens, factory] of [
-      ["correctness", createCorrectnessAgent],
-      ["security", createSecurityAgent],
-      ["architecture", createArchitectureAgent],
-    ] as const) {
+    for (const lens of reviewLenses) {
       const { deps, create } = makeDeps([
         message([textBlock(finalFindingsJson([]))], "end_turn"),
       ]);
 
-      await factory(deps).run(context);
+      await createReviewAgent(lens, deps).run(context);
 
-      expect(create.mock.calls[0]?.[0]?.system).toBe(prompts[lens]);
+      expect(create.mock.calls[0]?.[0]?.system).toBe(
+        buildReviewSystemPrompt(lens),
+      );
     }
   });
 
-  it("Security and Architecture expose the identical six read-only tools", async () => {
-    for (const factory of [createSecurityAgent, createArchitectureAgent]) {
+  it("every lens exposes the identical six read-only tools", async () => {
+    for (const lens of reviewLenses) {
       const { deps, create } = makeDeps([
         message([textBlock(finalFindingsJson([]))], "end_turn"),
       ]);
 
-      await factory(deps).run(context);
+      await createReviewAgent(lens, deps).run(context);
 
       const toolNames = (create.mock.calls[0]?.[0]?.tools ?? [])
         .map((tool) => tool.name)
@@ -195,13 +192,13 @@ describe("three lenses over one PR context", () => {
       releaseAll = resolve;
     });
 
-    function gatedDeps(lens: "correctness" | "security" | "architecture") {
-      const finding = makeFinding(lens);
+    function gatedLensAgent(lens: (typeof reviewLenses)[number]) {
+      const finding = makeFinding(lens.category);
       const deps: ReviewAgentDeps = {
         anthropic: {
           messages: {
             create: async () => {
-              started.push(lens);
+              started.push(lens.category);
               if (started.length === 3) {
                 releaseAll();
               }
@@ -217,12 +214,12 @@ describe("three lenses over one PR context", () => {
         github: makeGithub(),
         logger: createCapturingLogger().logger,
       };
-      return { agent: { correctness: createCorrectnessAgent, security: createSecurityAgent, architecture: createArchitectureAgent }[lens](deps), finding };
+      return { agent: createReviewAgent(lens, deps), finding };
     }
 
-    const correctness = gatedDeps("correctness");
-    const security = gatedDeps("security");
-    const architecture = gatedDeps("architecture");
+    const correctness = gatedLensAgent(correctnessLens);
+    const security = gatedLensAgent(securityLens);
+    const architecture = gatedLensAgent(architectureLens);
 
     const [correctnessFindings, securityFindings, architectureFindings] =
       await Promise.all([

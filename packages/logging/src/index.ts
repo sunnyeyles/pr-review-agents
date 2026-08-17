@@ -1,7 +1,7 @@
 /**
  * @pr-review/logging
  *
- * The shared structured-logging seam for spec §26 observability. Every
+ * The shared structured-logging seam for observability. Every
  * lifecycle event (review.received, review.queued, review.started,
  * agent.started/completed/failed, synthesis.*, review.published,
  * review.failed) is emitted through the StructuredLogger interface as
@@ -22,8 +22,6 @@
  * (tokens, keys, webhook secrets) — log identifiers, counts,
  * durations, and error messages only.
  */
-export const LOGGING_PACKAGE = "@pr-review/logging";
-
 export type LogLevel = "info" | "error";
 
 /** Extra structured fields on one log line. Never include secrets. */

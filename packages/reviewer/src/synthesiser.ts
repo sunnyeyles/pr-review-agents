@@ -1,29 +1,22 @@
 /**
- * The Synthesiser (spec §16): an AI refinement step between the raw
- * agent candidates and the deterministic validation chain. One
- * single-turn model call — NO tools, no agentic loop — receives every
- * well-formed candidate finding as JSON and returns the refined list:
- * duplicates removed, overlapping findings combined, weak or
- * speculative findings dropped, severity corrected, and the remainder
- * prioritised. A few strong findings beat many speculative ones.
+ * The Synthesiser: one single-turn model call — NO tools, no agentic
+ * loop — between the raw agent candidates and the deterministic
+ * validation chain. It removes duplicates, combines overlaps, drops
+ * speculative findings, corrects severity, and prioritises what's left.
  *
- * The Synthesiser is NEVER the final authority and never touches
- * GitHub: its output is Zod-validated against the same §15 candidate
- * contract the agents use (extractAgentOutput) and then flows through
- * the ENTIRE deterministic chain (validateFindings) unchanged, so a
+ * It is NEVER the final authority and never touches GitHub: its output
+ * still flows through the ENTIRE deterministic chain unchanged, so a
  * fabricated file/line, padded confidence, or over-long list is still
- * dropped deterministically.
+ * dropped.
  *
- * Empty-input choice (documented): when no candidate is well-formed —
- * including the zero-candidate case — synthesise resolves [] WITHOUT a
- * model call. There is nothing to refine (malformed candidates could
- * never survive validateFindings anyway), so skipping saves a model
- * round trip and removes a failure mode from clean reviews.
+ * When no candidate is well-formed — including the zero-candidate case
+ * — synthesise resolves [] WITHOUT a model call: malformed candidates
+ * could never survive validateFindings anyway.
  *
  * Failure semantics: invalid model output rejects with SynthesisError;
- * model API errors propagate as-is. Either way the caller (the worker)
- * logs synthesis.failed and falls back to validating the RAW
- * candidates — a synthesis failure never kills the review.
+ * model API errors propagate as-is. Either way the worker falls back to
+ * validating the RAW candidates — synthesis failure never kills the
+ * review.
  */
 import {
   addTokenUsage,
@@ -46,10 +39,9 @@ export class SynthesisError extends Error {
 const MAX_OUTPUT_TOKENS = 8_000;
 
 /**
- * The synthesis system prompt: the §16 responsibilities plus the §21
- * hardening posture. Finding texts originated from repository contents
- * (diffs, code, PR descriptions), so they get the same treatment as
- * any repo data: they are never instructions to the model.
+ * Finding texts originated from repository contents (diffs, code, PR
+ * descriptions), so they get the same hardening as any repo data: they
+ * are never instructions to the model.
  */
 export const SYNTHESIS_SYSTEM_PROMPT = `You are the synthesiser in an automated pull-request review system. Three review agents — Correctness, Security, and Architecture — have proposed candidate findings for one pull request. You refine their combined list into the final set worth a human reviewer's attention.
 
@@ -93,7 +85,7 @@ export interface SynthesiserDeps {
 
 /**
  * The outcome of one synthesis run: the refined findings plus the token
- * usage of the single model call (spec §26 — the caller reports it on
+ * usage of the single model call (�� the caller reports it on
  * the synthesis.completed event). Skipped runs report zero usage.
  */
 export interface SynthesisResult {

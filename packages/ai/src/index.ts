@@ -9,25 +9,12 @@
  * findings; publishing belongs to the deterministic pipeline in
  * @pr-review/reviewer and the worker.
  */
-import { GITHUB_PACKAGE } from "@pr-review/github";
-import { LOGGING_PACKAGE } from "@pr-review/logging";
-import { SCHEMAS_PACKAGE } from "@pr-review/schemas";
-
-export const AI_PACKAGE = "@pr-review/ai";
-
-export const aiPackageDependencies = [
-  SCHEMAS_PACKAGE,
-  GITHUB_PACKAGE,
-  LOGGING_PACKAGE,
-] as const;
-
 export {
   createAnthropicClient,
   type AnthropicClientConfig,
   type AnthropicLike,
 } from "./anthropic.js";
 export {
-  agentOutputSchema,
   extractAgentOutput,
   type AgentOutput,
   type AgentOutputResult,
@@ -35,32 +22,15 @@ export {
 export type { ReviewAgent, ReviewContext } from "./review-types.js";
 export { addTokenUsage, emptyTokenUsage, type TokenUsage } from "./usage.js";
 export {
-  MAX_TOOL_RESULT_CHARS,
-  dispatchReviewTool,
-  reviewTools,
-  type ReviewTool,
-  type ReviewToolInputSchema,
-  type ReviewToolScope,
-  type ToolDispatchResult,
-} from "./tools.js";
-export {
   AgentRunError,
-  DEFAULT_MAX_TURNS,
-  buildOpeningMessage,
-  buildReviewSystemPrompt,
   createReviewAgent,
   type ReviewAgentDeps,
   type ReviewLens,
 } from "./agent-runtime.js";
 export {
-  ARCHITECTURE_SYSTEM_PROMPT,
-  CORRECTNESS_SYSTEM_PROMPT,
-  SECURITY_SYSTEM_PROMPT,
   architectureLens,
   correctnessLens,
-  createArchitectureAgent,
-  createCorrectnessAgent,
   createReviewAgents,
-  createSecurityAgent,
+  reviewLenses,
   securityLens,
 } from "./agents.js";

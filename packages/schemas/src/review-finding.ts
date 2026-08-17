@@ -2,7 +2,7 @@ import { z } from "zod";
 
 /**
  * One structured review finding, as produced by the review agents and
- * consumed by the deterministic findings pipeline (spec §15).
+ * consumed by the deterministic findings pipeline.
  *
  * - `line` is a new-side (post-change) line number and is optional:
  *   findings without one apply to the file as a whole.
