@@ -1,37 +1,23 @@
 /**
- * The review pipeline (spec §8, §16, §17, §20) as one LangGraph
- * StateGraph: the Correctness, Security, and Architecture agents run as
- * parallel nodes fanning out from START, join into a partial-failure
- * check, feed the AI Synthesiser node, and finish at the deterministic
- * validate-findings node.
+ * The review pipeline as one LangGraph StateGraph:
  *
  *   START --> agent__correctness --\
  *         \-> agent__security     --> join --> synthesise --> validate --> END
  *          \-> agent__architecture-/
  *
- * Fan-out / fan-in (spec §20): LangGraph runs every node with no
- * unmet dependency in the same superstep concurrently — all three
- * agent nodes start together — and `join` only runs once every agent
- * node has written its outcome. Partial-failure semantics are
- * preserved exactly: one failed agent does not fail the review while
- * at least one other succeeded; when EVERY agent fails, `join` throws
- * so the whole graph invocation rejects. Outcomes are re-sorted by the
- * agent's position in the input list before candidates/failures are
- * derived, so the result never depends on which agent happens to
- * settle first.
+ * Partial failure: one failed agent does not fail the review while at
+ * least one other succeeded; when EVERY agent fails, `join` throws so
+ * the whole invocation rejects. Outcomes are re-sorted by the agent's
+ * position in the input list, so the result never depends on which
+ * agent happens to settle first.
  *
- * Synthesis (spec §16): the `synthesise` node refines the raw
- * candidates through the injected Synthesiser. Two documented non-model
- * paths carry over unchanged from the pre-graph implementation: zero
- * candidates skips the model call entirely, and a synthesis failure
- * (API error, invalid output) falls back to the RAW candidates rather
- * than failing the review — the caller reads `synthesisOutcome` /
- * `synthesisError` off the result to log accordingly.
+ * Synthesis has two non-model paths: zero candidates skips the model
+ * call entirely, and a synthesis failure falls back to the RAW
+ * candidates rather than failing the review — the caller reads
+ * `synthesisOutcome` / `synthesisError` to log accordingly.
  *
- * Validation (spec §17): the `validate` node runs the synthesised (or
- * raw, on fallback) candidates through the deterministic validation
- * chain against the PR's changed files. This is the ONLY node whose
- * output the caller may treat as trustworthy.
+ * `validate` is the ONLY node whose output the caller may treat as
+ * trustworthy.
  */
 import { emptyTokenUsage, type ReviewAgent, type ReviewContext, type TokenUsage } from "@pr-review/ai";
 import type { ChangedFile } from "@pr-review/github";
@@ -97,7 +83,7 @@ const ReviewGraphState = Annotation.Root({
     reducer: (_left, right) => right,
     default: () => undefined,
   }),
-  /** The synthesiser's single-call token usage (spec §26); zero when skipped. */
+  /** The synthesiser's single-call token usage; zero when skipped. */
   synthesisUsage: Annotation<TokenUsage>({
     reducer: (_left, right) => right,
     default: emptyTokenUsage,
@@ -107,7 +93,7 @@ const ReviewGraphState = Annotation.Root({
     reducer: (_left, right) => right,
     default: () => undefined,
   }),
-  /** The final, deterministically validated findings (spec §17). */
+  /** The final, deterministically validated findings. */
   findings: Annotation<ReviewFinding[]>({
     reducer: (_left, right) => right,
     default: () => [],
@@ -167,7 +153,7 @@ function makeJoinNode(agentCount: number) {
 }
 
 /**
- * The §16 synthesis step. Empty-input choice (documented): with no
+ * The synthesis step. Empty-input choice (documented): with no
  * candidates at all there is nothing to refine, so the model call is
  * skipped entirely — the Synthesiser itself additionally skips its
  * model call when candidates exist but none are well-formed, which
@@ -203,7 +189,7 @@ function makeSynthesiseNode(synthesiser: Synthesiser) {
   };
 }
 
-/** The deterministic validation chain (spec §17): never trust AI output. */
+/** The deterministic validation chain: never trust AI output. */
 function validateNode(state: ReviewGraphStateT): ReviewGraphUpdate {
   return {
     findings: validateFindings(state.synthesisedCandidates, state.changedFiles),
@@ -264,7 +250,7 @@ export interface ReviewPipelineResult {
   synthesisOutcome: "skipped" | "completed" | "failed";
   synthesisError?: string;
   synthesisErrorName?: string;
-  /** The synthesiser's single-call token usage (spec §26); zero when skipped. */
+  /** The synthesiser's single-call token usage; zero when skipped. */
   synthesisUsage: TokenUsage;
   /** Wall-clock time spent in the synthesise node; unset when skipped. */
   synthesisDurationMs?: number;

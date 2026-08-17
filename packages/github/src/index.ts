@@ -5,12 +5,6 @@
  * installation-authenticated clients that load PR details, changed
  * files, and diffs, and publish the "AI PR Review" check run.
  */
-import { SCHEMAS_PACKAGE } from "@pr-review/schemas";
-
-export const GITHUB_PACKAGE = "@pr-review/github";
-
-export const githubPackageDependencies = [SCHEMAS_PACKAGE] as const;
-
 export {
   createGithubApp,
   type GithubAppConfig,

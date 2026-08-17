@@ -1,6 +1,6 @@
 /**
  * The Zod-validated contract for an agent's final message: a single
- * JSON object holding a findings array of the shared §15 candidate
+ * JSON object holding a findings array of the shared candidate
  * shape. Anything else is an agent failure — never a crash, and never
  * something that reaches the GitHub-writing pipeline.
  */

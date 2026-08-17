@@ -30,7 +30,7 @@ export interface WorkerHandlerDeps {
   createInstallationClient: InstallationClientFactory;
   /**
    * Runs the full review pipeline (@pr-review/reviewer's LangGraph
-   * StateGraph, spec §8/§16/§17/§20): the review agents fan out over
+   * StateGraph): the review agents fan out over
    * the loaded PR context, their raw candidates are refined by the AI
    * Synthesiser, and the deterministic validation chain produces the
    * final findings. Throws when every agent failed, which makes the
@@ -43,7 +43,7 @@ export interface WorkerHandlerDeps {
     context: ReviewContext,
   ) => Promise<ReviewPipelineResult>;
   /**
-   * Structured lifecycle logger (spec §26): every event of one review
+   * Structured lifecycle logger: every event of one review
    * carries repository, PR number, and head SHA so an operator can
    * answer "what happened to the review for PR N?" from CloudWatch
    * logs alone. Defaults to the console logger; tests inject a
@@ -75,7 +75,7 @@ function parseReviewJob(body: string): ReviewJob {
   return job.data;
 }
 
-/** The correlation fields every event of one review carries (spec §26). */
+/** The correlation fields every event of one review carries. */
 function correlation(job: ReviewJob): Record<string, unknown> {
   return {
     repository: `${job.owner}/${job.repo}`,
@@ -85,7 +85,7 @@ function correlation(job: ReviewJob): Record<string, unknown> {
 }
 
 /**
- * Logs the §16 synthesis outcome the pipeline already computed. The
+ * Logs the synthesis outcome the pipeline already computed. The
  * two non-model paths carry their own event: a clean review (zero
  * candidates) logs synthesis.skipped; a synthesis failure logs
  * synthesis.failed and notes the fallback — the raw candidates still

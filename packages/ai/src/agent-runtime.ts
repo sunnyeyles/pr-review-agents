@@ -6,16 +6,10 @@
  * six read-only tools, and reports findings ONLY as a final JSON
  * object validated by agentOutputSchema.
  *
- * The loop itself is a LangGraph StateGraph with two nodes — callModel
- * and callTools — wired exactly like the classic LangGraph tool-calling
- * agent: callModel either stops the run (final answer or an exceeded
- * turn cap) or hands off to callTools, which dispatches every requested
- * tool and loops back to callModel. Using LangGraph here buys the
- * orchestration (message-state threading, conditional routing, the
- * turn-by-turn graph a `runReviewPipeline` step can compose alongside
- * the other agents) without touching the model contract: the Anthropic
- * seam (AnthropicLike), the read-only tools, and the §15 output
- * contract are unchanged.
+ * The loop is a plain `while`: call the model, and if it asked for
+ * tools, dispatch them and go round again. Token usage accumulates in a
+ * local so it survives a mid-loop API error and still reaches the
+ * agent.failed log line.
  *
  * Category integrity (ticket 07 decision): the runtime FILTERS the
  * validated findings to the lens's own category. Leaked cross-category
@@ -33,13 +27,12 @@ import type Anthropic from "@anthropic-ai/sdk";
 import type { GithubInstallationClient } from "@pr-review/github";
 import { createConsoleLogger, type StructuredLogger } from "@pr-review/logging";
 import type { FindingCategory } from "@pr-review/schemas";
-import { Annotation, END, START, StateGraph } from "@langchain/langgraph";
 
 import { extractAgentOutput } from "./agent-output.js";
 import type { AnthropicLike } from "./anthropic.js";
 import type { ReviewAgent, ReviewContext } from "./review-types.js";
 import { dispatchReviewTool, reviewTools, type ReviewToolScope } from "./tools.js";
-import { addTokenUsage, emptyTokenUsage, type TokenUsage } from "./usage.js";
+import { addTokenUsage, emptyTokenUsage } from "./usage.js";
 
 /** An agent-level failure (bad final output, turn cap, ...). */
 export class AgentRunError extends Error {
@@ -79,8 +72,8 @@ export interface ReviewLens {
 
 /**
  * Composes a lens's system prompt. The "# Security rules" block is the
- * spec §21 prompt-injection hardening and the "# Output" block is the
- * §15 findings contract — both shared verbatim across every lens, with
+ * prompt-injection hardening and the "# Output" block is the
+ * findings contract — both shared verbatim across every lens, with
  * only the role/category substituted.
  */
 export function buildReviewSystemPrompt(lens: ReviewLens): string {
@@ -127,7 +120,7 @@ function truncateDiff(diff: string): string {
   );
 }
 
-/** Builds the opening user message (spec §13: title + description + files + diff). */
+/** Builds the opening user message (title + description + files + diff). */
 export function buildOpeningMessage(context: ReviewContext): string {
   const { pullRequest, changedFiles, diff } = context;
   const files = changedFiles
@@ -177,7 +170,7 @@ export interface ReviewAgentDeps {
   github: GithubInstallationClient;
   maxTurns?: number | undefined;
   /**
-   * Structured lifecycle logger (spec §26): the runtime emits
+   * Structured lifecycle logger: the runtime emits
    * agent.started / agent.completed / agent.failed here, carrying the
    * review's correlation fields plus per-run duration and aggregated
    * token usage. Defaults to the console logger (single-line JSON for
@@ -186,39 +179,32 @@ export interface ReviewAgentDeps {
   logger?: StructuredLogger | undefined;
 }
 
-/** Why callModel stopped: hand off to tools, a final answer, or the turn cap. */
-type StopReason = "toolUse" | "final" | "turnCap";
+/** The tool_use blocks of one message's content, in order. */
+function toolUseBlocks(
+  content: readonly unknown[],
+): Anthropic.Messages.ToolUseBlock[] {
+  return content.filter(
+    (block): block is Anthropic.Messages.ToolUseBlock =>
+      typeof block === "object" &&
+      block !== null &&
+      "type" in block &&
+      block.type === "tool_use",
+  );
+}
 
-/**
- * The per-agent loop's graph state. `messages` threads the Anthropic
- * conversation exactly as the manual loop did (assistant content
- * replayed verbatim, tool results answered in one user turn); `turn`
- * and `usage` are running totals a node overwrites with the new total
- * on every call.
- */
-const AgentLoopState = Annotation.Root({
-  messages: Annotation<Anthropic.Messages.MessageParam[]>({
-    reducer: (left, right) => left.concat(right),
-    default: () => [],
-  }),
-  turn: Annotation<number>({
-    reducer: (_left, right) => right,
-    default: () => 0,
-  }),
-  usage: Annotation<TokenUsage>({
-    reducer: (_left, right) => right,
-    default: emptyTokenUsage,
-  }),
-  stopReason: Annotation<StopReason | undefined>({
-    reducer: (_left, right) => right,
-    default: () => undefined,
-  }),
-  /** The Anthropic API's own stop_reason for the last model call, for diagnostics. */
-  apiStopReason: Annotation<string | undefined>({
-    reducer: (_left, right) => right,
-    default: () => undefined,
-  }),
-});
+/** The concatenated text of one message's content blocks. */
+function textOf(content: readonly unknown[]): string {
+  return content
+    .filter(
+      (block): block is Anthropic.Messages.TextBlock =>
+        typeof block === "object" &&
+        block !== null &&
+        "type" in block &&
+        block.type === "text",
+    )
+    .map((block) => block.text)
+    .join("\n");
+}
 
 /**
  * Builds one review agent: the given lens over the shared runtime,
@@ -244,7 +230,7 @@ export function createReviewAgent(
         baseSha: context.pullRequest.baseSha,
       };
 
-      // Spec §26: every event of one agent run carries the review's
+      // every event of one agent run carries the review's
       // correlation fields plus the agent name, and the completed /
       // failed events add duration and the token usage aggregated
       // across every model call of the run.
@@ -256,58 +242,33 @@ export function createReviewAgent(
       };
       logger.info("agent.started", eventFields);
       const startedAt = Date.now();
+      const messages: Anthropic.Messages.MessageParam[] = [
+        { role: "user", content: buildOpeningMessage(context) },
+      ];
+      // Running totals live OUTSIDE the try so a mid-loop API error
+      // still reports the tokens it already spent on agent.failed.
       let usage = emptyTokenUsage();
+      let apiStopReason: string | undefined;
+      let finalText = "";
 
-      // callModel: makes one model call (unless the turn cap is
-      // already exhausted, in which case it stops WITHOUT spending a
-      // call) and decides whether to hand off to callTools or stop.
-      async function callModel(
-        state: typeof AgentLoopState.State,
-      ): Promise<typeof AgentLoopState.Update> {
-        const turn = state.turn + 1;
-        if (turn > maxTurns) {
-          return { turn, stopReason: "turnCap" };
-        }
-
+      /** One model call, accumulating usage and the last stop_reason. */
+      const callModel = async (): Promise<Anthropic.Messages.Message> => {
         const response = await deps.anthropic.messages.create({
           model: deps.model,
           max_tokens: MAX_OUTPUT_TOKENS,
           system: systemPrompt,
           tools: anthropicToolDefinitions,
-          messages: state.messages,
+          messages,
         });
-        const nextUsage = addTokenUsage(state.usage, response.usage);
+        usage = addTokenUsage(usage, response.usage);
+        apiStopReason = response.stop_reason ?? undefined;
+        return response;
+      };
 
-        const toolUses = response.content.filter(
-          (block): block is Anthropic.Messages.ToolUseBlock =>
-            block.type === "tool_use",
-        );
-
-        return {
-          messages: [{ role: "assistant", content: response.content }],
-          turn,
-          usage: nextUsage,
-          stopReason: toolUses.length > 0 ? "toolUse" : "final",
-          apiStopReason: response.stop_reason ?? undefined,
-        };
-      }
-
-      // callTools: answers every tool_use in the last assistant message
-      // in one user turn, then loops back to callModel.
-      async function callTools(
-        state: typeof AgentLoopState.State,
-      ): Promise<typeof AgentLoopState.Update> {
-        const last = state.messages[state.messages.length - 1];
-        const content =
-          last?.role === "assistant" && Array.isArray(last.content)
-            ? last.content
-            : [];
-        const toolUses = content.filter(
-          (block): block is Anthropic.Messages.ToolUseBlock =>
-            typeof block === "object" && block !== null && "type" in block &&
-            block.type === "tool_use",
-        );
-
+      /** Dispatches every requested tool into one user turn of results. */
+      const answerToolUses = async (
+        toolUses: readonly Anthropic.Messages.ToolUseBlock[],
+      ): Promise<Anthropic.Messages.ToolResultBlockParam[]> => {
         const results: Anthropic.Messages.ToolResultBlockParam[] = [];
         for (const toolUse of toolUses) {
           const outcome = await dispatchReviewTool(
@@ -331,50 +292,39 @@ export function createReviewAgent(
                 },
           );
         }
-        return { messages: [{ role: "user", content: results }] };
-      }
+        return results;
+      };
 
-      const graph = new StateGraph(AgentLoopState)
-        .addNode("callModel", callModel)
-        .addNode("callTools", callTools)
-        .addEdge(START, "callModel")
-        .addConditionalEdges(
-          "callModel",
-          (state) => (state.stopReason === "toolUse" ? "callTools" : END),
-          { callTools: "callTools", [END]: END },
-        )
-        .addEdge("callTools", "callModel")
-        .compile();
+      const turnCapExceeded = new AgentRunError(
+        `${lens.category} agent exceeded the ${maxTurns}-turn cap without returning findings`,
+      );
 
       try {
-        const finalState = await graph.invoke({
-          messages: [{ role: "user", content: buildOpeningMessage(context) }],
-        });
-        usage = finalState.usage;
-
-        if (finalState.stopReason === "turnCap") {
-          throw new AgentRunError(
-            `${lens.category} agent exceeded the ${maxTurns}-turn cap without returning findings`,
-          );
+        // The cap bounds MODEL CALLS, not tool round-trips: a response
+        // with no tool uses always ends the run on the call it arrived
+        // on, so the cap can never burn a call the agent cannot answer.
+        for (let turn = 1; ; turn += 1) {
+          const response = await callModel();
+          const toolUses = toolUseBlocks(response.content);
+          if (toolUses.length === 0) {
+            finalText = textOf(response.content);
+            break;
+          }
+          if (turn >= maxTurns) {
+            throw turnCapExceeded;
+          }
+          messages.push({ role: "assistant", content: response.content });
+          messages.push({
+            role: "user",
+            content: await answerToolUses(toolUses),
+          });
         }
 
-        const last = finalState.messages[finalState.messages.length - 1];
-        const text =
-          last?.role === "assistant" && Array.isArray(last.content)
-            ? last.content
-                .filter(
-                  (block): block is Anthropic.Messages.TextBlock =>
-                    typeof block === "object" && block !== null && "type" in block &&
-                    block.type === "text",
-                )
-                .map((block) => block.text)
-                .join("\n")
-            : "";
-        const output = extractAgentOutput(text);
+        const output = extractAgentOutput(finalText);
         if (!output.ok) {
           throw new AgentRunError(
             `${lens.category} agent produced invalid findings output ` +
-              `(stop_reason: ${finalState.apiStopReason ?? "unknown"}): ${output.error}`,
+              `(stop_reason: ${apiStopReason ?? "unknown"}): ${output.error}`,
           );
         }
         // Category integrity: an agent only ever contributes findings

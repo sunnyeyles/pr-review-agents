@@ -79,9 +79,6 @@ importers:
       '@anthropic-ai/sdk':
         specifier: ^0.115.0
         version: 0.115.0(zod@4.4.3)
-      '@langchain/langgraph':
-        specifier: ^1.4.9
-        version: 1.4.9(@langchain/core@1.2.5)(zod@4.4.3)
       '@pr-review/github':
         specifier: workspace:*
         version: link:../github
@@ -109,9 +106,6 @@ importers:
       '@octokit/rest':
         specifier: ^22.0.1
         version: 22.0.1
-      '@pr-review/schemas':
-        specifier: workspace:*
-        version: link:../schemas
       zod:
         specifier: ^4.4.3
         version: 4.4.3

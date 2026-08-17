@@ -7,7 +7,7 @@
  * - Findings: conclusion "neutral" (the review is advisory; the app
  *   must not block or approve merges), a summary listing every finding
  *   strongest first, and inline annotations for line-anchored findings.
- * - Agent failures (spec §20 partial failure): the summary notes which
+ * - Agent failures (partial failure): the summary notes which
  *   lens did not complete — by name only, error details stay in the
  *   logs — and the conclusion is "neutral" even with zero findings,
  *   because an incomplete review must not publish a clean bill of

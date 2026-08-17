@@ -8,7 +8,7 @@ import type Anthropic from "@anthropic-ai/sdk";
 import { createCapturingLogger } from "@pr-review/logging";
 import { describe, expect, it } from "vitest";
 
-import { AgentRunError } from "./agent-runtime.js";
+import { AgentRunError, createReviewAgent } from "./agent-runtime.js";
 import {
   context,
   finalFindingsJson,
@@ -21,7 +21,7 @@ import {
   textBlock,
   toolUseBlock,
 } from "./agent-test-support.js";
-import { createCorrectnessAgent } from "./agents.js";
+import { correctnessLens } from "./agents.js";
 
 const finding = {
   file: "src/sessions.ts",
@@ -42,7 +42,7 @@ function makeAgent(
   const { anthropic, create } = makeAnthropic(responses);
   const github = makeGithub();
   const { logger, entries } = createCapturingLogger();
-  const agent = createCorrectnessAgent({
+  const agent = createReviewAgent(correctnessLens, {
     anthropic,
     model: "claude-test-model",
     github,
@@ -52,7 +52,7 @@ function makeAgent(
   return { agent, create, github, entries };
 }
 
-describe("createCorrectnessAgent", () => {
+describe("the Correctness agent", () => {
   it("is named correctness", () => {
     const { agent } = makeAgent([]);
 
@@ -255,7 +255,7 @@ describe("createCorrectnessAgent", () => {
   it("propagates model API failures", async () => {
     const { anthropic } = makeAnthropic([]);
     anthropic.messages.create.mockRejectedValueOnce(new Error("529 overloaded"));
-    const agent = createCorrectnessAgent({
+    const agent = createReviewAgent(correctnessLens, {
       anthropic,
       model: "claude-test-model",
       github: makeGithub(),
@@ -388,7 +388,7 @@ describe("lifecycle events (spec §26)", () => {
     const { anthropic } = makeAnthropic([]);
     anthropic.messages.create.mockRejectedValueOnce(new Error("529 overloaded"));
     const { logger, entries } = createCapturingLogger();
-    const agent = createCorrectnessAgent({
+    const agent = createReviewAgent(correctnessLens, {
       anthropic,
       model: "claude-test-model",
       github: makeGithub(),
@@ -405,6 +405,33 @@ describe("lifecycle events (spec §26)", () => {
       errorName: "Error",
       inputTokens: 0,
       outputTokens: 0,
+    });
+  });
+
+  it("reports the tokens already spent when a later model call rejects", async () => {
+    const toolTurn = message(
+      [toolUseBlock("toolu_1", "get_diff", {})],
+      "tool_use",
+      { inputTokens: 40, outputTokens: 4 },
+    );
+    const { anthropic } = makeAnthropic([]);
+    anthropic.messages.create
+      .mockImplementationOnce(async () => toolTurn)
+      .mockRejectedValueOnce(new Error("529 overloaded"));
+    const { logger, entries } = createCapturingLogger();
+    const agent = createReviewAgent(correctnessLens, {
+      anthropic,
+      model: "claude-test-model",
+      github: makeGithub(),
+      logger,
+    });
+
+    await expect(agent.run(context)).rejects.toThrow("529 overloaded");
+
+    expect(entries[1]).toMatchObject({
+      event: "agent.failed",
+      inputTokens: 40,
+      outputTokens: 4,
     });
   });
 

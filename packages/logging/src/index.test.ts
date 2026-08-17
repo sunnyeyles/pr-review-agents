@@ -1,19 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import {
-  LOGGING_PACKAGE,
-  createCapturingLogger,
-  createConsoleLogger,
-} from "./index.js";
+import { createCapturingLogger, createConsoleLogger } from "./index.js";
 
 afterEach(() => {
   vi.restoreAllMocks();
-});
-
-describe("@pr-review/logging", () => {
-  it("exports the package marker", () => {
-    expect(LOGGING_PACKAGE).toBe("@pr-review/logging");
-  });
 });
 
 describe("createConsoleLogger", () => {
