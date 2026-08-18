@@ -21,3 +21,11 @@ export {
 } from "./synthesiser.js";
 export { validateFindings } from "./validate-findings.js";
 export { renderCheckRun, type RenderedCheckRun } from "./render-check-run.js";
+export {
+  createCheckRunPublisher,
+  reviewCorrelation,
+  reviewPullRequest,
+  type PublishReview,
+  type ReviewPullRequestDeps,
+  type ReviewTarget,
+} from "./review-pull-request.js";

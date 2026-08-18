@@ -1,6 +1,18 @@
-# Deploys on push to main via AWS OIDC — no long-lived AWS keys and no
-# secrets in this file. Required repository *variables* (Settings →
-# Secrets and variables → Actions → Variables; see terraform/README.md):
+# FROZEN — manual dispatch only.
+#
+# The AWS stack (API Gateway + Lambdas + SQS + Terraform) is the enterprise
+# delivery path, not the default one. The default path is the GitHub Action in
+# apps/action, which needs no AWS account. This workflow therefore no longer
+# triggers on pushes to main: deploying infrastructure is a deliberate act, run
+# by hand for the installations that want reviews off their CI.
+#
+# Frozen does NOT mean untested — ci.yml still typechecks and tests the webhook
+# and worker apps on every push, so the stack cannot rot silently. See
+# terraform/README.md for the support policy.
+#
+# Deploys via AWS OIDC — no long-lived AWS keys and no secrets in this file.
+# Required repository *variables* (Settings → Secrets and variables → Actions →
+# Variables; see terraform/README.md):
 #
 #   AWS_DEPLOY_ROLE_ARN  IAM role assumed via OIDC (bootstrap step)
 #   AWS_REGION           deploy + state bucket region
@@ -11,8 +23,6 @@
 name: Deploy
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:

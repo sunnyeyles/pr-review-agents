@@ -21,6 +21,27 @@ importers:
         specifier: ^4.1.10
         version: 4.1.10(@types/node@25.9.5)(vite@8.2.0(@types/node@25.9.5)(esbuild@0.28.1))
 
+  apps/action:
+    dependencies:
+      '@pr-review/ai':
+        specifier: workspace:*
+        version: link:../../packages/ai
+      '@pr-review/github':
+        specifier: workspace:*
+        version: link:../../packages/github
+      '@pr-review/logging':
+        specifier: workspace:*
+        version: link:../../packages/logging
+      '@pr-review/reviewer':
+        specifier: workspace:*
+        version: link:../../packages/reviewer
+      '@pr-review/schemas':
+        specifier: workspace:*
+        version: link:../../packages/schemas
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+
   apps/webhook:
     dependencies:
       '@aws-sdk/client-secrets-manager':
@@ -123,6 +144,9 @@ importers:
       '@pr-review/github':
         specifier: workspace:*
         version: link:../github
+      '@pr-review/logging':
+        specifier: workspace:*
+        version: link:../logging
       '@pr-review/schemas':
         specifier: workspace:*
         version: link:../schemas

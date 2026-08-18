@@ -18,6 +18,7 @@ import { createSqsEnqueue } from "./sqs.js";
 export {
   createWebhookHandler,
   SUPPORTED_PULL_REQUEST_ACTIONS,
+  isSupportedPullRequestAction,
   type EnqueueReviewJob,
   type WebhookHandler,
   type WebhookHandlerDeps,

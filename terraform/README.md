@@ -1,5 +1,29 @@
 # Infrastructure
 
+## Status: frozen
+
+This stack is the **enterprise delivery path**, not the default one. The default
+way to run the reviewer is the GitHub Action in [`apps/action`](../apps/action),
+which runs the identical review engine inside the customer's own Actions runner
+and needs no AWS account, no Terraform bootstrap, and no GitHub App
+registration.
+
+What frozen means in practice:
+
+- **Deploys are manual.** `.github/workflows/deploy.yml` runs on
+  `workflow_dispatch` only — merging to `main` no longer deploys.
+- **It is still tested.** `ci.yml` typechecks and tests `apps/webhook` and
+  `apps/worker` on every push, so the stack cannot rot silently.
+- **Shared improvements still land here.** Both delivery paths call
+  `reviewPullRequest()` in `@pr-review/reviewer`, so engine changes reach the
+  Lambdas without anyone touching Terraform.
+- **New infrastructure work happens on demand** — when an installation
+  actually wants reviews running off their CI.
+
+Everything below still applies when you do deploy it.
+
+---
+
 Terraform for the agentic PR reviewer walking skeleton:
 
 - API Gateway (HTTP API) → webhook Lambda (`POST /webhook`)

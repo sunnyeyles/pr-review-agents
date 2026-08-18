@@ -1,0 +1,114 @@
+# Publishes the GitHub Action to its own public repository.
+#
+# Consumers can only reference an action from a public repo, but this
+# repository holds the source we intend to license. So the split: build here,
+# publish only the artefacts a consumer needs — action.yml, the bundled
+# dist/index.mjs, LICENSE, and usage docs — into a thin public repo. The
+# engine, the tests, the spec, and the Terraform stay private.
+#
+# Required repository configuration:
+#
+#   vars.ACTION_RELEASE_REPO     target public repo, e.g. sunnyeyles/pr-review-action
+#   secrets.ACTION_RELEASE_TOKEN PAT (or app token) with contents:write on it
+#
+# Tagging a release here (v1.2.3) publishes that exact tag downstream and moves
+# the major alias (v1) to it, which is the convention consumers pin against.
+
+name: Release action
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag to publish (e.g. v1.2.3)
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-action
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build and publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # The published bundle is what customers actually execute, so it
+      # ships only from a green tree.
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build action bundle
+        run: pnpm --filter @pr-review/action build
+
+      - name: Resolve release tag
+        id: tag
+        run: |
+          tag="${{ inputs.tag || github.ref_name }}"
+          case "$tag" in
+            v*) ;;
+            *) echo "::error::tag must start with v (got '$tag')"; exit 1 ;;
+          esac
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "major=${tag%%.*}" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout the public action repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ vars.ACTION_RELEASE_REPO }}
+          token: ${{ secrets.ACTION_RELEASE_TOKEN }}
+          path: .release
+          fetch-depth: 0
+
+      # Replace the published tree wholesale rather than merging, so a
+      # file deleted here disappears downstream too. .git is preserved.
+      - name: Stage the published tree
+        run: |
+          find .release -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          mkdir -p .release/dist
+          cp apps/action/action.yml .release/action.yml
+          cp apps/action/dist/index.mjs .release/dist/index.mjs
+          cp apps/action/README.md .release/README.md
+          cp LICENSE .release/LICENSE 2>/dev/null || true
+
+      - name: Commit and tag
+        working-directory: .release
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+          MAJOR: ${{ steps.tag.outputs.major }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to publish for $TAG"
+          else
+            git commit -m "release: $TAG"
+          fi
+          git tag -f "$TAG"
+          git tag -f "$MAJOR"
+          git push origin HEAD:main
+          git push origin -f "$TAG"
+          git push origin -f "$MAJOR"

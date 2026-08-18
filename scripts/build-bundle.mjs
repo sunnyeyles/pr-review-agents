@@ -1,12 +1,21 @@
 /**
- * Bundles a Lambda app for the nodejs22.x runtime.
+ * Bundles an app into a single self-contained ESM file for Node 22+.
  *
- * Run from an app directory (apps/webhook, apps/worker) via its
- * `build` script: bundles src/index.ts into dist/index.mjs (ESM),
- * compiling workspace packages (consumed as TypeScript source) into
- * the bundle. Only the AWS SDK v3, which the nodejs22.x runtime
- * provides, is left external. Zipping happens in Terraform via the
- * archive_file data source.
+ * Run from an app directory via its `build` script: bundles src/index.ts
+ * into dist/index.mjs, compiling workspace packages (consumed as
+ * TypeScript source) into the bundle.
+ *
+ * Externals are per-target and passed on the command line:
+ *
+ *   node ../../scripts/build-bundle.mjs --external=@aws-sdk/*
+ *     Lambda apps (apps/webhook, apps/worker). The nodejs22.x runtime
+ *     provides the AWS SDK v3, so leaving it external keeps the zip
+ *     small. Zipping happens in Terraform via the archive_file source.
+ *
+ *   node ../../scripts/build-bundle.mjs
+ *     The GitHub Action (apps/action). Nothing is provided by the
+ *     Actions node runtime, so everything is compiled in — the
+ *     published action repository ships only action.yml and dist/.
  *
  * ESM/CJS interop: the bundle is ESM (matching "type": "module"
  * sources and the .mjs handler convention), but some transitive
@@ -26,6 +35,11 @@ const appDir = process.cwd();
 const entryPoint = path.join(appDir, "src", "index.ts");
 const outfile = path.join(appDir, "dist", "index.mjs");
 
+const external = process.argv
+  .filter((arg) => arg.startsWith("--external="))
+  .map((arg) => arg.slice("--external=".length))
+  .filter((value) => value.length > 0);
+
 const banner = `import { createRequire as __banner_createRequire } from "node:module";
 import { fileURLToPath as __banner_fileURLToPath } from "node:url";
 import { dirname as __banner_dirname } from "node:path";
@@ -43,9 +57,7 @@ await build({
   platform: "node",
   format: "esm",
   target: "node22",
-  // Provided by the nodejs22.x Lambda runtime; everything else
-  // (including workspace packages) is compiled into the bundle.
-  external: ["@aws-sdk/*"],
+  external,
   banner: { js: banner },
   sourcemap: false,
   minify: false,
