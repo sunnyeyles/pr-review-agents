@@ -1,0 +1,32 @@
+name: AI PR Review
+description: >-
+  Reviews a pull request with three independent AI agents — Correctness,
+  Security, and Architecture — and publishes an AI PR Review check run with
+  inline annotations.
+author: sunnyeyles
+
+branding:
+  icon: check-circle
+  color: purple
+
+inputs:
+  anthropic-api-key:
+    description: >-
+      Anthropic API key the review agents and Synthesiser authenticate with.
+      Store it as a repository or organisation secret; never inline it.
+    required: true
+  github-token:
+    description: >-
+      Token used for the six read-only repository tools and for publishing the
+      check run. The default workflow token is enough when the job grants
+      contents: read, pull-requests: read, and checks: write.
+    required: false
+    default: ${{ github.token }}
+  model:
+    description: Anthropic model id the agents and Synthesiser use.
+    required: false
+    default: claude-sonnet-5
+
+runs:
+  using: node24
+  main: dist/index.mjs

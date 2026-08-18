@@ -1,11 +1,56 @@
 # pr-review-agents
 
-A GitHub App that reviews pull requests with three independent AI agents —
-**Correctness**, **Security**, and **Architecture** — and publishes the result
-as an `AI PR Review` check run with inline annotations.
+Reviews pull requests with three independent AI agents — **Correctness**,
+**Security**, and **Architecture** — and publishes the result as an
+`AI PR Review` check run with inline annotations.
 
 The agents never touch GitHub. They propose structured findings; deterministic
 application code decides what actually gets published.
+
+---
+
+## Delivery paths
+
+One review engine, two ways to run it. Both call the same
+`reviewPullRequest()` in `@pr-review/reviewer`, so the trust boundary below is
+enforced identically no matter which path a repository uses.
+
+### GitHub Action — the default
+
+Runs in the repository's own Actions runner. No AWS account, no Terraform, no
+GitHub App registration; the workflow's own token authenticates the reads and
+publishes the check run.
+
+```yaml
+name: AI PR Review
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: read
+  checks: write        # omit and reviews still land, in the job summary
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: sunnyeyles/pr-review-action@v1
+        with:
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+```
+
+Source lives in [`apps/action`](apps/action); `release-action.yml` publishes the
+bundle to the public action repository.
+
+### AWS GitHub App — the enterprise tier
+
+The Lambda/SQS stack in [`apps/webhook`](apps/webhook),
+[`apps/worker`](apps/worker), and [`terraform/`](terraform) runs reviews off the
+customer's CI entirely, as a GitHub App across every installed repository. It is
+**frozen**: still tested on every push, deployed only by manual dispatch. See
+[`terraform/README.md`](terraform/README.md).
 
 ---
 

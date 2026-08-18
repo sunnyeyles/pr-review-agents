@@ -1,14 +1,21 @@
-import { reviewJobSchema, type ReviewJob } from "@pr-review/schemas";
+import {
+  isSupportedPullRequestAction,
+  reviewJobSchema,
+  type ReviewJob,
+} from "@pr-review/schemas";
 import { z } from "zod";
 
 import { verifyWebhookSignature } from "./verify-signature.js";
 
-/** PR actions that should trigger a review (opened / updated / reopened). */
-export const SUPPORTED_PULL_REQUEST_ACTIONS = [
-  "opened",
-  "synchronize",
-  "reopened",
-] as const;
+/**
+ * PR actions that should trigger a review (opened / updated /
+ * reopened). Re-exported from @pr-review/schemas, where it is shared
+ * with the GitHub Action so both delivery paths trigger alike.
+ */
+export {
+  SUPPORTED_PULL_REQUEST_ACTIONS,
+  isSupportedPullRequestAction,
+} from "@pr-review/schemas";
 
 /**
  * The slice of an API Gateway proxy event the webhook handler needs.
@@ -118,11 +125,7 @@ export function createWebhookHandler({
     if (!action.success) {
       return response(400, "malformed payload");
     }
-    if (
-      !(SUPPORTED_PULL_REQUEST_ACTIONS as readonly string[]).includes(
-        action.data.action,
-      )
-    ) {
+    if (!isSupportedPullRequestAction(action.data.action)) {
       return response(200, "action ignored");
     }
 

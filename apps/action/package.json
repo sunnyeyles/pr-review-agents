@@ -1,5 +1,5 @@
 {
-  "name": "@pr-review/reviewer",
+  "name": "@pr-review/action",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -7,13 +7,15 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build": "node ../../scripts/build-bundle.mjs"
   },
   "dependencies": {
-    "@langchain/langgraph": "^1.4.9",
     "@pr-review/ai": "workspace:*",
     "@pr-review/github": "workspace:*",
     "@pr-review/logging": "workspace:*",
-    "@pr-review/schemas": "workspace:*"
+    "@pr-review/reviewer": "workspace:*",
+    "@pr-review/schemas": "workspace:*",
+    "zod": "^4.4.3"
   }
 }
