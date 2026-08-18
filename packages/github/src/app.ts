@@ -122,7 +122,17 @@ const codeSearchSchema = z.object({
   ),
 });
 
-function createInstallationClient(octokit: OctokitLike): GithubInstallationClient {
+/**
+ * Wraps an authenticated Octokit in the read-only PR client the review
+ * pipeline consumes. Exported because authentication is the only thing
+ * that differs between delivery paths: createGithubApp below supplies
+ * an App-installation Octokit, createTokenClient (token.ts) supplies a
+ * workflow-token one, and everything downstream sees the same
+ * GithubInstallationClient either way.
+ */
+export function createInstallationClient(
+  octokit: OctokitLike,
+): GithubInstallationClient {
   return {
     async getPullRequest(ref: PullRequestRef): Promise<PullRequestDetails> {
       const response = await octokit.rest.pulls.get({

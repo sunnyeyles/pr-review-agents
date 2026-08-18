@@ -1,0 +1,69 @@
+# Dogfooding: this repository reviews its own pull requests with the action in
+# apps/action, built from the branch under review rather than a published tag.
+# If a change breaks the reviewer, it shows up on the pull request that made it.
+#
+# Requires an ANTHROPIC_API_KEY repository secret. Without one the job is
+# skipped rather than failed, so forks and unconfigured clones stay green.
+
+name: Self review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: read
+  checks: write
+
+concurrency:
+  group: self-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    name: AI PR Review
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check for an Anthropic key
+        id: key
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -n "$ANTHROPIC_API_KEY" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::ANTHROPIC_API_KEY is not set — skipping the self review"
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout
+        if: steps.key.outputs.present == 'true'
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        if: steps.key.outputs.present == 'true'
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        if: steps.key.outputs.present == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        if: steps.key.outputs.present == 'true'
+        run: pnpm install --frozen-lockfile
+
+      # A local action must have its dist/ built before `uses: ./` runs it;
+      # dist/ is gitignored, so it is always built here rather than committed.
+      - name: Build the action
+        if: steps.key.outputs.present == 'true'
+        run: pnpm --filter @pr-review/action build
+
+      - name: Review this pull request
+        if: steps.key.outputs.present == 'true'
+        uses: ./apps/action
+        with:
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
