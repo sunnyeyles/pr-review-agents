@@ -5,17 +5,11 @@
  * into dist/index.mjs, compiling workspace packages (consumed as
  * TypeScript source) into the bundle.
  *
- * Externals are per-target and passed on the command line:
- *
- *   node ../../scripts/build-bundle.mjs --external=@aws-sdk/*
- *     Lambda apps (apps/webhook, apps/worker). The nodejs22.x runtime
- *     provides the AWS SDK v3, so leaving it external keeps the zip
- *     small. Zipping happens in Terraform via the archive_file source.
- *
- *   node ../../scripts/build-bundle.mjs
- *     The GitHub Action (apps/action). Nothing is provided by the
- *     Actions node runtime, so everything is compiled in — the
- *     published action repository ships only action.yml and dist/.
+ * apps/action is the only consumer today: `node ../../scripts/build-bundle.mjs`
+ * with no externals, since nothing is provided by the Actions node runtime —
+ * the published action repository ships only action.yml and dist/. An
+ * `--external=<pattern>` flag is still accepted for a future target that
+ * needs to leave part of its dependency tree out of the bundle.
  *
  * ESM/CJS interop: the bundle is ESM (matching "type": "module"
  * sources and the .mjs handler convention), but some transitive

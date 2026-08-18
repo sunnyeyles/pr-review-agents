@@ -9,17 +9,11 @@ application code decides what actually gets published.
 
 ---
 
-## Delivery paths
+## Delivery path
 
-One review engine, two ways to run it. Both call the same
-`reviewPullRequest()` in `@pr-review/reviewer`, so the trust boundary below is
-enforced identically no matter which path a repository uses.
-
-### GitHub Action — the default
-
-Runs in the repository's own Actions runner. No AWS account, no Terraform, no
-GitHub App registration; the workflow's own token authenticates the reads and
-publishes the check run.
+A GitHub Action, run in the repository's own Actions runner. No AWS account,
+no Terraform, no GitHub App registration; the workflow's own token
+authenticates the reads and publishes the check run.
 
 ```yaml
 name: AI PR Review
@@ -44,34 +38,21 @@ jobs:
 Source lives in [`apps/action`](apps/action); `release-action.yml` publishes the
 bundle to the public action repository.
 
-### AWS GitHub App — the enterprise tier
-
-The Lambda/SQS stack in [`apps/webhook`](apps/webhook),
-[`apps/worker`](apps/worker), and [`terraform/`](terraform) runs reviews off the
-customer's CI entirely, as a GitHub App across every installed repository. It is
-**frozen**: still tested on every push, deployed only by manual dispatch. See
-[`terraform/README.md`](terraform/README.md).
+On a fork PR, `GITHUB_TOKEN` is read-only and can't create a check run — the
+Action detects that permission error, degrades to writing the review into the
+job summary instead, and still exits 0.
 
 ---
 
 ## How a review happens
 
 ```text
-GitHub PR event
+GitHub PR event (pull_request: opened/synchronize/reopened)
    │
    ▼
-API Gateway (POST /webhook)
+GitHub Action (apps/action)
    │
-   ▼
-Webhook Lambda ── verify HMAC signature ── enqueue ReviewJob ── 202
-   │
-   ▼
-SQS review queue  (redrive → DLQ after 3 failed deliveries)
-   │
-   ▼
-Worker Lambda
-   │
-   ├── authenticate as the GitHub App installation
+   ├── authenticate with the workflow token
    ├── load PR, changed files, diff
    │
    ▼
@@ -82,12 +63,9 @@ Review pipeline (LangGraph)
    └─ agent__architecture ─┘
                                                         │
                                                         ▼
-                                          GitHub Check Run + annotations
+                                GitHub Check Run + annotations
+                                (or job summary, on a fork PR)
 ```
-
-The webhook Lambda does no AI work — it verifies, enqueues, and returns
-immediately, so GitHub's delivery timeout is never at risk and review jobs get
-SQS retry semantics for free.
 
 ---
 
@@ -138,17 +116,14 @@ Reinforcing rules:
 
 ```text
 apps/
-  webhook/    API Gateway → signature verification → SQS enqueue
-  worker/     SQS consumer → review pipeline → check run
+  action/     Event parsing → review pipeline → check run (or job summary)
 packages/
   ai/         Anthropic seam, agent runtime loop, lenses, read-only tools
   reviewer/   Review graph, synthesiser, validation chain, check-run rendering
-  github/     GitHub App installation auth + Octokit calls
+  github/     GitHub client (installation auth or workflow token) + Octokit calls
   schemas/    Zod schemas: ReviewJob, ReviewFinding
-  config/     requireEnv / resolveSecret (Secrets Manager at runtime)
-  logging/    Structured single-line JSON logger for CloudWatch
-terraform/    All AWS infrastructure (see terraform/README.md)
-scripts/      build-lambda.mjs — esbuild bundler for both Lambdas
+  logging/    Structured single-line JSON logger
+scripts/      build-bundle.mjs — esbuild bundler for apps/action
 spec.md       The original specification this implementation follows
 ```
 
@@ -168,8 +143,8 @@ Concurrency lives in the **review pipeline** graph: all three agent nodes have
 
 One failed agent does not fail the review. `join` collects outcomes, re-sorts
 them into the agents' original order (never completion order), and publishes
-what succeeded. Only when *every* agent fails does the graph throw — which lets
-SQS retry the job and eventually dead-letter it.
+what succeeded. Only when *every* agent fails does the graph throw — which
+fails the workflow step, so the run can be retried from the Actions UI.
 
 Synthesis failure is softer still: it falls back to the raw candidates and
 reports `synthesisOutcome: "failed"` on the result rather than failing the
@@ -179,35 +154,24 @@ review.
 
 ## Configuration
 
-Plain environment variables (set by Terraform):
+Set as `with:` inputs on the Action step ([`apps/action/action.yml`](apps/action/action.yml)):
 
-| Variable | Used by | Purpose |
+| Input | Required | Purpose |
 | --- | --- | --- |
-| `REVIEW_QUEUE_URL` | webhook | SQS queue to enqueue review jobs into |
-| `GITHUB_APP_ID` | worker | Numeric GitHub App ID (not a secret) |
-| `ANTHROPIC_MODEL` | worker | Model id for the agents and synthesiser |
+| `anthropic-api-key` | yes | Anthropic key the agents and synthesiser authenticate with. Store as a repository or organisation secret; never inline it. |
+| `github-token` | no (default `${{ github.token }}`) | Token for the six read-only repository tools and for publishing the check run. |
+| `model` | no (default `claude-sonnet-5`) | Anthropic model id the agents and synthesiser use. |
 
-Secrets — never in git, Terraform files, Terraform state, Lambda bundles, or
-workflow files:
+Nothing is read from a secrets store at runtime — the workflow token and the
+`anthropic-api-key` input are the only credentials involved, and neither ever
+needs to be provisioned outside GitHub's own secret settings.
 
-| Secret | Used by |
-| --- | --- |
-| `GITHUB_WEBHOOK_SECRET` | webhook |
-| `GITHUB_APP_PRIVATE_KEY` | worker |
-| `ANTHROPIC_API_KEY` | worker |
+### Token permissions
 
-`@pr-review/config`'s `resolveSecret("NAME")` resolves each one in two modes:
-
-- **Deployed** — Terraform injects `NAME_SECRET_ARN`, and the value is fetched
-  from Secrets Manager once per cold start.
-- **Local / tests** — the plain `NAME` environment variable is used, so no AWS
-  access is needed.
-
-### GitHub App permissions
-
-Repository contents: **read**. Pull requests: **read**. Checks: **read and
-write**. Subscribed events: pull request `opened`, `synchronize`, `reopened`.
-The app deliberately cannot modify files, merge, or approve.
+Repository contents: **read**. Pull requests: **read**. Checks: **write** to
+get inline annotations — omit it and the review still lands, in the job
+summary. The Action never requests write access to file contents, merges, or
+approvals.
 
 ---
 
@@ -218,30 +182,28 @@ Requires Node.js `>=22 <26` and pnpm `>=10`.
 ```sh
 pnpm install
 pnpm typecheck        # tsc --noEmit across every workspace package
-pnpm test             # vitest run — 254 tests across 22 files
-pnpm build            # esbuild → apps/*/dist/index.mjs (nodejs22.x, ESM)
+pnpm test             # vitest run — 241 tests across 17 files
+pnpm build            # esbuild → apps/action/dist/index.mjs (Node 24, ESM)
 ```
 
-Workspace packages are consumed as TypeScript source and compiled into each
-Lambda bundle by `scripts/build-lambda.mjs`; only the AWS SDK v3 is left
-external, since the `nodejs22.x` runtime provides it. Zipping happens in
-Terraform via `archive_file`, which reads `apps/*/dist/index.mjs` directly —
-so `pnpm build` must run **before** `terraform plan`, or you will plan against
-a stale (or missing) bundle.
+Workspace packages are consumed as TypeScript source and compiled into a
+single self-contained bundle by `scripts/build-bundle.mjs` — nothing is left
+external, since the Actions runner provides nothing beyond the Node runtime
+itself.
 
 Put local secret values in `.env.local` (gitignored) when exercising the
-handlers outside AWS.
+handler outside Actions.
 
 ---
 
 ## Testing
 
-Every seam that decides what reaches GitHub is covered by unit tests: webhook
-signature verification, job schema parsing, the agent loop and its tool
-dispatch, the diff line index, the validation chain, duplicate removal,
-partial-agent-failure semantics, synthesis fallback, and check-run rendering.
-Anthropic, Octokit, SQS, and Secrets Manager are all injected behind narrow
-interfaces, so the suite makes no network calls and runs in under two seconds.
+Every seam that decides what reaches GitHub is covered by unit tests: event
+parsing, the agent loop and its tool dispatch, the diff line index, the
+validation chain, duplicate removal, partial-agent-failure semantics,
+synthesis fallback, check-run rendering, and the fork-PR job-summary fallback.
+Anthropic and Octokit are both injected behind narrow interfaces, so the suite
+makes no network calls and runs in under two seconds.
 
 ```sh
 pnpm test
@@ -249,33 +211,33 @@ pnpm test
 
 ---
 
-## Deployment
+## Publishing the Action
 
-Push to `main` runs `.github/workflows/deploy.yml`: install → typecheck → test →
-build bundles → assume an AWS role via **OIDC** (no long-lived keys) →
-`terraform init/plan/apply`. `.github/workflows/ci.yml` runs typecheck and tests
-on every push.
+`.github/workflows/release-action.yml` runs on a `v*` tag (or manual dispatch):
+install → typecheck → test → build the bundle → push only `action.yml`,
+`dist/index.mjs`, `LICENSE`, and a usage `README.md` to a separate public repo,
+moving that repo's major-version alias (`v1`) to the new tag. The engine, the
+tests, the spec, and this README stay in the private source repo.
+`.github/workflows/ci.yml` runs typecheck and tests on every push;
+`.github/workflows/self-review.yml` dogfoods the Action on this repo's own PRs.
 
-Terraform provisions the HTTP API, both Lambdas, the review queue and DLQ, the
-three Secrets Manager containers, CloudWatch log groups, and two separate
-least-privilege execution roles. State lives in S3 with native lockfiles.
+Required repository configuration for the release workflow:
 
-**Infrastructure setup, required repository variables, and the one-time
-bootstrap (state bucket, GitHub OIDC provider, deploy role, secret values) are
-documented in [`terraform/README.md`](terraform/README.md).**
-[`terraform/why.md`](terraform/why.md) records the reasoning behind the
-infrastructure choices.
+| Setting | Purpose |
+| --- | --- |
+| `vars.ACTION_RELEASE_REPO` | Target public repo, e.g. `sunnyeyles/pr-review-action` |
+| `secrets.ACTION_RELEASE_TOKEN` | Token with `contents: write` on that repo |
 
 ---
 
 ## Observability
 
-Structured single-line JSON logs land in CloudWatch under lifecycle event
-names: `review.started`, `review.loaded`, `agent.started`, `agent.thinking`,
-`agent.message`, `agent.completed`, `agent.failed`, `synthesis.started`,
-`synthesis.skipped`, `synthesis.completed`, `synthesis.failed`,
-`findings.validated`, `review.published`, and `review.failed`. Events carry the
-repository, PR
+Structured single-line JSON logs land in the workflow run's own log stream,
+under lifecycle event names: `review.started`, `review.loaded`,
+`agent.started`, `agent.thinking`, `agent.message`, `agent.completed`,
+`agent.failed`, `synthesis.started`, `synthesis.skipped`,
+`synthesis.completed`, `synthesis.failed`, `findings.validated`,
+`review.published`, and `review.failed`. Events carry the repository, PR
 number, head SHA, agent name, duration, finding count, and token usage, so a
 single review is greppable end to end by `headSha`.
 
@@ -283,10 +245,9 @@ single review is greppable end to end by `headSha`.
 
 ## Further reading
 
-- [`spec.md`](spec.md) — the specification this implementation follows. Source
-  comments reference its sections (`spec §17`, `spec §21`, …).
-- [`terraform/README.md`](terraform/README.md) — infrastructure and bootstrap.
-- [`terraform/why.md`](terraform/why.md) — infrastructure design rationale.
+- [`spec.md`](spec.md) — the original specification this implementation
+  follows (predates the GitHub Action; see its header note). Source comments
+  reference its sections (`spec §17`, `spec §21`, …).
 
 ## Out of scope
 

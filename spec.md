@@ -1,5 +1,12 @@
 # Agentic PR Reviewer — Simple Specification
 
+> **Note:** this spec describes the original AWS delivery path (webhook
+> Lambda, SQS, worker Lambda, Terraform). That path was decommissioned in
+> favor of `apps/action`, a GitHub Action running the same review engine —
+> see [`README.md`](README.md) for the current architecture. Left as-is below
+> for history; source comments still reference these section numbers
+> (`spec §17`, `spec §21`, …).
+
 ## 1. Goal
 
 Build a GitHub App that automatically reviews pull requests using multiple AI agents.
