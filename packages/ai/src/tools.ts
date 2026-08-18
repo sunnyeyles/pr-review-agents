@@ -1,5 +1,5 @@
 /**
- * The six read-only, repository-scoped review tools from —
+ * The six read-only, repository-scoped review tools from spec §13 —
  * the ONLY tools any review agent ever gets. There is no write,
  * comment, approve, merge, or execute tool anywhere in this package,
  * so the restrictions hold by construction.

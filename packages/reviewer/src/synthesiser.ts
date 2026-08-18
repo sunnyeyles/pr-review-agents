@@ -85,7 +85,7 @@ export interface SynthesiserDeps {
 
 /**
  * The outcome of one synthesis run: the refined findings plus the token
- * usage of the single model call (�� the caller reports it on
+ * usage of the single model call (spec §26: the caller reports it on
  * the synthesis.completed event). Skipped runs report zero usage.
  */
 export interface SynthesisResult {
