@@ -7,11 +7,11 @@
  *
  * One way in, one client out: createTokenClient wraps the workflow
  * token the GitHub Action is handed and returns a
- * GithubInstallationClient. createInstallationClient is the shared
- * client body behind it, exported so an already-authenticated Octokit
- * can be wrapped directly.
+ * GithubInstallationClient. The client body behind it (app.ts) is a
+ * package-internal detail; OctokitLike is public only because
+ * GithubTokenConfig lets a caller inject its own Octokit.
  */
-export { createInstallationClient, type OctokitLike } from "./app.js";
+export type { OctokitLike } from "./app.js";
 export { createTokenClient, type GithubTokenConfig } from "./token.js";
 export {
   CHECK_RUN_NAME,

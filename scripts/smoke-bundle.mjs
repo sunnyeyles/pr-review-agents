@@ -47,10 +47,13 @@ const actionManifest = path.join(actionDir, "action.yml");
 /**
  * An export the bundle must expose. Importing a module that throws is an
  * obvious failure; importing one that silently bundled to nothing is not,
- * so we look for something real on the namespace. If this export is ever
+ * so we look for something real on the namespace. This is the entrypoint
+ * guard itself — the function that makes the bundle an action — so it is
+ * owned by src/index.ts rather than re-exported from a sibling module,
+ * and it cannot vanish without the action ceasing to work. If it is ever
  * renamed on purpose, rename it here too.
  */
-const requiredExport = "createActionHandler";
+const requiredExport = "runEntrypoint";
 
 const failures = [];
 

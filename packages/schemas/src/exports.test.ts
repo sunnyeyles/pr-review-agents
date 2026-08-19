@@ -6,24 +6,14 @@
 import { describe, expect, it } from "vitest";
 
 import * as barrel from "./index.js";
-import type {
-  FindingCategory,
-  FindingSeverity,
-  ReviewFinding,
-  SupportedPullRequestAction,
-} from "./index.js";
+import type { FindingCategory, ReviewFinding } from "./index.js";
 
 const DOCUMENTED_EXPORTS = [
   "isSupportedPullRequestAction",
   "reviewFindingSchema",
 ] as const;
 
-type DocumentedTypes = [
-  FindingCategory,
-  FindingSeverity,
-  ReviewFinding,
-  SupportedPullRequestAction,
-];
+type DocumentedTypes = [FindingCategory, ReviewFinding];
 
 describe("@pr-review/schemas public entry point", () => {
   it("exports exactly its documented symbol set", () => {

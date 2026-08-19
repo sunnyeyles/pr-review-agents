@@ -41,17 +41,6 @@ import {
 import { createActionHandler } from "./handler.js";
 import { createFallbackPublisher } from "./summary.js";
 
-export { createActionHandler, type ActionHandler, type ActionHandlerDeps, type ActionResult } from "./handler.js";
-export { inspectEvent, type EventInspection } from "./event.js";
-export {
-  appendJobSummary,
-  createFallbackPublisher,
-  httpStatus,
-  isPermissionError,
-  renderJobSummary,
-  type FallbackPublisherDeps,
-} from "./summary.js";
-
 /**
  * Everything the entrypoint reads from outside itself: the process
  * environment, the event file, the two client factories, the logger,

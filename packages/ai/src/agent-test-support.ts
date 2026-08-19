@@ -23,7 +23,6 @@ export const pullRequest: PullRequestDetails = {
   number: 42,
   title: "Add admin gating to the sessions endpoint",
   body: "Gates session listing behind an admin check.",
-  state: "open",
   author: "octocat",
   baseRef: "main",
   baseSha,

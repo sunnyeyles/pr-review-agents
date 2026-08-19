@@ -23,7 +23,6 @@ const context: ReviewContext = {
     number: 42,
     title: "Add rate limiting",
     body: null,
-    state: "open",
     author: "octocat",
     baseRef: "main",
     baseSha: "0000000000000000000000000000000000000000",

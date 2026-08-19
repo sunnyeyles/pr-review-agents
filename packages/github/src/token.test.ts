@@ -204,7 +204,6 @@ describe("getPullRequest", () => {
       number: 42,
       title: "Add rate limiting to the sessions endpoint",
       body: "Adds a token bucket to the sessions endpoint.",
-      state: "open",
       author: "octocat",
       baseRef: "main",
       baseSha: "0000000000000000000000000000000000000000",

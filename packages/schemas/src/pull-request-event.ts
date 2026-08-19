@@ -17,9 +17,6 @@ const SUPPORTED_PULL_REQUEST_ACTIONS = [
   "reopened",
 ] as const;
 
-export type SupportedPullRequestAction =
-  (typeof SUPPORTED_PULL_REQUEST_ACTIONS)[number];
-
 /** Whether a pull_request event action should trigger a review. */
 export function isSupportedPullRequestAction(action: string): boolean {
   return (SUPPORTED_PULL_REQUEST_ACTIONS as readonly string[]).includes(action);

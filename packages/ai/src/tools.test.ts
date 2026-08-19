@@ -19,7 +19,6 @@ const pullRequest: PullRequestDetails = {
   number: 42,
   title: "Add rate limiting",
   body: "Adds a token bucket.",
-  state: "open",
   author: "octocat",
   baseRef: "main",
   baseSha: scope.baseSha,
