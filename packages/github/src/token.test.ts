@@ -1,7 +1,14 @@
+/**
+ * The token auth path end to end: createTokenClient wrapping an
+ * injected Octokit stub, and the shared client body (app.ts) it
+ * returns — PR mapping, pagination, the diff media type, file-content
+ * errors, repo-scoped search, and check-run creation.
+ */
 import { describe, expect, it, vi } from "vitest";
 
-import { createGithubApp, type OctokitLike } from "./app.js";
+import type { OctokitLike } from "./app.js";
 import { CHECK_RUN_NAME, type PullRequestRef } from "./client.js";
+import { createTokenClient } from "./token.js";
 
 const ref: PullRequestRef = {
   owner: "octo-org",
@@ -10,6 +17,9 @@ const ref: PullRequestRef = {
 };
 
 const headSha = "6dcb09b5b57875f334f61aebed695e2e4193db5e";
+
+/** Stand-in for the workflow token Actions hands the step. */
+const token = "ghs_workflowtoken";
 
 /**
  * A pulls.get response trimmed to the fields we map (plus realistic
@@ -140,47 +150,36 @@ function makeOctokit(options: StubOptions = {}) {
   return octokit;
 }
 
-function makeApp(options: StubOptions = {}) {
+function makeClient(options: StubOptions = {}) {
   const octokit = makeOctokit(options);
   const createOctokit = vi.fn(() => octokit);
-  const createInstallationClient = createGithubApp({
-    appId: "123456",
-    privateKey: "-----BEGIN RSA PRIVATE KEY-----\nfake\n-----END RSA PRIVATE KEY-----",
-    createOctokit,
-  });
-  return { octokit, createOctokit, createInstallationClient };
+  const client = createTokenClient({ token, createOctokit });
+  return { octokit, createOctokit, client };
 }
 
-describe("createGithubApp", () => {
-  it("creates an Octokit authenticated for the requested installation", () => {
-    const { createOctokit, createInstallationClient } = makeApp();
-
-    createInstallationClient(12345678);
+describe("createTokenClient", () => {
+  it("creates an Octokit authenticated with the supplied token", () => {
+    const { createOctokit } = makeClient();
 
     expect(createOctokit).toHaveBeenCalledTimes(1);
-    expect(createOctokit).toHaveBeenCalledWith(12345678);
+    expect(createOctokit).toHaveBeenCalledWith(token);
   });
 
-  it("reuses the client for repeated requests for the same installation", () => {
-    const { createOctokit, createInstallationClient } = makeApp();
+  it("builds an independent client per token", () => {
+    const octokit = makeOctokit();
+    const createOctokit = vi.fn(() => octokit);
 
-    const first = createInstallationClient(12345678);
-    const second = createInstallationClient(12345678);
-    createInstallationClient(87654321);
+    const first = createTokenClient({ token, createOctokit });
+    const second = createTokenClient({ token: "ghs_othertoken", createOctokit });
 
-    expect(first).toBe(second);
+    expect(first).not.toBe(second);
     expect(createOctokit).toHaveBeenCalledTimes(2);
-    expect(createOctokit).toHaveBeenNthCalledWith(2, 87654321);
+    expect(createOctokit).toHaveBeenNthCalledWith(1, token);
+    expect(createOctokit).toHaveBeenNthCalledWith(2, "ghs_othertoken");
   });
 
   it("builds a real Octokit client when no factory is injected", () => {
-    const createInstallationClient = createGithubApp({
-      appId: "123456",
-      privateKey:
-        "-----BEGIN RSA PRIVATE KEY-----\nfake\n-----END RSA PRIVATE KEY-----",
-    });
-
-    const client = createInstallationClient(12345678);
+    const client = createTokenClient({ token });
 
     expect(typeof client.getPullRequest).toBe("function");
     expect(typeof client.listChangedFiles).toBe("function");
@@ -191,8 +190,7 @@ describe("createGithubApp", () => {
 
 describe("getPullRequest", () => {
   it("loads the PR and maps title, description, and metadata", async () => {
-    const { octokit, createInstallationClient } = makeApp();
-    const client = createInstallationClient(12345678);
+    const { octokit, client } = makeClient();
 
     const pullRequest = await client.getPullRequest(ref);
 
@@ -216,10 +214,9 @@ describe("getPullRequest", () => {
   });
 
   it("maps a null description and missing author", async () => {
-    const { createInstallationClient } = makeApp({
+    const { client } = makeClient({
       pullData: { ...pullResponse, body: null, user: null },
     });
-    const client = createInstallationClient(12345678);
 
     const pullRequest = await client.getPullRequest(ref);
 
@@ -228,10 +225,9 @@ describe("getPullRequest", () => {
   });
 
   it("rejects a malformed PR response", async () => {
-    const { createInstallationClient } = makeApp({
+    const { client } = makeClient({
       pullData: { title: "missing everything else" },
     });
-    const client = createInstallationClient(12345678);
 
     await expect(client.getPullRequest(ref)).rejects.toThrow();
   });
@@ -239,8 +235,7 @@ describe("getPullRequest", () => {
 
 describe("listChangedFiles", () => {
   it("maps changed files and drops fields we do not consume", async () => {
-    const { octokit, createInstallationClient } = makeApp();
-    const client = createInstallationClient(12345678);
+    const { octokit, client } = makeClient();
 
     const files = await client.listChangedFiles(ref);
 
@@ -272,10 +267,9 @@ describe("listChangedFiles", () => {
   it("paginates until a short page is returned", async () => {
     const pageOne = Array.from({ length: 100 }, (_, i) => makeFile(i));
     const pageTwo = [makeFile(100), makeFile(101)];
-    const { octokit, createInstallationClient } = makeApp({
+    const { octokit, client } = makeClient({
       filePages: [pageOne, pageTwo],
     });
-    const client = createInstallationClient(12345678);
 
     const files = await client.listChangedFiles(ref);
 
@@ -294,8 +288,7 @@ describe("listChangedFiles", () => {
 
   it("omits the patch for files without one (e.g. binary files)", async () => {
     const { patch: _patch, ...binaryFile } = makeFile(1);
-    const { createInstallationClient } = makeApp({ filePages: [[binaryFile]] });
-    const client = createInstallationClient(12345678);
+    const { client } = makeClient({ filePages: [[binaryFile]] });
 
     const files = await client.listChangedFiles(ref);
 
@@ -304,10 +297,9 @@ describe("listChangedFiles", () => {
   });
 
   it("rejects a malformed file listing", async () => {
-    const { createInstallationClient } = makeApp({
+    const { client } = makeClient({
       filePages: [[{ filename: 42 }]],
     });
-    const client = createInstallationClient(12345678);
 
     await expect(client.listChangedFiles(ref)).rejects.toThrow();
   });
@@ -315,8 +307,7 @@ describe("listChangedFiles", () => {
 
 describe("getDiff", () => {
   it("requests the diff media type and returns the raw diff", async () => {
-    const { octokit, createInstallationClient } = makeApp();
-    const client = createInstallationClient(12345678);
+    const { octokit, client } = makeClient();
 
     const diff = await client.getDiff(ref);
 
@@ -330,8 +321,7 @@ describe("getDiff", () => {
   });
 
   it("rejects when the API does not return a textual diff", async () => {
-    const { createInstallationClient } = makeApp({ diffData: { not: "a diff" } });
-    const client = createInstallationClient(12345678);
+    const { client } = makeClient({ diffData: { not: "a diff" } });
 
     await expect(client.getDiff(ref)).rejects.toThrow();
   });
@@ -339,8 +329,7 @@ describe("getDiff", () => {
 
 describe("getFileContents", () => {
   it("requests the path at the given ref and decodes the base64 content", async () => {
-    const { octokit, createInstallationClient } = makeApp();
-    const client = createInstallationClient(12345678);
+    const { octokit, client } = makeClient();
 
     const contents = await client.getFileContents({
       owner: "octo-org",
@@ -359,10 +348,9 @@ describe("getFileContents", () => {
   });
 
   it("rejects when the path is a directory (array response)", async () => {
-    const { createInstallationClient } = makeApp({
+    const { client } = makeClient({
       contentData: [fileContentsResponse],
     });
-    const client = createInstallationClient(12345678);
 
     await expect(
       client.getFileContents({
@@ -375,10 +363,9 @@ describe("getFileContents", () => {
   });
 
   it("rejects when the entry is not a plain file (e.g. a submodule)", async () => {
-    const { createInstallationClient } = makeApp({
+    const { client } = makeClient({
       contentData: { ...fileContentsResponse, type: "submodule" },
     });
-    const client = createInstallationClient(12345678);
 
     await expect(
       client.getFileContents({
@@ -391,10 +378,9 @@ describe("getFileContents", () => {
   });
 
   it("rejects content with an unsupported encoding (e.g. too-large files)", async () => {
-    const { createInstallationClient } = makeApp({
+    const { client } = makeClient({
       contentData: { ...fileContentsResponse, encoding: "none", content: "" },
     });
-    const client = createInstallationClient(12345678);
 
     await expect(
       client.getFileContents({
@@ -409,8 +395,7 @@ describe("getFileContents", () => {
 
 describe("searchCode", () => {
   it("scopes the query to the repository with a repo: qualifier", async () => {
-    const { octokit, createInstallationClient } = makeApp();
-    const client = createInstallationClient(12345678);
+    const { octokit, client } = makeClient();
 
     await client.searchCode({
       owner: "octo-org",
@@ -425,8 +410,7 @@ describe("searchCode", () => {
   });
 
   it("returns matches from the target repository only", async () => {
-    const { createInstallationClient } = makeApp();
-    const client = createInstallationClient(12345678);
+    const { client } = makeClient();
 
     const matches = await client.searchCode({
       owner: "octo-org",
@@ -438,10 +422,9 @@ describe("searchCode", () => {
   });
 
   it("rejects a malformed search response", async () => {
-    const { createInstallationClient } = makeApp({
+    const { client } = makeClient({
       searchData: { items: "not-an-array" },
     });
-    const client = createInstallationClient(12345678);
 
     await expect(
       client.searchCode({
@@ -455,8 +438,7 @@ describe("searchCode", () => {
 
 describe("createCheckRun", () => {
   it('publishes a completed check run named exactly "AI PR Review" against the head SHA', async () => {
-    const { octokit, createInstallationClient } = makeApp();
-    const client = createInstallationClient(12345678);
+    const { octokit, client } = makeClient();
 
     const checkRun = await client.createCheckRun({
       owner: "octo-org",
@@ -487,8 +469,7 @@ describe("createCheckRun", () => {
   });
 
   it("passes inline annotations through to the checks API", async () => {
-    const { octokit, createInstallationClient } = makeApp();
-    const client = createInstallationClient(12345678);
+    const { octokit, client } = makeClient();
     const annotations = [
       {
         path: "src/auth/session.ts",
@@ -520,8 +501,7 @@ describe("createCheckRun", () => {
   });
 
   it("omits the annotations field when the list is empty", async () => {
-    const { octokit, createInstallationClient } = makeApp();
-    const client = createInstallationClient(12345678);
+    const { octokit, client } = makeClient();
 
     await client.createCheckRun({
       owner: "octo-org",
@@ -536,11 +516,10 @@ describe("createCheckRun", () => {
   });
 
   it("rejects when the check run cannot be created", async () => {
-    const { octokit, createInstallationClient } = makeApp();
+    const { octokit, client } = makeClient();
     octokit.rest.checks.create.mockRejectedValueOnce(
       new Error("Resource not accessible by integration"),
     );
-    const client = createInstallationClient(12345678);
 
     await expect(
       client.createCheckRun({

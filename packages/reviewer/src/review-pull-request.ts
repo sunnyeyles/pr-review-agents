@@ -3,15 +3,15 @@
  * check run, publish it, and emit the spec §26 lifecycle events along
  * the way.
  *
- * This is the shared body of every delivery path. The worker Lambda
- * wraps it in SQS record parsing and partial-batch semantics; the
- * GitHub Action wraps it in Actions event parsing. Neither owns the
+ * This is the shared body of the review, kept separate from the
+ * delivery path that triggers it: the GitHub Action wraps it in
+ * Actions event parsing and nothing more. The wrapper does not own the
  * publish step, which matters: the deterministic side-effect boundary
- * (spec §17) is enforced here, once, rather than copied per wrapper.
+ * (spec §17) is enforced here, once, rather than in the wrapper.
  *
- * What stays outside: authentication (callers resolve their own
- * client — App installation or workflow token) and retry semantics
- * (SQS provides them for the worker, Actions for the Action).
+ * What stays outside: authentication (the caller resolves its own
+ * client from the workflow token) and retry semantics (a workflow run
+ * is re-runnable from the Actions UI).
  */
 import type { ReviewContext } from "@pr-review/ai";
 import type { GithubInstallationClient } from "@pr-review/github";

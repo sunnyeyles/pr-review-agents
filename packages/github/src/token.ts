@@ -28,9 +28,9 @@ export interface GithubTokenConfig {
 }
 
 /**
- * Builds the read-only PR client from a plain token. Returns the same
- * GithubInstallationClient interface the App path produces, so the
- * review pipeline cannot tell the two apart.
+ * Builds the read-only PR client from a plain token. The result is a
+ * plain GithubInstallationClient, so nothing downstream depends on how
+ * the Octokit behind it was authenticated.
  */
 export function createTokenClient(
   config: GithubTokenConfig,

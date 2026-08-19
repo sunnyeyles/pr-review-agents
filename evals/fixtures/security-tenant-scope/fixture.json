@@ -1,0 +1,21 @@
+{
+  "name": "security-tenant-scope",
+  "title": "Security — customer lookup without tenant validation",
+  "owner": "acme-cloud",
+  "repo": "support-console",
+  "baseSha": "9a3d51c7e08b642fd91a5c3e7b04286df15c9a3b",
+  "headSha": "2e78b4c15da903f6817b2c5e94ad3061fb27e845",
+  "pullRequest": {
+    "number": 236,
+    "title": "Add the customer detail page endpoint",
+    "body": "Support wants to open a single customer from the list instead of searching for them again.\n\nAdds findCustomerById to the customer data module and a GET /customers/:customerId route that renders the detail page payload.",
+    "author": "tom-veldhuis",
+    "baseRef": "main",
+    "headRef": "feature/customer-detail"
+  },
+  "changedFiles": [
+    { "path": "src/data/customers.ts", "status": "modified" },
+    { "path": "src/routes/customer-detail.ts", "status": "added" },
+    { "path": "src/routes/index.ts", "status": "modified" }
+  ]
+}

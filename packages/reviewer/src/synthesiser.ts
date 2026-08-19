@@ -14,8 +14,8 @@
  * could never survive validateFindings anyway.
  *
  * Failure semantics: invalid model output rejects with SynthesisError;
- * model API errors propagate as-is. Either way the worker falls back to
- * validating the RAW candidates — synthesis failure never kills the
+ * model API errors propagate as-is. Either way the caller falls back
+ * to validating the RAW candidates — synthesis failure never kills the
  * review.
  */
 import {

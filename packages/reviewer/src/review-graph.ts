@@ -20,7 +20,6 @@
  * trustworthy.
  */
 import { emptyTokenUsage, type ReviewAgent, type ReviewContext, type TokenUsage } from "@pr-review/ai";
-import type { ChangedFile } from "@pr-review/github";
 import type { ReviewFinding } from "@pr-review/schemas";
 import { Annotation, END, START, StateGraph } from "@langchain/langgraph";
 
@@ -46,12 +45,14 @@ function errorMessage(error: unknown): string {
 }
 
 const ReviewGraphState = Annotation.Root({
-  /** The loaded PR context every agent reviews. Set once at invoke. */
+  /**
+   * The loaded PR context every agent reviews. Set once at invoke, and
+   * the single source of truth for the PR's changed files: the agents
+   * and the final validation step both read `context.changedFiles`, so
+   * validation can never filter against a different list than the one
+   * the agents saw.
+   */
   context: Annotation<ReviewContext>({ reducer: (_left, right) => right }),
-  /** The PR's changed files, for the final validation step. */
-  changedFiles: Annotation<readonly ChangedFile[]>({
-    reducer: (_left, right) => right,
-  }),
   /** One entry per agent node, merged (order-independent) by `join`. */
   agentOutcomes: Annotation<AgentOutcome[]>({
     reducer: (left, right) => left.concat(right),
@@ -192,7 +193,10 @@ function makeSynthesiseNode(synthesiser: Synthesiser) {
 /** The deterministic validation chain: never trust AI output. */
 function validateNode(state: ReviewGraphStateT): ReviewGraphUpdate {
   return {
-    findings: validateFindings(state.synthesisedCandidates, state.changedFiles),
+    findings: validateFindings(
+      state.synthesisedCandidates,
+      state.context.changedFiles,
+    ),
   };
 }
 
@@ -260,18 +264,18 @@ export interface ReviewPipelineResult {
 
 /**
  * Runs the full pipeline — agents, synthesis, validation — for one
- * review job. Throws when every agent failed (the review itself fails
- * so the job is retried and eventually dead-lettered by SQS); a
- * synthesis failure never throws, it is reported on the result instead.
+ * review. Throws when every agent failed (the review itself fails, so
+ * the workflow step fails and the run can be retried from the Actions
+ * UI); a synthesis failure never throws, it is reported on the result
+ * instead.
  */
 export async function runReviewPipeline(
   agents: readonly ReviewAgent[],
   synthesiser: Synthesiser,
   context: ReviewContext,
-  changedFiles: readonly ChangedFile[],
 ): Promise<ReviewPipelineResult> {
   const graph = buildReviewGraph(agents, synthesiser);
-  const finalState = await graph.invoke({ context, changedFiles });
+  const finalState = await graph.invoke({ context });
 
   return {
     candidates: finalState.candidates,

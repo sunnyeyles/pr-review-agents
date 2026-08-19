@@ -7,7 +7,7 @@
  * (one agentic loop), and the three review lenses — Correctness,
  * Security, Architecture — built on it. Agents only ever PROPOSE
  * findings; publishing belongs to the deterministic pipeline in
- * @pr-review/reviewer and the worker.
+ * @pr-review/reviewer.
  */
 export {
   createAnthropicClient,
@@ -16,7 +16,6 @@ export {
 } from "./anthropic.js";
 export {
   extractAgentOutput,
-  type AgentOutput,
   type AgentOutputResult,
 } from "./agent-output.js";
 export type { ReviewAgent, ReviewContext } from "./review-types.js";

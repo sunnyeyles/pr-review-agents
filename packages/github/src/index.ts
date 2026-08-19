@@ -5,17 +5,13 @@
  * clients that load PR details, changed files, and diffs, and publish
  * the "AI PR Review" check run.
  *
- * Two ways in, one client out. createGithubApp authenticates as a
- * GitHub App installation (the AWS delivery path); createTokenClient
- * wraps a workflow token (the GitHub Action). Both produce a
- * GithubInstallationClient, so nothing downstream knows which was used.
+ * One way in, one client out: createTokenClient wraps the workflow
+ * token the GitHub Action is handed and returns a
+ * GithubInstallationClient. createInstallationClient is the shared
+ * client body behind it, exported so an already-authenticated Octokit
+ * can be wrapped directly.
  */
-export {
-  createGithubApp,
-  createInstallationClient,
-  type GithubAppConfig,
-  type OctokitLike,
-} from "./app.js";
+export { createInstallationClient, type OctokitLike } from "./app.js";
 export { createTokenClient, type GithubTokenConfig } from "./token.js";
 export {
   CHECK_RUN_NAME,
@@ -30,7 +26,6 @@ export {
   type CreateCheckRunInput,
   type FileContentsRequest,
   type GithubInstallationClient,
-  type InstallationClientFactory,
   type PullRequestDetails,
   type PullRequestRef,
 } from "./client.js";

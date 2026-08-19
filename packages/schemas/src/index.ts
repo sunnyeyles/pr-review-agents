@@ -1,14 +1,13 @@
 /**
  * @pr-review/schemas
  *
- * Shared Zod schemas and types for review jobs and findings.
+ * Shared Zod schemas and types for the review trigger contract and
+ * review findings.
  */
 export {
-  SUPPORTED_PULL_REQUEST_ACTIONS,
   isSupportedPullRequestAction,
   type SupportedPullRequestAction,
 } from "./pull-request-event.js";
-export { reviewJobSchema, type ReviewJob } from "./review-job.js";
 export {
   reviewFindingSchema,
   type FindingCategory,

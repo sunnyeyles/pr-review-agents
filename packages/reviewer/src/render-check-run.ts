@@ -1,6 +1,6 @@
 /**
  * Renders validated findings into the completed "AI PR Review" check
- * run payload. Pure: the worker owns the actual GitHub API call.
+ * run payload. Pure: the caller owns the actual GitHub API call.
  *
  * - No findings: a clean "No issues found" run with conclusion
  *   "success".
@@ -93,7 +93,7 @@ function lensLabel(agent: string): string {
 /**
  * The partial-failure notes for the summary: which lenses did not
  * complete. Names only — failure error strings are internal detail and
- * never reach GitHub (the worker logs them as agent.failed).
+ * never reach GitHub (they are logged as agent.failed instead).
  */
 function failureNotes(agentFailures: readonly AgentFailure[]): string[] {
   return agentFailures.map(
