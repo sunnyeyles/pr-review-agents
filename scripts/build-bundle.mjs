@@ -5,11 +5,9 @@
  * into dist/index.mjs, compiling workspace packages (consumed as
  * TypeScript source) into the bundle.
  *
- * apps/action is the only consumer today: `node ../../scripts/build-bundle.mjs`
- * with no externals, since nothing is provided by the Actions node runtime —
- * the published action repository ships only action.yml and dist/. An
- * `--external=<pattern>` flag is still accepted for a future target that
- * needs to leave part of its dependency tree out of the bundle.
+ * apps/action is the only consumer today: `node ../../scripts/build-bundle.mjs`.
+ * Nothing is externalised, because nothing is provided by the Actions node
+ * runtime — the published action repository ships only action.yml and dist/.
  *
  * ESM/CJS interop: the bundle is ESM (matching "type": "module"
  * sources and the .mjs handler convention), but some transitive
@@ -29,11 +27,6 @@ const appDir = process.cwd();
 const entryPoint = path.join(appDir, "src", "index.ts");
 const outfile = path.join(appDir, "dist", "index.mjs");
 
-const external = process.argv
-  .filter((arg) => arg.startsWith("--external="))
-  .map((arg) => arg.slice("--external=".length))
-  .filter((value) => value.length > 0);
-
 const banner = `import { createRequire as __banner_createRequire } from "node:module";
 import { fileURLToPath as __banner_fileURLToPath } from "node:url";
 import { dirname as __banner_dirname } from "node:path";
@@ -51,7 +44,6 @@ await build({
   platform: "node",
   format: "esm",
   target: "node22",
-  external,
   banner: { js: banner },
   sourcemap: false,
   minify: false,

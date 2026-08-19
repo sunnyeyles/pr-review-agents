@@ -23,4 +23,3 @@ export const reviewFindingSchema = z.object({
 export type ReviewFinding = z.infer<typeof reviewFindingSchema>;
 
 export type FindingCategory = ReviewFinding["category"];
-export type FindingSeverity = ReviewFinding["severity"];

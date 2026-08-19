@@ -12,8 +12,6 @@ export const agentOutputSchema = z.object({
   findings: z.array(reviewFindingSchema),
 });
 
-export type AgentOutput = z.infer<typeof agentOutputSchema>;
-
 export type AgentOutputResult =
   | { ok: true; findings: ReviewFinding[] }
   | { ok: false; error: string };

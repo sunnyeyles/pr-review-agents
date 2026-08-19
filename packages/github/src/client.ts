@@ -19,7 +19,6 @@ export interface PullRequestDetails {
   number: number;
   title: string;
   body: string | null;
-  state: string;
   author: string | null;
   baseRef: string;
   baseSha: string;

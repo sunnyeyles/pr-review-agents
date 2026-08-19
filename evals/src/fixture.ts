@@ -180,7 +180,6 @@ export function loadFixture(name: string): LoadedFixture {
     number: manifest.pullRequest.number,
     title: manifest.pullRequest.title,
     body: manifest.pullRequest.body,
-    state: "open",
     author: manifest.pullRequest.author,
     baseRef: manifest.pullRequest.baseRef,
     baseSha: manifest.baseSha,

@@ -26,7 +26,6 @@ import type {
 
 const DOCUMENTED_EXPORTS = [
   "CHECK_RUN_NAME",
-  "createInstallationClient",
   "createTokenClient",
 ] as const;
 
