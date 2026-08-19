@@ -11,6 +11,10 @@
 #   vars.ACTION_RELEASE_REPO     target public repo, e.g. sunnyeyles/pr-review-action
 #   secrets.ACTION_RELEASE_TOKEN PAT (or app token) with contents:write on it
 #
+# Both are mandatory: the preflight job below fails the release before any
+# checkout runs if either is missing, because actions/checkout would otherwise
+# fall back to this repository and the default workflow token.
+#
 # Tagging a release here (v1.2.3) publishes that exact tag downstream and moves
 # the major alias (v1) to it, which is the convention consumers pin against.
 
@@ -33,9 +37,57 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Runs to completion before anything else in this workflow starts, which
+  # is the whole point: actions/checkout treats an empty `repository:` as
+  # "this repository" and an empty `token:` as the default workflow token,
+  # so an unconfigured release would quietly stage the published payload
+  # over this source tree and force-push tags onto it. A separate job the
+  # publish job `needs:` makes that impossible to reach by accident — no
+  # step of the release job runs until this one has passed.
+  preflight:
+    name: Check release configuration
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require a destination repository and a push token
+        env:
+          # Referenced by name only; the token's value is never printed,
+          # only tested for emptiness.
+          RELEASE_REPO: ${{ vars.ACTION_RELEASE_REPO }}
+          RELEASE_TOKEN: ${{ secrets.ACTION_RELEASE_TOKEN }}
+          SOURCE_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          ok=true
+
+          if [ -z "${RELEASE_REPO:-}" ]; then
+            echo "::error::Repository variable ACTION_RELEASE_REPO is not set. Set it to the public action repository (owner/repo, e.g. sunnyeyles/pr-review-action) under Settings > Secrets and variables > Actions > Variables."
+            ok=false
+          elif [ "${RELEASE_REPO:-}" = "${SOURCE_REPO:-}" ]; then
+            echo "::error::ACTION_RELEASE_REPO points at this repository (${SOURCE_REPO}). It must name the separate public action repository, otherwise the release would overwrite the source tree."
+            ok=false
+          elif ! printf '%s' "${RELEASE_REPO:-}" | grep -Eq '^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$'; then
+            echo "::error::ACTION_RELEASE_REPO must be in owner/repo form (got '${RELEASE_REPO}')."
+            ok=false
+          fi
+
+          if [ -z "${RELEASE_TOKEN:-}" ]; then
+            echo "::error::Secret ACTION_RELEASE_TOKEN is not set. Create a PAT or app token with contents:write on the destination repository and store it under Settings > Secrets and variables > Actions > Secrets. Without it the publish checkout would fall back to the default workflow token, which has no access to the destination."
+            ok=false
+          fi
+
+          if [ "${ok}" != true ]; then
+            echo "::error::Release aborted before any checkout: the publish destination is not configured."
+            exit 1
+          fi
+
+          echo "Destination repository and push token are configured."
+
   release:
     name: Build and publish
     runs-on: ubuntu-latest
+    # Hard ordering: GitHub will not start this job — not even its first
+    # checkout — unless preflight succeeded.
+    needs: preflight
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -63,6 +115,12 @@ jobs:
       - name: Build action bundle
         run: pnpm --filter @pr-review/action build
 
+      # Same check CI runs on every push: the artefact about to be published
+      # imports cleanly under the action's Node major and stays inert without
+      # the GITHUB_ACTIONS marker.
+      - name: Smoke-test action bundle
+        run: node scripts/smoke-bundle.mjs
+
       - name: Resolve release tag
         id: tag
         run: |
@@ -86,12 +144,15 @@ jobs:
       # file deleted here disappears downstream too. .git is preserved.
       - name: Stage the published tree
         run: |
+          set -euo pipefail
           find .release -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
           mkdir -p .release/dist
           cp apps/action/action.yml .release/action.yml
           cp apps/action/dist/index.mjs .release/dist/index.mjs
           cp apps/action/README.md .release/README.md
-          cp LICENSE .release/LICENSE 2>/dev/null || true
+          # No `|| true`: both READMEs promise consumers a licence, so a
+          # missing LICENSE must fail the release rather than ship without one.
+          cp LICENSE .release/LICENSE
 
       - name: Commit and tag
         working-directory: .release

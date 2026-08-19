@@ -45,8 +45,8 @@ function logLine(level: LogLevel, event: string, fields: LogFields): string {
 
 /**
  * The production logger: one single-line JSON object per event, info
- * to stdout and error to stderr, both of which Lambda ships to
- * CloudWatch as individual log events.
+ * to stdout and error to stderr, both of which the Actions runner
+ * captures into the workflow run's log stream.
  */
 export function createConsoleLogger(): StructuredLogger {
   return {

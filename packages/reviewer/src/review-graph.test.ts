@@ -6,6 +6,16 @@ import { describe, expect, it } from "vitest";
 import { buildReviewGraph, runReviewPipeline } from "./review-graph.js";
 import type { Synthesiser } from "./synthesiser.js";
 
+const changedFiles: ChangedFile[] = [
+  {
+    filename: "src/sessions.ts",
+    status: "modified",
+    additions: 1,
+    deletions: 0,
+    patch: "@@ -41,1 +41,2 @@\n context line 41\n+added line 42",
+  },
+];
+
 const context: ReviewContext = {
   owner: "octo-org",
   repo: "example-service",
@@ -20,7 +30,9 @@ const context: ReviewContext = {
     headRef: "feature/rate-limit",
     headSha: "6dcb09b5b57875f334f61aebed695e2e4193db5e",
   },
-  changedFiles: [],
+  // The single source of truth for the changed-file list: the agents
+  // and the validation node both read it from here.
+  changedFiles,
   diff: "",
 };
 
@@ -52,16 +64,6 @@ function makeFinding(overrides: Partial<ReviewFinding> = {}): ReviewFinding {
   };
 }
 
-const changedFiles: ChangedFile[] = [
-  {
-    filename: "src/sessions.ts",
-    status: "modified",
-    additions: 1,
-    deletions: 0,
-    patch: "@@ -41,1 +41,2 @@\n context line 41\n+added line 42",
-  },
-];
-
 describe("runReviewPipeline: agent fan-out and partial failure (spec §20)", () => {
   it("runs the agents against the context and validates their candidates", async () => {
     const finding = makeFinding();
@@ -69,7 +71,6 @@ describe("runReviewPipeline: agent fan-out and partial failure (spec §20)", () 
       [agent("correctness", async () => [finding])],
       passthroughSynthesiser(),
       context,
-      changedFiles,
     );
 
     expect(result.candidates).toEqual([finding]);
@@ -87,7 +88,6 @@ describe("runReviewPipeline: agent fan-out and partial failure (spec §20)", () 
       ],
       passthroughSynthesiser(),
       context,
-      changedFiles,
     );
 
     expect(result.candidates).toEqual([a, b]);
@@ -104,7 +104,6 @@ describe("runReviewPipeline: agent fan-out and partial failure (spec §20)", () 
       ],
       passthroughSynthesiser(),
       context,
-      changedFiles,
     );
 
     expect(result.candidates).toEqual([b]);
@@ -128,7 +127,6 @@ describe("runReviewPipeline: agent fan-out and partial failure (spec §20)", () 
       [gated("correctness"), gated("security"), gated("architecture")],
       passthroughSynthesiser(),
       context,
-      changedFiles,
     );
 
     // Give LangGraph's internal scheduling (channel setup, task
@@ -172,7 +170,6 @@ describe("runReviewPipeline: agent fan-out and partial failure (spec §20)", () 
       ],
       passthroughSynthesiser(),
       context,
-      changedFiles,
     );
 
     expect(result.candidates).toEqual([correctness, architecture]);
@@ -192,7 +189,6 @@ describe("runReviewPipeline: agent fan-out and partial failure (spec §20)", () 
         [failing("correctness"), failing("security"), failing("architecture")],
         passthroughSynthesiser(),
         context,
-        changedFiles,
       ),
     ).rejects.toThrow(
       /correctness: correctness exploded.*security: security exploded.*architecture: architecture exploded/s,
@@ -205,7 +201,7 @@ describe("runReviewPipeline: agent fan-out and partial failure (spec §20)", () 
     });
 
     await expect(
-      runReviewPipeline([failing], passthroughSynthesiser(), context, changedFiles),
+      runReviewPipeline([failing], passthroughSynthesiser(), context),
     ).rejects.toThrow(/correctness.*invalid findings JSON/s);
   });
 
@@ -222,7 +218,6 @@ describe("runReviewPipeline: synthesis (spec §16)", () => {
       [agent("correctness", async () => [])],
       passthroughSynthesiser(),
       context,
-      changedFiles,
     );
 
     expect(result.synthesisOutcome).toBe("skipped");
@@ -244,7 +239,6 @@ describe("runReviewPipeline: synthesis (spec §16)", () => {
       [agent("correctness", async () => [raw])],
       synthesiser,
       context,
-      changedFiles,
     );
 
     expect(result.synthesisOutcome).toBe("completed");
@@ -264,7 +258,6 @@ describe("runReviewPipeline: synthesis (spec §16)", () => {
       [agent("correctness", async () => [raw])],
       failing,
       context,
-      changedFiles,
     );
 
     expect(result.synthesisOutcome).toBe("failed");
@@ -288,10 +281,45 @@ describe("runReviewPipeline: deterministic validation (spec §17)", () => {
       [agent("correctness", async () => [makeFinding()])],
       synthesiser,
       context,
-      changedFiles,
     );
 
     expect(result.candidates).toEqual([makeFinding()]);
     expect(result.findings).toEqual([]);
+  });
+
+  it("validates against the context's changed-file list, the only list there is", async () => {
+    // A context whose changed files are DIFFERENT from the module-level
+    // `changedFiles` fixture: validation must follow this list, because
+    // it is the same one the agents were handed.
+    const otherFile: ChangedFile = {
+      filename: "src/rate-limit.ts",
+      status: "added",
+      additions: 2,
+      deletions: 0,
+      patch: "@@ -0,0 +1,2 @@\n+added line 1\n+added line 2",
+    };
+    const otherContext: ReviewContext = { ...context, changedFiles: [otherFile] };
+
+    const inThisPr = makeFinding({ file: "src/rate-limit.ts", line: 2 });
+    // In the module-level fixture, but NOT in the context the agents saw.
+    const notInThisPr = makeFinding({ file: "src/sessions.ts", line: 42 });
+
+    const seenByAgent: (readonly ChangedFile[])[] = [];
+    const result = await runReviewPipeline(
+      [
+        agent("correctness", async (agentContext) => {
+          seenByAgent.push(agentContext.changedFiles);
+          return [inThisPr, notInThisPr];
+        }),
+      ],
+      passthroughSynthesiser(),
+      otherContext,
+    );
+
+    // The agents reviewed exactly the list validation filtered against —
+    // `runReviewPipeline` takes no second copy that could disagree.
+    expect(seenByAgent).toEqual([[otherFile]]);
+    expect(result.candidates).toEqual([inThisPr, notInThisPr]);
+    expect(result.findings).toEqual([inThisPr]);
   });
 });

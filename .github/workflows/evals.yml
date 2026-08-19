@@ -1,0 +1,61 @@
+# The agent evaluation suite (spec §27): does the reviewer actually find the
+# planted bugs, and does it stay quiet on correct code?
+#
+# Manual only. These evaluations drive the real pipeline against the fixtures
+# in evals/, which means real model calls and real token spend on every run, so
+# they are deliberately not on push — that is what CI's `pnpm test` is for.
+# Run this before a release, or after changing a prompt, a lens, the
+# Synthesiser, or the validation chain.
+#
+# Requires an ANTHROPIC_API_KEY repository secret. Unlike the self review, a
+# missing key FAILS this workflow rather than skipping it: somebody asked for
+# an evaluation, and a green run that measured nothing would be a lie.
+
+name: Agent evaluations
+
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: >-
+          Anthropic model id to evaluate. Leave empty to evaluate the model the
+          action defaults to.
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agent-evaluations
+  cancel-in-progress: false
+
+jobs:
+  evaluate:
+    name: Review quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Reports pass/fail per fixture and per expectation, and exits non-zero
+      # if any expectation failed. The harness itself refuses to start without
+      # a key, so a missing secret costs nothing and says so.
+      - name: Run the agent evaluations
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_MODEL: ${{ inputs.model }}
+        run: pnpm eval

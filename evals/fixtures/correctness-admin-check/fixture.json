@@ -1,0 +1,20 @@
+{
+  "name": "correctness-admin-check",
+  "title": "Correctness — assignment instead of comparison in an admin check",
+  "owner": "acme-cloud",
+  "repo": "billing-api",
+  "baseSha": "5f1c3a9d4b2e7086c1d5a3f9b8e2470c6a91d3f4",
+  "headSha": "c47b91e2a6d380f5b1c9e4a7d2f60813b5a4c9e7",
+  "pullRequest": {
+    "number": 812,
+    "title": "Add the admin audit-event endpoint",
+    "body": "Support has been asking for the audit trail in the console. This adds GET /admin/audit-events, gated to administrators, and registers it on the router.\n\nThe limit parameter is capped at 200 so a large tenant cannot pull the whole trail in one request.",
+    "author": "priya-nair",
+    "baseRef": "main",
+    "headRef": "feature/admin-audit-endpoint"
+  },
+  "changedFiles": [
+    { "path": "src/routes/admin-audit.ts", "status": "added" },
+    { "path": "src/routes/index.ts", "status": "modified" }
+  ]
+}

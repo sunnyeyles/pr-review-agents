@@ -1,18 +1,17 @@
 /**
  * Which pull_request webhook actions trigger a review.
  *
- * Shared rather than per-app: the webhook Lambda and the GitHub Action
- * receive the same GitHub event payload through different transports,
- * and a review must mean the same thing on both paths. Only the
- * envelope differs — a webhook delivery carries `installation.id`, an
- * Actions event does not — so each app keeps its own payload schema
- * and shares this trigger contract.
+ * Shared rather than app-local: what counts as a review trigger is a
+ * contract, not a detail of whichever app happens to parse the event
+ * payload, so the trigger list lives here while payload schemas stay
+ * with their app.
  *
  * `opened` and `reopened` start a review; `synchronize` re-reviews a
  * new head commit. Everything else (labels, assignments, closes) is
  * ignored.
  */
-export const SUPPORTED_PULL_REQUEST_ACTIONS = [
+/** The pull_request actions that trigger a review. */
+const SUPPORTED_PULL_REQUEST_ACTIONS = [
   "opened",
   "synchronize",
   "reopened",

@@ -1,6 +1,6 @@
 /**
- * The read-only PR loading and check-run publishing surface the worker
- * (and later the review agents' tools) consume. Implemented against
+ * The read-only PR loading and check-run publishing surface the review
+ * pipeline (and the review agents' tools) consume. Implemented against
  * Octokit in app.ts; tests stub it structurally.
  */
 
@@ -102,11 +102,12 @@ export interface CheckRun {
 }
 
 /**
- * A GitHub client authenticated as one App installation. Everything is
- * read-only except createCheckRun, the system's single write path. The
- * read-only surface (including getFileContents and searchCode, which
- * back the review agents' tools) is always repository-scoped: every
- * method takes an explicit owner/repo and never reaches beyond it.
+ * A GitHub client authenticated for one repository's installation.
+ * Everything is read-only except createCheckRun, the system's single
+ * write path. The read-only surface (including getFileContents and
+ * searchCode, which back the review agents' tools) is always
+ * repository-scoped: every method takes an explicit owner/repo and
+ * never reaches beyond it.
  */
 export interface GithubInstallationClient {
   getPullRequest(ref: PullRequestRef): Promise<PullRequestDetails>;
@@ -118,8 +119,3 @@ export interface GithubInstallationClient {
   searchCode(request: CodeSearchRequest): Promise<CodeSearchMatch[]>;
   createCheckRun(input: CreateCheckRunInput): Promise<CheckRun>;
 }
-
-/** Seam for obtaining an installation-authenticated client. */
-export type InstallationClientFactory = (
-  installationId: number,
-) => GithubInstallationClient;

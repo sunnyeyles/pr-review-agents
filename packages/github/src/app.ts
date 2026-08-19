@@ -1,5 +1,3 @@
-import { createAppAuth } from "@octokit/auth-app";
-import { Octokit } from "@octokit/rest";
 import { z } from "zod";
 
 import {
@@ -12,7 +10,6 @@ import {
   type CreateCheckRunInput,
   type FileContentsRequest,
   type GithubInstallationClient,
-  type InstallationClientFactory,
   type PullRequestDetails,
   type PullRequestRef,
 } from "./client.js";
@@ -68,15 +65,6 @@ export interface OctokitLike {
   };
 }
 
-export interface GithubAppConfig {
-  /** GitHub App ID (numeric, but configured as a string). */
-  appId: string;
-  /** PEM-encoded GitHub App private key. */
-  privateKey: string;
-  /** Injectable Octokit factory; defaults to a real App-authenticated Octokit. */
-  createOctokit?: ((installationId: number) => OctokitLike) | undefined;
-}
-
 const FILES_PER_PAGE = 100;
 
 /** Code search results returned per query; agents need hints, not dumps. */
@@ -124,11 +112,10 @@ const codeSearchSchema = z.object({
 
 /**
  * Wraps an authenticated Octokit in the read-only PR client the review
- * pipeline consumes. Exported because authentication is the only thing
- * that differs between delivery paths: createGithubApp below supplies
- * an App-installation Octokit, createTokenClient (token.ts) supplies a
- * workflow-token one, and everything downstream sees the same
- * GithubInstallationClient either way.
+ * pipeline consumes. Exported so authentication stays the only thing a
+ * caller has to supply: createTokenClient (token.ts) builds the
+ * workflow-token Octokit and hands it here, and everything downstream
+ * sees a plain GithubInstallationClient.
  */
 export function createInstallationClient(
   octokit: OctokitLike,
@@ -247,37 +234,5 @@ export function createInstallationClient(
       });
       return checkRunResponseSchema.parse(response.data);
     },
-  };
-}
-
-function defaultCreateOctokit(
-  config: Pick<GithubAppConfig, "appId" | "privateKey">,
-): (installationId: number) => OctokitLike {
-  return (installationId) =>
-    new Octokit({
-      authStrategy: createAppAuth,
-      auth: {
-        appId: config.appId,
-        privateKey: config.privateKey,
-        installationId,
-      },
-    });
-}
-
-/**
- * Builds an installation-client factory for one GitHub App. Clients are
- * cached per installation so warm Lambda invocations reuse Octokit's
- * token cache instead of re-authenticating on every job.
- */
-export function createGithubApp(config: GithubAppConfig): InstallationClientFactory {
-  const createOctokit = config.createOctokit ?? defaultCreateOctokit(config);
-  const clients = new Map<number, GithubInstallationClient>();
-  return (installationId) => {
-    let client = clients.get(installationId);
-    if (!client) {
-      client = createInstallationClient(createOctokit(installationId));
-      clients.set(installationId, client);
-    }
-    return client;
   };
 }

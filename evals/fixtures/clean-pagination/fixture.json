@@ -1,0 +1,30 @@
+{
+  "name": "clean-pagination",
+  "title": "Clean \u2014 shared pagination parsing with tests",
+  "owner": "acme-cloud",
+  "repo": "notifications",
+  "baseSha": "b81f47a2c50d9e3618af75c2d049be31a7c68d05",
+  "headSha": "7d02e6b4915caf83072d16b5e9c4038af62b17de",
+  "pullRequest": {
+    "number": 154,
+    "title": "Extract the shared page/pageSize parsing",
+    "body": "Each collection endpoint had its own copy of the page/pageSize parsing and they had drifted apart. This moves it to src/http/pagination.ts with unit tests and switches the deliveries endpoint over.\n\nNo behaviour change beyond the two cases the old copy got wrong: a repeated query parameter, and a page number past the deep-page limit, are now rejected with a 400 instead of reaching the database.",
+    "author": "marta-oliveira",
+    "baseRef": "main",
+    "headRef": "refactor/shared-pagination"
+  },
+  "changedFiles": [
+    {
+      "path": "src/http/pagination.ts",
+      "status": "added"
+    },
+    {
+      "path": "src/http/pagination.test.ts",
+      "status": "added"
+    },
+    {
+      "path": "src/routes/deliveries.ts",
+      "status": "modified"
+    }
+  ]
+}

@@ -17,7 +17,7 @@ export interface ActionHandlerDeps {
    * Runs the full review pipeline (@pr-review/reviewer's LangGraph
    * StateGraph, spec §8/§16/§17/§20). Throws when every agent failed,
    * which fails the workflow step so the run can be retried from the
-   * Actions UI — the Action's equivalent of the worker's SQS redrive.
+   * Actions UI.
    */
   runReviewPipeline: (
     client: GithubInstallationClient,
@@ -55,9 +55,8 @@ export type ActionHandler = (
  * Everything specific to this delivery path lives here and in
  * event.ts: Actions event parsing and the ignore-quietly rule.
  * Authentication, retries, and compute all belong to the runner, which
- * is why this app has no queue, no secrets client, and no AWS
- * dependency at all. The review itself is identical to the one the
- * worker Lambda runs.
+ * is why this app has no queue and no secrets client. The review
+ * itself is entirely shared code.
  */
 export function createActionHandler({
   client,

@@ -6,10 +6,10 @@
  * six read-only tools, and reports findings ONLY as a final JSON
  * object validated by agentOutputSchema.
  *
- * The loop is a plain `while`: call the model, and if it asked for
- * tools, dispatch them and go round again. Token usage accumulates in a
- * local so it survives a mid-loop API error and still reaches the
- * agent.failed log line.
+ * The loop is a plain `for` over turns: call the model, and if it
+ * asked for tools, dispatch them and go round again, up to the turn
+ * cap. Token usage accumulates in a local so it survives a mid-loop
+ * API error and still reaches the agent.failed log line.
  *
  * Category integrity (ticket 07 decision): the runtime FILTERS the
  * validated findings to the lens's own category. Leaked cross-category
@@ -21,7 +21,7 @@
  * Failure semantics: invalid final output, an exceeded turn cap, or a
  * model API error reject with AgentRunError (or the underlying error).
  * Nothing here writes to GitHub — the deterministic pipeline in
- * @pr-review/reviewer and the worker own that boundary.
+ * @pr-review/reviewer owns that boundary.
  */
 import type Anthropic from "@anthropic-ai/sdk";
 import type { GithubInstallationClient } from "@pr-review/github";

@@ -2,13 +2,11 @@
  * Reading the pull request out of the Actions event payload.
  *
  * GitHub writes the triggering webhook payload to a file and points
- * GITHUB_EVENT_PATH at it. It is the same payload the webhook Lambda
- * receives over HTTP, minus the envelope: an Actions event carries no
- * `installation.id`, because the workflow token already scopes the
- * request. That is the whole difference between the two delivery
- * paths' parsing, which is why the trigger contract
- * (SUPPORTED_PULL_REQUEST_ACTIONS) is shared via @pr-review/schemas
- * while the payload schemas are not.
+ * GITHUB_EVENT_PATH at it. It is the raw pull_request event minus any
+ * delivery envelope: an Actions event carries no `installation.id`,
+ * because the workflow token already scopes the request. The payload
+ * schema below is therefore local to this app, while the trigger
+ * contract it checks against is shared via @pr-review/schemas.
  */
 import { isSupportedPullRequestAction } from "@pr-review/schemas";
 import type { ReviewTarget } from "@pr-review/reviewer";

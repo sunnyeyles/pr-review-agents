@@ -29,3 +29,16 @@ jobs:
 
       - name: Test
         run: pnpm test
+
+      # The bundle is what consumers execute, and nothing else exercises
+      # it: typecheck and tests read the TypeScript sources. Building it
+      # here turns a bundling regression into a failed pull request
+      # instead of a failed release.
+      - name: Build action bundle
+        run: pnpm --filter @pr-review/action build
+
+      # Runs the artefact itself under the Node major action.yml declares:
+      # it must import cleanly, and it must do nothing at all while the
+      # GITHUB_ACTIONS marker is absent.
+      - name: Smoke-test action bundle
+        run: node scripts/smoke-bundle.mjs

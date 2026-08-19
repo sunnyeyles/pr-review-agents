@@ -5,7 +5,7 @@
  */
 import type { ChangedFile, PullRequestDetails } from "@pr-review/github";
 
-/** Everything the worker loads about a PR before any agent runs. */
+/** Everything loaded about a PR before any agent runs. */
 export interface ReviewContext {
   owner: string;
   repo: string;

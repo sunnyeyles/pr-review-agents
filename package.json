@@ -11,6 +11,7 @@
   "scripts": {
     "typecheck": "pnpm -r typecheck",
     "test": "vitest run",
+    "eval": "vitest run --config evals/vitest.eval.config.ts",
     "build": "pnpm -r build"
   },
   "devDependencies": {
@@ -18,5 +19,10 @@
     "esbuild": "^0.28.1",
     "typescript": "^5.9.3",
     "vitest": "^4.1.10"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
   }
 }

@@ -120,24 +120,21 @@ apps/
 packages/
   ai/         Anthropic seam, agent runtime loop, lenses, read-only tools
   reviewer/   Review graph, synthesiser, validation chain, check-run rendering
-  github/     GitHub client (installation auth or workflow token) + Octokit calls
-  schemas/    Zod schemas: ReviewJob, ReviewFinding
+  github/     GitHub client (workflow-token auth) + Octokit calls
+  schemas/    Zod schemas: ReviewFinding, the review trigger contract
   logging/    Structured single-line JSON logger
 scripts/      build-bundle.mjs — esbuild bundler for apps/action
 spec.md       The original specification this implementation follows
 ```
 
-### Two graphs, two altitudes
+### Concurrency
 
-LangGraph is used twice, and it's worth keeping them straight:
-
-| Graph | Where | Nodes | Purpose |
-| --- | --- | --- | --- |
-| Agent loop | `packages/ai/src/agent-runtime.ts` | `callModel` ⇄ `callTools` | One agent's tool-calling loop, capped at 12 turns |
-| Review pipeline | `packages/reviewer/src/review-graph.ts` | 3 agent nodes → `join` → `synthesise` → `validate` | Fan-out, fan-in, partial failure, validation |
-
-Concurrency lives in the **review pipeline** graph: all three agent nodes have
-`START` as their only dependency, so LangGraph runs them in the same superstep.
+LangGraph runs the review pipeline
+(`packages/reviewer/src/review-graph.ts`): three agent nodes → `join` →
+`synthesise` → `validate`. All three agent nodes have `START` as their only
+dependency, so they run in the same superstep. Inside a node, one agent's
+tool-calling loop is a plain turn loop over the Messages API
+(`packages/ai/src/agent-runtime.ts`), capped at 12 model calls.
 
 ### Partial failure
 
@@ -182,7 +179,7 @@ Requires Node.js `>=22 <26` and pnpm `>=10`.
 ```sh
 pnpm install
 pnpm typecheck        # tsc --noEmit across every workspace package
-pnpm test             # vitest run — 241 tests across 17 files
+pnpm test             # vitest run — the full Vitest suite
 pnpm build            # esbuild → apps/action/dist/index.mjs (Node 24, ESM)
 ```
 
@@ -233,11 +230,11 @@ Required repository configuration for the release workflow:
 ## Observability
 
 Structured single-line JSON logs land in the workflow run's own log stream,
-under lifecycle event names: `review.started`, `review.loaded`,
-`agent.started`, `agent.thinking`, `agent.message`, `agent.completed`,
-`agent.failed`, `synthesis.started`, `synthesis.skipped`,
-`synthesis.completed`, `synthesis.failed`, `findings.validated`,
-`review.published`, and `review.failed`. Events carry the repository, PR
+under lifecycle event names: `review.skipped`, `review.started`,
+`review.loaded`, `agent.started`, `agent.completed`, `agent.failed`,
+`synthesis.started`, `synthesis.skipped`, `synthesis.completed`,
+`synthesis.failed`, `findings.validated`, `review.published`,
+`review.published.degraded`, and `review.failed`. Events carry the repository, PR
 number, head SHA, agent name, duration, finding count, and token usage, so a
 single review is greppable end to end by `headSha`.
 
