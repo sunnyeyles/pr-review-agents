@@ -13,11 +13,19 @@
  * builds a client and every prompt is the in-code one.
  */
 import { LangfuseClient } from "@langfuse/client";
-import { createConsoleLogger, type StructuredLogger } from "@pr-review/logging";
 import type { FindingCategory } from "@pr-review/schemas";
+import {
+  createConsoleLogger,
+  errorMessage,
+  type StructuredLogger,
+} from "@pr-review/logging";
 
 import { buildReviewSystemPrompt } from "./agent-runtime.js";
-import { reviewLenses } from "./agents.js";
+import {
+  architectureLens,
+  correctnessLens,
+  securityLens,
+} from "./agents.js";
 
 /** Stable Langfuse prompt names for the four managed system prompts. */
 export const MANAGED_PROMPT_KEYS = {
@@ -48,6 +56,9 @@ export interface LoadPromptsResult {
 /** Label fetched when the caller does not name one. */
 export const DEFAULT_PROMPT_LABEL = "production";
 
+/** Langfuse host used when the caller does not name one. */
+export const DEFAULT_LANGFUSE_BASE_URL = "https://cloud.langfuse.com";
+
 /** How long one prompt fetch may take before it is abandoned. */
 export const DEFAULT_PROMPT_TIMEOUT_MS = 5_000;
 
@@ -71,8 +82,6 @@ export interface LangfusePromptClientConfig {
   publicKey: string;
   secretKey: string;
   baseUrl: string;
-  /** Per-request timeout. Defaults to DEFAULT_PROMPT_TIMEOUT_MS. */
-  timeoutMs?: number | undefined;
 }
 
 /** Builds a LangfusePromptClient over the official SDK. */
@@ -84,8 +93,6 @@ export function createLangfusePromptClient(
     secretKey: config.secretKey,
     baseUrl: config.baseUrl,
   });
-  const timeoutMs = config.timeoutMs ?? DEFAULT_PROMPT_TIMEOUT_MS;
-
   return {
     async getTextPrompt(name, options) {
       const prompt = await client.prompt.get(name, {
@@ -96,7 +103,7 @@ export function createLangfusePromptClient(
         cacheTtlSeconds: 0,
         // Bounds the socket. loadManagedPrompts also bounds the call,
         // but only this reaches the request itself.
-        fetchTimeoutMs: timeoutMs,
+        fetchTimeoutMs: DEFAULT_PROMPT_TIMEOUT_MS,
       });
       const text = prompt.prompt.trim();
       if (text.length === 0) {
@@ -108,17 +115,12 @@ export function createLangfusePromptClient(
 }
 
 /**
- * The invariants a fetched prompt must satisfy before it is trusted.
- *
- * A remotely-edited prompt is repository content by another name, and a
- * prompt that has lost its output contract fails SILENTLY: the runtime
- * discards findings whose category is not the lens's own, so a lens
- * prompt missing its category reports "no findings" on every review
- * rather than erroring. Cheap structural checks catch that before it
- * reaches a model, and they mirror the assertions the in-code prompts
- * are already held to in the tests.
+ * The invariants EVERY system prompt must satisfy, wherever it came
+ * from. Repository content reaches all of them, so all of them must
+ * say that such content is data rather than instructions, and all of
+ * them must end in a JSON contract.
  */
-function promptContractProblems(id: ManagedPromptId, text: string): string[] {
+function sharedPromptProblems(text: string): string[] {
   const problems: string[] = [];
 
   if (!/data.*not instructions|never instructions/is.test(text)) {
@@ -127,13 +129,58 @@ function promptContractProblems(id: ManagedPromptId, text: string): string[] {
   if (!/\bJSON\b/i.test(text)) {
     problems.push("missing-json-contract");
   }
-  if (id !== "synthesis" && !text.includes(`"${id}"`)) {
+
+  return problems;
+}
+
+/**
+ * The invariants a review-lens system prompt must satisfy — the single
+ * definition, asserted against the in-code prompts by agents.test.ts
+ * and against fetched ones by loadManagedPrompts.
+ *
+ * A remotely-edited prompt is repository content by another name, and
+ * one that has lost its output contract fails SILENTLY: the runtime
+ * discards findings whose category is not the lens's own, so a prompt
+ * missing its category reports "no findings" on every review rather
+ * than erroring. These structural checks catch that before it reaches
+ * a model. Keeping one definition is what stops the gate on remote
+ * prompts drifting weaker than the bar the shipped prompts meet.
+ */
+export function reviewPromptContractProblems(
+  text: string,
+  category: FindingCategory,
+): string[] {
+  const problems = sharedPromptProblems(text);
+
+  if (!/comments?.*(never|not).*instructions/is.test(text)) {
+    problems.push("missing-comment-hardening");
+  }
+  if (
+    !/tool (results?|output).*(no|cannot|never).*(permission|privilege)/is.test(
+      text,
+    )
+  ) {
+    problems.push("missing-tool-result-hardening");
+  }
+  if (!/final JSON/i.test(text)) {
+    problems.push("missing-final-json-contract");
+  }
+  if (!text.includes(`"${category}"`)) {
     // The lens category is quoted into the findings contract; without
     // it every finding this lens proposes is discarded downstream.
     problems.push("missing-category-contract");
   }
 
   return problems;
+}
+
+/** The contract for one managed prompt, by which prompt it is. */
+function promptContractProblems(id: ManagedPromptId, text: string): string[] {
+  // The synthesiser reads findings rather than a repository, so it
+  // carries the shared hardening but none of the lens-specific rules.
+  return id === "synthesis"
+    ? sharedPromptProblems(text)
+    : reviewPromptContractProblems(text, id);
 }
 
 export interface LoadManagedPromptsOptions {
@@ -162,13 +209,6 @@ function withDeadline<T>(work: Promise<T>, ms: number, name: string): Promise<T>
   return Promise.race([work, deadline]).finally(() => clearTimeout(timer));
 }
 
-/** The in-code prompt for every lens, keyed by category. */
-function lensFallbacks(): Record<FindingCategory, string> {
-  return Object.fromEntries(
-    reviewLenses.map((lens) => [lens.category, buildReviewSystemPrompt(lens)]),
-  ) as Record<FindingCategory, string>;
-}
-
 /**
  * Fetches all four managed system prompts.
  *
@@ -184,17 +224,14 @@ export async function loadManagedPrompts(
   const label = options.label ?? DEFAULT_PROMPT_LABEL;
   const timeoutMs = options.timeoutMs ?? DEFAULT_PROMPT_TIMEOUT_MS;
 
-  const lens = lensFallbacks();
-  const fallbacks: ManagedPrompts = {
-    correctness: lens.correctness,
-    security: lens.security,
-    architecture: lens.architecture,
+  // Start from the in-code prompts so nothing can be left undefined
+  // and a fetch is only ever an upgrade.
+  const prompts: ManagedPrompts = {
+    correctness: buildReviewSystemPrompt(correctnessLens),
+    security: buildReviewSystemPrompt(securityLens),
+    architecture: buildReviewSystemPrompt(architectureLens),
     synthesis: options.synthesisFallback,
   };
-
-  // Start from the fallbacks so nothing can be left undefined and a
-  // fetch is only ever an upgrade.
-  const prompts: ManagedPrompts = { ...fallbacks };
   const sources: Record<ManagedPromptId, PromptSource> = {
     correctness: "fallback",
     security: "fallback",
@@ -225,7 +262,7 @@ export async function loadManagedPrompts(
       } catch (error) {
         logger.error("langfuse.prompts.fallback_used", {
           promptKey: name,
-          reason: error instanceof Error ? error.message : String(error),
+          reason: errorMessage(error),
         });
       }
     }),

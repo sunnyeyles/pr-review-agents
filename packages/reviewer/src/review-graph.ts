@@ -20,6 +20,7 @@
  * trustworthy.
  */
 import { emptyTokenUsage, type ReviewAgent, type ReviewContext, type TokenUsage } from "@pr-review/ai";
+import { errorMessage, errorName } from "@pr-review/logging";
 import type { ReviewFinding } from "@pr-review/schemas";
 import { Annotation, END, START, StateGraph } from "@langchain/langgraph";
 
@@ -38,10 +39,6 @@ interface AgentOutcome {
   name: string;
   candidates?: unknown[];
   error?: string;
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 const ReviewGraphState = Annotation.Root({
@@ -183,7 +180,7 @@ function makeSynthesiseNode(synthesiser: Synthesiser) {
         synthesisedCandidates: state.candidates,
         synthesisOutcome: "failed",
         synthesisError: errorMessage(error),
-        synthesisErrorName: error instanceof Error ? error.name : "Error",
+        synthesisErrorName: errorName(error),
         synthesisDurationMs: Date.now() - startedAt,
       };
     }

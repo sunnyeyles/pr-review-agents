@@ -18,12 +18,14 @@ import type {
   AgentRunError,
   AnthropicClientConfig,
   AnthropicLike,
+  GenerationParent,
   LangfusePromptClient,
   LangfusePromptClientConfig,
   LoadManagedPromptsOptions,
   LoadPromptsResult,
   ManagedPromptId,
   ManagedPrompts,
+  ModelCallTrace,
   PromptSource,
   ReviewAgent,
   ReviewAgentDeps,
@@ -36,6 +38,8 @@ import type {
 /** Every value export of the package, sorted. */
 const DOCUMENTED_EXPORTS = [
   "AgentRunError",
+  "DEFAULT_LANGFUSE_BASE_URL",
+  "DEFAULT_PROMPT_LABEL",
   "MANAGED_PROMPT_KEYS",
   "addTokenUsage",
   "architectureLens",
@@ -48,7 +52,9 @@ const DOCUMENTED_EXPORTS = [
   "extractAgentOutput",
   "loadManagedPrompts",
   "reviewLenses",
+  "reviewPromptContractProblems",
   "securityLens",
+  "traceModelCall",
 ] as const;
 
 /** Every type export of the package. */

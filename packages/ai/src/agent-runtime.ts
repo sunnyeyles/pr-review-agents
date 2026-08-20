@@ -26,11 +26,17 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { startObservation } from "@langfuse/tracing";
 import type { GithubInstallationClient } from "@pr-review/github";
-import { createConsoleLogger, type StructuredLogger } from "@pr-review/logging";
+import {
+  createConsoleLogger,
+  errorMessage,
+  errorName,
+  type StructuredLogger,
+} from "@pr-review/logging";
 import type { FindingCategory } from "@pr-review/schemas";
 
 import { extractAgentOutput } from "./agent-output.js";
 import type { AnthropicLike } from "./anthropic.js";
+import { traceModelCall } from "./model-tracing.js";
 import type { ReviewAgent, ReviewContext } from "./review-types.js";
 import { dispatchReviewTool, reviewTools, type ReviewToolScope } from "./tools.js";
 import { addTokenUsage, emptyTokenUsage } from "./usage.js";
@@ -283,45 +289,25 @@ export function createReviewAgent(
 
       /** One model call, accumulating usage and the last stop_reason. */
       const callModel = async (): Promise<Anthropic.Messages.Message> => {
-        const generation = agentObservation.startObservation(
-          "call-anthropic-model",
+        const response = await traceModelCall(
+          agentObservation,
           {
             model: deps.model,
             input: { messageCount: messages.length },
-            modelParameters: { maxTokens: MAX_OUTPUT_TOKENS },
+            maxTokens: MAX_OUTPUT_TOKENS,
           },
-          { asType: "generation" },
+          () =>
+            deps.anthropic.messages.create({
+              model: deps.model,
+              max_tokens: MAX_OUTPUT_TOKENS,
+              system: systemPrompt,
+              tools: anthropicToolDefinitions,
+              messages,
+            }),
         );
-        try {
-          const response = await deps.anthropic.messages.create({
-            model: deps.model,
-            max_tokens: MAX_OUTPUT_TOKENS,
-            system: systemPrompt,
-            tools: anthropicToolDefinitions,
-            messages,
-          });
-          usage = addTokenUsage(usage, response.usage);
-          apiStopReason = response.stop_reason ?? undefined;
-          generation.update({
-            output: {
-              stopReason: response.stop_reason,
-              contentBlockCount: response.content.length,
-            },
-            usageDetails: {
-              input: response.usage.input_tokens,
-              output: response.usage.output_tokens,
-            },
-          });
-          return response;
-        } catch (error) {
-          generation.update({
-            level: "ERROR",
-            statusMessage: error instanceof Error ? error.message : String(error),
-          });
-          throw error;
-        } finally {
-          generation.end();
-        }
+        usage = addTokenUsage(usage, response.usage);
+        apiStopReason = response.stop_reason ?? undefined;
+        return response;
       };
 
       /** Dispatches every requested tool into one user turn of results. */
@@ -433,13 +419,13 @@ export function createReviewAgent(
           durationMs: Date.now() - startedAt,
           inputTokens: usage.inputTokens,
           outputTokens: usage.outputTokens,
-          error: error instanceof Error ? error.message : String(error),
-          errorName: error instanceof Error ? error.name : "Error",
+          error: errorMessage(error),
+          errorName: errorName(error),
         });
         agentObservation
           .update({
             level: "ERROR",
-            statusMessage: error instanceof Error ? error.message : String(error),
+            statusMessage: errorMessage(error),
             metadata: {
               inputTokens: usage.inputTokens,
               outputTokens: usage.outputTokens,

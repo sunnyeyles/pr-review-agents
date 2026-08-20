@@ -23,9 +23,11 @@ import {
   addTokenUsage,
   emptyTokenUsage,
   extractAgentOutput,
+  traceModelCall,
   type AnthropicLike,
   type TokenUsage,
 } from "@pr-review/ai";
+import { errorMessage } from "@pr-review/logging";
 import { reviewFindingSchema, type ReviewFinding } from "@pr-review/schemas";
 
 /** A synthesis-level failure (the model broke the output contract). */
@@ -145,44 +147,23 @@ export function createSynthesiser(deps: SynthesiserDeps): Synthesiser {
           return { findings: [], usage: emptyTokenUsage() };
         }
 
-        const generation = observation.startObservation(
-          "call-anthropic-model",
+        const response = await traceModelCall(
+          observation,
           {
             model: deps.model,
             input: { wellFormedCount: wellFormed.length },
-            modelParameters: { maxTokens: MAX_OUTPUT_TOKENS },
+            maxTokens: MAX_OUTPUT_TOKENS,
           },
-          { asType: "generation" },
+          () =>
+            deps.anthropic.messages.create({
+              model: deps.model,
+              max_tokens: MAX_OUTPUT_TOKENS,
+              system: systemPrompt,
+              messages: [
+                { role: "user", content: buildSynthesisMessage(wellFormed) },
+              ],
+            }),
         );
-        let response;
-        try {
-          response = await deps.anthropic.messages.create({
-            model: deps.model,
-            max_tokens: MAX_OUTPUT_TOKENS,
-            system: systemPrompt,
-            messages: [
-              { role: "user", content: buildSynthesisMessage(wellFormed) },
-            ],
-          });
-          generation.update({
-            output: {
-              stopReason: response.stop_reason,
-              contentBlockCount: response.content.length,
-            },
-            usageDetails: {
-              input: response.usage.input_tokens,
-              output: response.usage.output_tokens,
-            },
-          });
-        } catch (error) {
-          generation.update({
-            level: "ERROR",
-            statusMessage: error instanceof Error ? error.message : String(error),
-          });
-          throw error;
-        } finally {
-          generation.end();
-        }
         const usage = addTokenUsage(emptyTokenUsage(), response.usage);
 
         const text = response.content
@@ -208,7 +189,7 @@ export function createSynthesiser(deps: SynthesiserDeps): Synthesiser {
         // the review, so it is recorded at ERROR here too.
         observation.update({
           level: "ERROR",
-          statusMessage: error instanceof Error ? error.message : String(error),
+          statusMessage: errorMessage(error),
         });
         throw error;
       } finally {

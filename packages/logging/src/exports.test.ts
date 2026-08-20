@@ -17,6 +17,8 @@ import type {
 const DOCUMENTED_EXPORTS = [
   "createCapturingLogger",
   "createConsoleLogger",
+  "errorMessage",
+  "errorName",
 ] as const;
 
 type DocumentedTypes = [

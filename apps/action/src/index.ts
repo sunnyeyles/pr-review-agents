@@ -21,6 +21,8 @@ import { readFile } from "node:fs/promises";
 import process from "node:process";
 
 import {
+  DEFAULT_LANGFUSE_BASE_URL,
+  DEFAULT_PROMPT_LABEL,
   createAnthropicClient,
   createLangfusePromptClient,
   createReviewAgents,
@@ -36,7 +38,12 @@ import {
   type GithubInstallationClient,
   type GithubTokenConfig,
 } from "@pr-review/github";
-import { createConsoleLogger, type StructuredLogger } from "@pr-review/logging";
+import {
+  createConsoleLogger,
+  errorMessage,
+  errorName,
+  type StructuredLogger,
+} from "@pr-review/logging";
 import {
   SYNTHESIS_SYSTEM_PROMPT,
   createCheckRunPublisher,
@@ -160,9 +167,10 @@ export function resolveLangfuseInputs(
     publicKey,
     secretKey,
     // action.yml defaults both, but a caller invoking the bundle
-    // directly does not go through it.
-    baseUrl: getInput(env, "langfuse-base-url") || "https://cloud.langfuse.com",
-    promptLabel: getInput(env, "langfuse-prompt-label") || "production",
+    // directly does not go through it, so the library constants are
+    // the single definition and action.yml only documents them.
+    baseUrl: getInput(env, "langfuse-base-url") || DEFAULT_LANGFUSE_BASE_URL,
+    promptLabel: getInput(env, "langfuse-prompt-label") || DEFAULT_PROMPT_LABEL,
   };
 }
 
@@ -191,7 +199,7 @@ async function resolveManagedPrompts(
     return prompts;
   } catch (error: unknown) {
     environment.logger.error("langfuse.prompts.unavailable", {
-      error: error instanceof Error ? error.message : String(error),
+      error: errorMessage(error),
     });
     return undefined;
   }
@@ -299,7 +307,7 @@ export async function runAction(
         await tracing.forceFlush();
       } catch (error: unknown) {
         logger.error("tracing.flush_failed", {
-          error: error instanceof Error ? error.message : String(error),
+          error: errorMessage(error),
         });
       }
     }
@@ -319,8 +327,8 @@ export function runEntrypoint(
   }
   runAction(environment).catch((error: unknown) => {
     environment.logger.error("review.failed", {
-      error: error instanceof Error ? error.message : String(error),
-      errorName: error instanceof Error ? error.name : "Error",
+      error: errorMessage(error),
+      errorName: errorName(error),
     });
     environment.setExitCode(1);
   });

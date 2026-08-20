@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { createCapturingLogger, createConsoleLogger } from "./index.js";
+import {
+  createCapturingLogger,
+  createConsoleLogger,
+  errorMessage,
+  errorName,
+} from "./index.js";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -105,5 +110,48 @@ describe("createCapturingLogger", () => {
 
     expect(log).not.toHaveBeenCalled();
     expect(error).not.toHaveBeenCalled();
+  });
+});
+
+describe("errorMessage", () => {
+  it("takes the message from an Error", () => {
+    expect(errorMessage(new Error("langfuse unavailable"))).toBe(
+      "langfuse unavailable",
+    );
+  });
+
+  it("keeps a subclass's message", () => {
+    class SynthesisError extends Error {}
+    expect(errorMessage(new SynthesisError("invalid output"))).toBe(
+      "invalid output",
+    );
+  });
+
+  it.each([
+    ["a thrown string", "boom", "boom"],
+    ["a thrown number", 42, "42"],
+    ["a thrown null", null, "null"],
+    ["a thrown undefined", undefined, "undefined"],
+  ])("stringifies %s", (_label, thrown, expected) => {
+    // A catch binding is `unknown`: anything can be thrown, and a
+    // failure path must still produce a loggable line.
+    expect(errorMessage(thrown)).toBe(expected);
+  });
+});
+
+describe("errorName", () => {
+  it("takes the name from an Error", () => {
+    expect(errorName(new TypeError("bad"))).toBe("TypeError");
+  });
+
+  it("names a subclass", () => {
+    class AgentRunError extends Error {
+      override name = "AgentRunError";
+    }
+    expect(errorName(new AgentRunError("stopped"))).toBe("AgentRunError");
+  });
+
+  it("falls back to Error for a non-Error throw", () => {
+    expect(errorName("boom")).toBe("Error");
   });
 });
