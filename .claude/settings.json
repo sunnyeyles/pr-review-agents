@@ -1,0 +1,29 @@
+{
+  "outputStyle": "default",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "statusMessage": "Installing worktree dependencies",
+            "timeout": 600,
+            "command": "r=\".claude/hooks/install-worktree-deps.sh\"; s=\"${CLAUDE_PROJECT_DIR:-.}/$r\"; [ -f \"$s\" ] || { g=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null); s=\"${g%/.git}/$r\"; }; [ -f \"$s\" ] && bash \"$s\" || true"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "statusMessage": "Removing worktrees whose PR is finished",
+            "timeout": 60,
+            "command": "r=\".claude/hooks/cleanup-merged-worktrees.sh\"; s=\"${CLAUDE_PROJECT_DIR:-.}/$r\"; [ -f \"$s\" ] || { g=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null); s=\"${g%/.git}/$r\"; }; [ -f \"$s\" ] && bash \"$s\" || true"
+          }
+        ]
+      }
+    ]
+  }
+}
