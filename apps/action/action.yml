@@ -1,8 +1,8 @@
 name: AI PR Review
 description: >-
-  Reviews a pull request with three independent AI agents — Correctness,
-  Security, and Architecture — and publishes an AI PR Review check run with
-  inline annotations.
+  Reviews a pull request with independent AI agents — Correctness, Security,
+  and Architecture, or any subset of them — and publishes an AI PR Review
+  check run with inline annotations.
 author: sunnyeyles
 
 branding:
@@ -26,6 +26,16 @@ inputs:
     description: Anthropic model id the agents and Synthesiser use.
     required: false
     default: claude-sonnet-5
+  agents:
+    description: >-
+      Which review agents run: `all`, or a comma-separated subset of
+      correctness, security, architecture. Each agent is an independent set of
+      model calls, so narrowing the set cuts cost roughly in proportion — use
+      it to iterate on one lens without paying for the others. An unrecognised
+      name fails the step before any model call, rather than quietly running a
+      narrower review.
+    required: false
+    default: all
   langfuse-public-key:
     description: >-
       Langfuse public key. Supply this and langfuse-secret-key to fetch the

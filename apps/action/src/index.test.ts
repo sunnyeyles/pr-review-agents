@@ -309,6 +309,75 @@ describe("runAction", () => {
   });
 });
 
+/**
+ * Selecting which agents run. The agent list itself is built and
+ * pinned in @pr-review/ai's agents.test.ts; what belongs here is the
+ * wiring — that the input reaches the parser, that the default stays
+ * silent, and that a bad value costs nothing.
+ */
+describe("agent selection", () => {
+  const eventEnv = {
+    ...validInputs,
+    GITHUB_EVENT_PATH: "/tmp/event.json",
+    GITHUB_EVENT_NAME: "push",
+  };
+
+  it("says nothing when the default set runs", async () => {
+    const { environment, entries } = harness(eventEnv);
+
+    await runAction(environment);
+
+    expect(
+      entries.some((entry) => entry.event === "review.agents_selected"),
+    ).toBe(false);
+  });
+
+  it("reports the narrowed set, in spec order", async () => {
+    const { environment, entries } = harness({
+      ...eventEnv,
+      INPUT_AGENTS: "architecture,correctness",
+    });
+
+    await runAction(environment);
+
+    expect(
+      entries.find((entry) => entry.event === "review.agents_selected"),
+    ).toEqual({
+      level: "info",
+      event: "review.agents_selected",
+      agents: ["correctness", "architecture"],
+    });
+  });
+
+  it("treats an explicit `all` as the default", async () => {
+    const { environment, entries } = harness({
+      ...eventEnv,
+      INPUT_AGENTS: "all",
+    });
+
+    await runAction(environment);
+
+    expect(
+      entries.some((entry) => entry.event === "review.agents_selected"),
+    ).toBe(false);
+  });
+
+  it("fails on an unknown name before building any client", async () => {
+    // The whole point of resolving the input first: a typo in the
+    // workflow file must not cost a model call.
+    const { environment, anthropicConfigs, tokenConfigs } = harness({
+      ...eventEnv,
+      INPUT_AGENTS: "secuirty",
+    });
+
+    await expect(runAction(environment)).rejects.toThrow(
+      /Unknown review agent: security/,
+    );
+    expect(anthropicConfigs).toEqual([]);
+    expect(tokenConfigs).toEqual([]);
+  });
+});
+
 const remotePrompts = {
   correctness_system: validRemotePrompt("correctness", "REMOTE CORRECTNESS"),
   security_system: validRemotePrompt("security", "REMOTE SECURITY"),

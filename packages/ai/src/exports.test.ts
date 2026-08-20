@@ -42,6 +42,7 @@ import type {
 
 /** Every value export of the package, sorted. */
 const DOCUMENTED_EXPORTS = [
+  "ALL_LENSES",
   "AgentRunError",
   "DEFAULT_LANGFUSE_BASE_URL",
   "DEFAULT_PROMPT_LABEL",
@@ -59,6 +60,7 @@ const DOCUMENTED_EXPORTS = [
   "inCodePrompts",
   "loadManagedPrompts",
   "promptContractProblems",
+  "resolveReviewLenses",
   "reviewLenses",
   "reviewPromptContractProblems",
   "securityLens",

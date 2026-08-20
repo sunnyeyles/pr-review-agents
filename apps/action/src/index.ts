@@ -2,7 +2,7 @@
  * @pr-review/action
  *
  * GitHub Action entrypoint: runs the review inside the customer's own
- * workflow. The three agents, the Synthesiser, and the deterministic
+ * workflow. The review agents, the Synthesiser, and the deterministic
  * validation chain all live in shared code (@pr-review/reviewer); this
  * app only adapts the Actions environment to it.
  *
@@ -27,6 +27,8 @@ import {
   createLangfusePromptClient,
   createReviewAgents,
   loadManagedPrompts,
+  resolveReviewLenses,
+  reviewLenses,
   type AnthropicClientConfig,
   type AnthropicLike,
   type LangfusePromptClient,
@@ -224,6 +226,20 @@ export async function runAction(
   const payload: unknown = JSON.parse(await environment.readEventFile(eventPath));
   const eventName = env["GITHUB_EVENT_NAME"] ?? "";
 
+  // Resolved before any client is built: an unrecognised agent name is
+  // a typo in the workflow file, and it must cost nothing to discover.
+  // resolveReviewLenses throws rather than dropping the name, so the
+  // step fails here instead of running a review that reports nothing
+  // and looks exactly like a clean one.
+  const lenses = resolveReviewLenses(getInput(env, "agents"));
+  if (lenses.length < reviewLenses.length) {
+    // Only worth saying when the run is NOT the default set — the same
+    // argument resolveLangfuseInputs makes about its own default.
+    logger.info("review.agents_selected", {
+      agents: lenses.map((lens) => lens.category),
+    });
+  }
+
   const anthropic: AnthropicLike = environment.createAnthropicClient({
     apiKey: requireInput(env, "anthropic-api-key"),
   });
@@ -271,20 +287,23 @@ export async function runAction(
       client,
       runReviewPipeline: (reviewClient, context) =>
         runReviewPipeline(
-          createReviewAgents({
-            anthropic,
-            model,
-            github: reviewClient,
-            ...(prompts === undefined
-              ? {}
-              : {
-                  systemPrompts: {
-                    correctness: prompts.correctness,
-                    security: prompts.security,
-                    architecture: prompts.architecture,
-                  },
-                }),
-          }),
+          createReviewAgents(
+            {
+              anthropic,
+              model,
+              github: reviewClient,
+              ...(prompts === undefined
+                ? {}
+                : {
+                    systemPrompts: {
+                      correctness: prompts.correctness,
+                      security: prompts.security,
+                      architecture: prompts.architecture,
+                    },
+                  }),
+            },
+            lenses,
+          ),
           synthesiser,
           context,
         ),

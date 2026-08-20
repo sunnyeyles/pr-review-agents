@@ -28,9 +28,11 @@ export {
   type ReviewSystemPrompts,
 } from "./agent-runtime.js";
 export {
+  ALL_LENSES,
   architectureLens,
   correctnessLens,
   createReviewAgents,
+  resolveReviewLenses,
   reviewLenses,
   securityLens,
 } from "./agents.js";

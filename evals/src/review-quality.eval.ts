@@ -17,13 +17,14 @@
  */
 import process from "node:process";
 
+import { resolveReviewLenses } from "@pr-review/ai";
 import { createConsoleLogger } from "@pr-review/logging";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 
 import { evalCases } from "./cases.js";
 import { evaluateExpectation } from "./expectations.js";
 import { loadFixture } from "./fixture.js";
-import { requireModelAccess } from "./model-access.js";
+import { AGENTS_ENV, requireModelAccess } from "./model-access.js";
 import { formatReviewReport, formatRunReport } from "./report.js";
 import {
   modelBackedDeps,
@@ -36,7 +37,13 @@ import {
 // The console logger tees the lifecycle events (spec §26) to the
 // terminal as they happen: a full review takes minutes, and a silent
 // terminal is indistinguishable from a hung one.
-const deps = modelBackedDeps(requireModelAccess(process.env), createConsoleLogger());
+// AGENTS_ENV is unset for a normal run, which resolveReviewLenses
+// reads as every lens — so `pnpm eval` measures the whole review.
+const deps = modelBackedDeps(
+  requireModelAccess(process.env),
+  createConsoleLogger(),
+  resolveReviewLenses(process.env[AGENTS_ENV] ?? ""),
+);
 
 const reports: string[] = [];
 
