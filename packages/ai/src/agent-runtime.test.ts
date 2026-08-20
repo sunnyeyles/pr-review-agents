@@ -8,7 +8,12 @@ import type Anthropic from "@anthropic-ai/sdk";
 import { createCapturingLogger } from "@pr-review/logging";
 import { describe, expect, it } from "vitest";
 
-import { AgentRunError, createReviewAgent } from "./agent-runtime.js";
+import {
+  AgentRunError,
+  buildReviewSystemPrompt,
+  createReviewAgent,
+  type ReviewSystemPrompts,
+} from "./agent-runtime.js";
 import {
   context,
   finalFindingsJson,
@@ -37,7 +42,7 @@ const finalJson = JSON.stringify({ findings: [finding] });
 
 function makeAgent(
   responses: Anthropic.Messages.Message[],
-  options: { maxTurns?: number } = {},
+  options: { maxTurns?: number; systemPrompts?: ReviewSystemPrompts } = {},
 ) {
   const { anthropic, create } = makeAnthropic(responses);
   const github = makeGithub();
@@ -48,6 +53,9 @@ function makeAgent(
     github,
     logger,
     ...(options.maxTurns !== undefined ? { maxTurns: options.maxTurns } : {}),
+    ...(options.systemPrompts !== undefined
+      ? { systemPrompts: options.systemPrompts }
+      : {}),
   });
   return { agent, create, github, entries };
 }
@@ -457,5 +465,33 @@ describe("lifecycle events (spec §26)", () => {
       outputTokens: 8,
     });
     expect(failed?.["error"]).toMatch(/turn/i);
+  });
+});
+
+describe("pre-resolved system prompts", () => {
+  it("uses the injected prompt for a lens that has one", async () => {
+    const injected = "INJECTED CORRECTNESS SYSTEM PROMPT";
+    const { agent, create } = makeAgent(
+      [message([textBlock(finalJson)], "end_turn")],
+      { systemPrompts: { correctness: injected } },
+    );
+
+    await agent.run(context);
+
+    expect(create.mock.calls[0]?.[0]?.system).toBe(injected);
+  });
+
+  it("falls back to the in-code prompt for a lens that has none", async () => {
+    // A map covering only other lenses must leave this one untouched.
+    const { agent, create } = makeAgent(
+      [message([textBlock(finalJson)], "end_turn")],
+      { systemPrompts: { security: "SOMEONE ELSE'S PROMPT" } },
+    );
+
+    await agent.run(context);
+
+    expect(create.mock.calls[0]?.[0]?.system).toBe(
+      buildReviewSystemPrompt(correctnessLens),
+    );
   });
 });

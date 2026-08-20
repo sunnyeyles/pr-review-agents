@@ -26,6 +26,29 @@ inputs:
     description: Anthropic model id the agents and Synthesiser use.
     required: false
     default: claude-sonnet-5
+  langfuse-public-key:
+    description: >-
+      Langfuse public key. Supply this and langfuse-secret-key to fetch the
+      system prompts from Langfuse and export traces there. Leave both unset to
+      run on the prompts built into this action, which is the default.
+    required: false
+    default: ""
+  langfuse-secret-key:
+    description: >-
+      Langfuse secret key. Store it as a repository or organisation secret;
+      never inline it.
+    required: false
+    default: ""
+  langfuse-base-url:
+    description: Langfuse host. Point this at your own instance if self-hosting.
+    required: false
+    default: https://cloud.langfuse.com
+  langfuse-prompt-label:
+    description: >-
+      Label identifying which version of each prompt to fetch. Use this to try a
+      prompt change on one repository before promoting it.
+    required: false
+    default: production
 
 runs:
   using: node24

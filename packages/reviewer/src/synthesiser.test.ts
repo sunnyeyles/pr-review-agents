@@ -333,3 +333,15 @@ describe("buildSynthesisMessage", () => {
     expect(JSON.parse(embedded?.[1] ?? "")).toEqual([correctnessDuplicate]);
   });
 });
+
+describe("a pre-resolved synthesis prompt", () => {
+  it("is used in place of the in-code prompt", async () => {
+    const injected = "INJECTED SYNTHESIS SYSTEM PROMPT";
+    const { anthropic, calls } = makeAnthropic([findingsJson([combinedFinding])]);
+    const synthesiser = createSynthesiser({ anthropic, model, systemPrompt: injected });
+
+    await synthesiser.synthesise([correctnessDuplicate, securityDuplicate]);
+
+    expect(calls[0]?.system).toBe(injected);
+  });
+});

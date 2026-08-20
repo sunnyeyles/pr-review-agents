@@ -11,6 +11,8 @@
     "build": "node ../../scripts/build-bundle.mjs"
   },
   "dependencies": {
+    "@langfuse/otel": "^5.10.1",
+    "@opentelemetry/sdk-node": "^0.221.0",
     "@pr-review/ai": "workspace:*",
     "@pr-review/github": "workspace:*",
     "@pr-review/logging": "workspace:*",

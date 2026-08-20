@@ -42,6 +42,26 @@ GitHub API, never from a working copy, and never execute the code they review.
 | `anthropic-api-key` | yes | — | Key the agents and Synthesiser authenticate with. Store it as a secret. |
 | `github-token` | no | `${{ github.token }}` | Token for the read-only tools and the check run. |
 | `model` | no | `claude-sonnet-5` | Anthropic model id. |
+| `langfuse-public-key` | no | — | Langfuse public key. Set this and the secret key to manage prompts and collect traces. |
+| `langfuse-secret-key` | no | — | Langfuse secret key. Store it as a secret. |
+| `langfuse-base-url` | no | `https://cloud.langfuse.com` | Langfuse host, for self-hosted instances. |
+| `langfuse-prompt-label` | no | `production` | Which labelled version of each prompt to fetch. |
+
+## Langfuse (optional)
+
+Leave the Langfuse inputs unset and the action runs on the system prompts built
+into it, exporting nothing. That is the default and needs no account.
+
+Supply **both** keys and two things change: the four system prompts
+(`correctness_system`, `security_system`, `architecture_system`,
+`synthesis_system`) are fetched from Langfuse at the start of the run, and the
+agents, their tool calls, and the Synthesiser export traces.
+
+Neither is load-bearing. If Langfuse is unreachable, slow, missing a prompt, or
+returns text that has lost its output contract, that prompt falls back to the
+built-in one and the review proceeds — per prompt, so one bad entry costs one
+prompt rather than the run. Setting only one of the two keys disables both
+features and logs `langfuse.disabled_incomplete_credentials`.
 
 ## Permissions
 
