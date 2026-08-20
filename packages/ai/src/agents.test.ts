@@ -24,9 +24,11 @@ import {
   textBlock,
 } from "./agent-test-support.js";
 import {
+  ALL_LENSES,
   architectureLens,
   correctnessLens,
   createReviewAgents,
+  resolveReviewLenses,
   reviewLenses,
   securityLens,
 } from "./agents.js";
@@ -93,6 +95,74 @@ describe("agent names", () => {
       "security",
       "architecture",
     ]);
+  });
+
+  it("createReviewAgents builds only the lenses it is given", () => {
+    const { deps } = makeDeps([]);
+
+    expect(
+      createReviewAgents(deps, [architectureLens]).map((agent) => agent.name),
+    ).toEqual(["architecture"]);
+  });
+});
+
+/**
+ * Selecting a subset of the lenses. The pipeline below this already
+ * copes with any number of agents — buildReviewGraph takes a list and
+ * makeJoinNode counts it — so the whole of the feature is getting the
+ * list right, which is what these pin.
+ */
+describe("resolveReviewLenses", () => {
+  const names = (selection: string): string[] =>
+    resolveReviewLenses(selection).map((lens) => lens.category);
+
+  it("treats an absent selection and an explicit `all` alike", () => {
+    // An unset action input arrives as "", so the two must not differ.
+    expect(names("")).toEqual(["correctness", "security", "architecture"]);
+    expect(names("   ")).toEqual(["correctness", "security", "architecture"]);
+    expect(names(ALL_LENSES)).toEqual([
+      "correctness",
+      "security",
+      "architecture",
+    ]);
+    expect(names("ALL")).toEqual(["correctness", "security", "architecture"]);
+  });
+
+  it("selects a single lens", () => {
+    expect(names("architecture")).toEqual(["architecture"]);
+  });
+
+  it("returns the subset in spec order, never the caller's order", () => {
+    // Agent order decides candidate order in `join`, so the result must
+    // not depend on how the input happened to be typed.
+    expect(names("architecture,correctness")).toEqual([
+      "correctness",
+      "architecture",
+    ]);
+  });
+
+  it("collapses duplicates rather than running an agent twice", () => {
+    expect(names("correctness,correctness")).toEqual(["correctness"]);
+  });
+
+  it("tolerates whitespace and casing around the names", () => {
+    expect(names(" Correctness , SECURITY ")).toEqual([
+      "correctness",
+      "security",
+    ]);
+  });
+
+  it("rejects an unknown name instead of silently dropping it", () => {
+    // A dropped name would run a narrower review than asked for and
+    // report nothing, which is indistinguishable from a clean review.
+    expect(() => resolveReviewLenses("secuirty")).toThrow(
+      /Unknown review agent: security/,
+    );
+    expect(() => resolveReviewLenses("secuirty")).toThrow(/architecture/);
+  });
+
+  it("rejects a selection that names nothing at all", () => {
+    expect(() => resolveReviewLenses(",")).toThrow(/No review agents selected/);
   });
 });
 

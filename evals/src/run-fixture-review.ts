@@ -3,7 +3,7 @@
  *
  * This is deliberately the whole pipeline, not a convenient slice of
  * it: reviewPullRequest loads the pull request through the (fixture-
- * backed) GitHub client, runReviewPipeline fans the three agents out
+ * backed) GitHub client, runReviewPipeline fans the selected agents out
  * as concurrent graph nodes, joins their candidates with the partial-
  * failure rule, refines them through the Synthesiser, and runs the
  * deterministic validation chain; renderCheckRun then turns the
@@ -21,7 +21,9 @@
 import {
   createAnthropicClient,
   createReviewAgents,
+  reviewLenses,
   type ReviewAgent,
+  type ReviewLens,
 } from "@pr-review/ai";
 import type { GithubInstallationClient } from "@pr-review/github";
 import {
@@ -80,16 +82,28 @@ export interface FixtureReview {
   durationMs: number;
 }
 
-/** The production wiring: real Anthropic client, real agents, real Synthesiser. */
+/**
+ * The production wiring: real Anthropic client, real agents, real
+ * Synthesiser.
+ *
+ * `lenses` narrows the agent set exactly as the action's `agents`
+ * input does. It defaults to every lens, so a bare `pnpm eval`
+ * measures the review a user actually gets; narrowing it evaluates one
+ * lens at roughly its own share of the cost.
+ */
 export function modelBackedDeps(
   access: ModelAccess,
   logger?: StructuredLogger,
+  lenses: readonly ReviewLens[] = reviewLenses,
 ): FixtureReviewDeps {
   const anthropic = createAnthropicClient({ apiKey: access.apiKey });
   const model = access.model;
   return {
     createAgents: (github, reviewLogger) =>
-      createReviewAgents({ anthropic, model, github, logger: reviewLogger }),
+      createReviewAgents(
+        { anthropic, model, github, logger: reviewLogger },
+        lenses,
+      ),
     synthesiser: createSynthesiser({ anthropic, model }),
     logger,
   };

@@ -2,7 +2,8 @@
 
 Reviews pull requests with three independent AI agents — **Correctness**,
 **Security**, and **Architecture** — and publishes the result as an
-`AI PR Review` check run with inline annotations.
+`AI PR Review` check run with inline annotations. Any subset of the three can
+be selected per run.
 
 The agents never touch GitHub. They propose structured findings; deterministic
 application code decides what actually gets published.
@@ -130,8 +131,8 @@ spec.md       The original specification this implementation follows
 ### Concurrency
 
 LangGraph runs the review pipeline
-(`packages/reviewer/src/review-graph.ts`): three agent nodes → `join` →
-`synthesise` → `validate`. All three agent nodes have `START` as their only
+(`packages/reviewer/src/review-graph.ts`): one node per selected agent → `join`
+→ `synthesise` → `validate`. Every agent node has `START` as its only
 dependency, so they run in the same superstep. Inside a node, one agent's
 tool-calling loop is a plain turn loop over the Messages API
 (`packages/ai/src/agent-runtime.ts`), capped at 12 model calls.
@@ -158,6 +159,37 @@ Set as `with:` inputs on the Action step ([`apps/action/action.yml`](apps/action
 | `anthropic-api-key` | yes | Anthropic key the agents and synthesiser authenticate with. Store as a repository or organisation secret; never inline it. |
 | `github-token` | no (default `${{ github.token }}`) | Token for the six read-only repository tools and for publishing the check run. |
 | `model` | no (default `claude-sonnet-5`) | Anthropic model id the agents and synthesiser use. |
+| `agents` | no (default `all`) | Which agents run: `all`, or a comma-separated subset of `correctness`, `security`, `architecture`. |
+
+### Selecting agents
+
+Each agent is an independent tool-calling loop, so the cost of a review is
+essentially the sum of its agents. One measured run of this repository's own
+PR #11 spent ~1.58M input tokens, split very unevenly:
+
+| Agent | Model calls | Input tokens |
+| --- | --- | --- |
+| Architecture | 10 | ~805k |
+| Correctness | 9 | ~594k |
+| Security | 4 | ~185k |
+
+Architecture costs the most because its lens explicitly requires retrieving
+surrounding repository context before it may make a claim, and every retrieval
+is another round trip carrying the whole conversation.
+
+So narrowing the set cuts cost roughly in proportion:
+
+```yaml
+        with:
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          agents: architecture        # or: correctness,security
+```
+
+An unrecognised name fails the step **before any model call**, rather than
+quietly running a narrower review whose empty result is indistinguishable from
+a clean one. Synthesis still runs for a single agent, deliberately: a narrowed
+run must exercise the same path a full review does, or it is useless for
+iterating on a prompt.
 
 Nothing is read from a secrets store at runtime — the workflow token and the
 `anthropic-api-key` input are the only credentials involved, and neither ever

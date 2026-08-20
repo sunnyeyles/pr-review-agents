@@ -19,6 +19,17 @@ export const API_KEY_ENV = "ANTHROPIC_API_KEY";
 export const MODEL_ENV = "ANTHROPIC_MODEL";
 
 /**
+ * Environment variable narrowing which review agents the evaluations
+ * run — the same `all`-or-comma-separated-subset spelling as the
+ * action's `agents` input, parsed by the same resolveReviewLenses.
+ *
+ * This is a manual override for iterating on ONE lens cheaply, not a
+ * supported configuration: fixture expectations that assert findings
+ * in a category whose agent no longer runs will fail, and should.
+ */
+export const AGENTS_ENV = "REVIEW_AGENTS";
+
+/**
  * The model evaluated when MODEL_ENV is unset. It mirrors the default
  * of the action's `model` input (apps/action/action.yml), so a bare
  * `pnpm eval` measures what a user gets out of the box; set MODEL_ENV
@@ -44,6 +55,7 @@ export const MISSING_API_KEY_MESSAGE = [
   "",
   `  export ${API_KEY_ENV}=…        # your Anthropic API key`,
   `  export ${MODEL_ENV}=…          # optional; defaults to ${DEFAULT_MODEL}`,
+  `  export ${AGENTS_ENV}=…         # optional; defaults to every review agent`,
   "  pnpm eval",
   "",
   "The fast unit suite (pnpm test) never calls a model and needs no key.",

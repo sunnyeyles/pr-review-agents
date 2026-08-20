@@ -67,6 +67,10 @@ jobs:
         uses: ./apps/action
         with:
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Narrow the review from repository variables — set
+          # vars.REVIEW_AGENTS to e.g. `architecture` to iterate on one
+          # lens without paying for the other two on every push.
+          agents: ${{ vars.REVIEW_AGENTS || 'all' }}
           # Optional: absent secrets leave the action on its built-in
           # prompts with no tracing, which is the supported default.
           langfuse-public-key: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
