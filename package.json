@@ -12,6 +12,7 @@
     "typecheck": "pnpm -r typecheck",
     "test": "vitest run",
     "eval": "vitest run --config evals/vitest.eval.config.ts",
+    "seed-prompts": "node scripts/seed-prompts.mjs",
     "build": "pnpm -r build"
   },
   "devDependencies": {

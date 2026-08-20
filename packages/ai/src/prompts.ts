@@ -174,13 +174,46 @@ export function reviewPromptContractProblems(
   return problems;
 }
 
-/** The contract for one managed prompt, by which prompt it is. */
-function promptContractProblems(id: ManagedPromptId, text: string): string[] {
+/**
+ * The contract for one managed prompt, by which prompt it is.
+ *
+ * Exported because the same gate has to run in both directions: on a
+ * prompt fetched from Langfuse before a review trusts it, and on a
+ * prompt about to be published to Langfuse. Seeding text that this
+ * would reject would install a prompt guaranteed to fall back.
+ */
+export function promptContractProblems(
+  id: ManagedPromptId,
+  text: string,
+): string[] {
   // The synthesiser reads findings rather than a repository, so it
   // carries the shared hardening but none of the lens-specific rules.
   return id === "synthesis"
     ? sharedPromptProblems(text)
     : reviewPromptContractProblems(text, id);
+}
+
+/**
+ * The four prompts exactly as this build defines them, before Langfuse
+ * is consulted at all.
+ *
+ * Two callers need them and must never disagree: loadManagedPrompts
+ * uses them as the fallback every fetch is only ever an upgrade on,
+ * and the seeder publishes them as the baseline version. Building them
+ * here once is what keeps "what a review falls back to" and "what gets
+ * pushed to Langfuse" the same text.
+ *
+ * The synthesis prompt is injected for the same reason it is on
+ * LoadManagedPromptsOptions: it lives in @pr-review/reviewer, which
+ * depends on this package.
+ */
+export function inCodePrompts(synthesisFallback: string): ManagedPrompts {
+  return {
+    correctness: buildReviewSystemPrompt(correctnessLens),
+    security: buildReviewSystemPrompt(securityLens),
+    architecture: buildReviewSystemPrompt(architectureLens),
+    synthesis: synthesisFallback,
+  };
 }
 
 export interface LoadManagedPromptsOptions {
@@ -226,12 +259,7 @@ export async function loadManagedPrompts(
 
   // Start from the in-code prompts so nothing can be left undefined
   // and a fetch is only ever an upgrade.
-  const prompts: ManagedPrompts = {
-    correctness: buildReviewSystemPrompt(correctnessLens),
-    security: buildReviewSystemPrompt(securityLens),
-    architecture: buildReviewSystemPrompt(architectureLens),
-    synthesis: options.synthesisFallback,
-  };
+  const prompts: ManagedPrompts = inCodePrompts(options.synthesisFallback);
   const sources: Record<ManagedPromptId, PromptSource> = {
     correctness: "fallback",
     security: "fallback",

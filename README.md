@@ -189,7 +189,32 @@ external, since the Actions runner provides nothing beyond the Node runtime
 itself.
 
 Put local secret values in `.env.local` (gitignored) when exercising the
-handler outside Actions.
+handler outside Actions. `scripts/seed-prompts.mjs` reads it; nothing else
+does.
+
+### Seeding the managed prompts
+
+The four system prompts are editable in Langfuse, but a project only serves
+them once it holds them — until then every review falls back to the in-code
+prompts and reports `loadedCount: 0`. Publish this build's prompts with:
+
+```sh
+pnpm seed-prompts -- --dry-run           # decide everything, write nothing
+pnpm seed-prompts -- --label staging     # try a label before promoting
+pnpm seed-prompts                        # publish to `production`
+```
+
+It needs `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` (plus
+`LANGFUSE_BASE_URL` when self-hosting or on a regional host), from the
+environment or `.env.local`.
+
+Re-running is a no-op when the labelled version already matches, so it never
+piles identical versions onto a current project. A prompt that has been edited
+in Langfuse keeps serving reviews — that is the point of managing them there —
+and is superseded, not erased, the next time the seeder runs. A prompt that
+would fail the contract guard in `packages/ai/src/prompts.ts` is never
+published, since installing one would mean every review silently falling back
+from it.
 
 ---
 
