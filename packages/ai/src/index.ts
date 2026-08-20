@@ -39,7 +39,9 @@ export {
   DEFAULT_PROMPT_LABEL,
   MANAGED_PROMPT_KEYS,
   createLangfusePromptClient,
+  inCodePrompts,
   loadManagedPrompts,
+  promptContractProblems,
   reviewPromptContractProblems,
   type LangfusePromptClient,
   type LangfusePromptClientConfig,
@@ -49,6 +51,16 @@ export {
   type ManagedPrompts,
   type PromptSource,
 } from "./prompts.js";
+export {
+  createLangfusePromptWriter,
+  seedFailed,
+  seedManagedPrompts,
+  type LabelledPrompt,
+  type LangfusePromptWriter,
+  type SeedManagedPromptsOptions,
+  type SeedOutcome,
+  type SeedReport,
+} from "./prompt-seed.js";
 export {
   traceModelCall,
   type GenerationParent,
