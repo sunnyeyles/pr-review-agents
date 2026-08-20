@@ -21,24 +21,42 @@ import { readFile } from "node:fs/promises";
 import process from "node:process";
 
 import {
+  DEFAULT_LANGFUSE_BASE_URL,
+  DEFAULT_PROMPT_LABEL,
   createAnthropicClient,
+  createLangfusePromptClient,
   createReviewAgents,
+  loadManagedPrompts,
   type AnthropicClientConfig,
   type AnthropicLike,
+  type LangfusePromptClient,
+  type LangfusePromptClientConfig,
+  type ManagedPrompts,
 } from "@pr-review/ai";
 import {
   createTokenClient,
   type GithubInstallationClient,
   type GithubTokenConfig,
 } from "@pr-review/github";
-import { createConsoleLogger, type StructuredLogger } from "@pr-review/logging";
 import {
+  createConsoleLogger,
+  errorMessage,
+  errorName,
+  type StructuredLogger,
+} from "@pr-review/logging";
+import {
+  SYNTHESIS_SYSTEM_PROMPT,
   createCheckRunPublisher,
   createSynthesiser,
   runReviewPipeline,
 } from "@pr-review/reviewer";
 
 import { createActionHandler } from "./handler.js";
+import {
+  createLangfuseRuntime,
+  type LangfuseRuntime,
+  type LangfuseRuntimeConfig,
+} from "./langfuse.js";
 import { createFallbackPublisher } from "./summary.js";
 
 /**
@@ -55,6 +73,10 @@ export interface ActionEnvironment {
   readEventFile: (path: string) => Promise<string>;
   createAnthropicClient: (config: AnthropicClientConfig) => AnthropicLike;
   createTokenClient: (config: GithubTokenConfig) => GithubInstallationClient;
+  /** Builds the managed-prompt retrieval seam. */
+  createPromptClient: (config: LangfusePromptClientConfig) => LangfusePromptClient;
+  /** Starts span export for this run and returns its flush handle. */
+  createLangfuseRuntime: (config: LangfuseRuntimeConfig) => LangfuseRuntime;
   logger: StructuredLogger;
   /** Marks the process as failed without exiting it. */
   setExitCode: (code: number) => void;
@@ -67,6 +89,8 @@ export function actionEnvironment(): ActionEnvironment {
     readEventFile: (path) => readFile(path, "utf8"),
     createAnthropicClient,
     createTokenClient,
+    createPromptClient: createLangfusePromptClient,
+    createLangfuseRuntime,
     logger: createConsoleLogger(),
     setExitCode: (code) => {
       process.exitCode = code;
@@ -99,6 +123,88 @@ export function requireInput(
   return value;
 }
 
+/** The Langfuse settings one run needs, once they are known to be usable. */
+export interface LangfuseInputs {
+  publicKey: string;
+  secretKey: string;
+  baseUrl: string;
+  promptLabel: string;
+}
+
+/**
+ * Decides whether this run uses Langfuse at all, from the action
+ * inputs. Returning undefined means the review runs on its in-code
+ * prompts and exports no traces — the default, and the only behaviour
+ * available before these inputs existed.
+ *
+ * Both keys are needed for either feature: prompt fetching and span
+ * export authenticate the same way.
+ */
+export function resolveLangfuseInputs(
+  env: Record<string, string | undefined>,
+  logger: StructuredLogger,
+): LangfuseInputs | undefined {
+  const publicKey = getInput(env, "langfuse-public-key");
+  const secretKey = getInput(env, "langfuse-secret-key");
+
+  if (publicKey === "" && secretKey === "") {
+    // The default. Saying so on every run would be noise.
+    return undefined;
+  }
+  if (publicKey === "" || secretKey === "") {
+    // Half-configured is a mistake worth naming: the review still runs,
+    // but prompt edits and traces silently go nowhere, which is hard to
+    // diagnose from the outside. Report which side is missing, never
+    // the value of the side that is present.
+    logger.error("langfuse.disabled_incomplete_credentials", {
+      missingInput:
+        publicKey === "" ? "langfuse-public-key" : "langfuse-secret-key",
+    });
+    return undefined;
+  }
+
+  return {
+    publicKey,
+    secretKey,
+    // action.yml defaults both, but a caller invoking the bundle
+    // directly does not go through it, so the library constants are
+    // the single definition and action.yml only documents them.
+    baseUrl: getInput(env, "langfuse-base-url") || DEFAULT_LANGFUSE_BASE_URL,
+    promptLabel: getInput(env, "langfuse-prompt-label") || DEFAULT_PROMPT_LABEL,
+  };
+}
+
+/**
+ * Resolves the managed system prompts, absorbing every failure.
+ *
+ * loadManagedPrompts already falls back per prompt and never rejects;
+ * this wrapper covers the one part that still can — building the
+ * client — so a Langfuse problem can never fail a review.
+ */
+async function resolveManagedPrompts(
+  environment: ActionEnvironment,
+  inputs: LangfuseInputs,
+): Promise<ManagedPrompts | undefined> {
+  try {
+    const client = environment.createPromptClient({
+      publicKey: inputs.publicKey,
+      secretKey: inputs.secretKey,
+      baseUrl: inputs.baseUrl,
+    });
+    const { prompts } = await loadManagedPrompts(client, {
+      synthesisFallback: SYNTHESIS_SYSTEM_PROMPT,
+      label: inputs.promptLabel,
+      logger: environment.logger,
+    });
+    return prompts;
+  } catch (error: unknown) {
+    environment.logger.error("langfuse.prompts.unavailable", {
+      error: errorMessage(error),
+    });
+    return undefined;
+  }
+}
+
 /**
  * One action run: read the event, build the clients, hand the payload
  * to the handler. Every failure propagates to the caller, which is the
@@ -122,34 +228,90 @@ export async function runAction(
     apiKey: requireInput(env, "anthropic-api-key"),
   });
   const model = requireInput(env, "model");
-  // The Synthesiser (spec §16) shares the agents' client and model:
-  // §16 defines no separate model configuration. It is
-  // repository-independent (no GitHub tools), so one instance serves
-  // the single review this process performs.
-  const synthesiser = createSynthesiser({ anthropic, model });
-  const client = environment.createTokenClient({
-    token: requireInput(env, "github-token"),
-  });
 
-  const handler = createActionHandler({
-    client,
-    runReviewPipeline: (reviewClient, context) =>
-      runReviewPipeline(
-        createReviewAgents({ anthropic, model, github: reviewClient }),
-        synthesiser,
-        context,
-      ),
-    // Check run first; job summary when the workflow token cannot
-    // create one (fork pull requests).
-    publishReview: createFallbackPublisher({
-      publishCheckRun: createCheckRunPublisher(client),
-      summaryPath: env["GITHUB_STEP_SUMMARY"],
+  const langfuse = resolveLangfuseInputs(env, logger);
+  // Tracing starts before the prompt fetch so the fetch's own spans are
+  // captured, and the prompts are resolved before anything that
+  // consumes them is built.
+  const tracing =
+    langfuse === undefined
+      ? undefined
+      : environment.createLangfuseRuntime({
+          // No `environment`: Langfuse treats it as a slug naming a
+          // deployment stage, and the obvious candidate here
+          // (GITHUB_REPOSITORY) is a slash-separated path, not a stage.
+          // The commit is a genuine release identifier, so it maps.
+          publicKey: langfuse.publicKey,
+          secretKey: langfuse.secretKey,
+          baseUrl: langfuse.baseUrl,
+          release: env["GITHUB_SHA"],
+        });
+  // Everything below may emit spans, so it all sits inside the
+  // block whose finally flushes them.
+  try {
+    const prompts =
+      langfuse === undefined
+        ? undefined
+        : await resolveManagedPrompts(environment, langfuse);
+
+    // The Synthesiser (spec §16) shares the agents' client and model:
+    // §16 defines no separate model configuration. It is
+    // repository-independent (no GitHub tools), so one instance serves
+    // the single review this process performs.
+    const synthesiser = createSynthesiser({
+      anthropic,
+      model,
+      ...(prompts === undefined ? {} : { systemPrompt: prompts.synthesis }),
+    });
+    const client = environment.createTokenClient({
+      token: requireInput(env, "github-token"),
+    });
+
+    const handler = createActionHandler({
+      client,
+      runReviewPipeline: (reviewClient, context) =>
+        runReviewPipeline(
+          createReviewAgents({
+            anthropic,
+            model,
+            github: reviewClient,
+            ...(prompts === undefined
+              ? {}
+              : {
+                  systemPrompts: {
+                    correctness: prompts.correctness,
+                    security: prompts.security,
+                    architecture: prompts.architecture,
+                  },
+                }),
+          }),
+          synthesiser,
+          context,
+        ),
+      // Check run first; job summary when the workflow token cannot
+      // create one (fork pull requests).
+      publishReview: createFallbackPublisher({
+        publishCheckRun: createCheckRunPublisher(client),
+        summaryPath: env["GITHUB_STEP_SUMMARY"],
+        logger,
+      }),
       logger,
-    }),
-    logger,
-  });
+    });
 
-  await handler(payload, eventName);
+    await handler(payload, eventName);
+  } finally {
+    // A flush failure is worth knowing about but never worth failing a
+    // review that already ran.
+    if (tracing !== undefined) {
+      try {
+        await tracing.forceFlush();
+      } catch (error: unknown) {
+        logger.error("tracing.flush_failed", {
+          error: errorMessage(error),
+        });
+      }
+    }
+  }
 }
 
 /**
@@ -165,8 +327,8 @@ export function runEntrypoint(
   }
   runAction(environment).catch((error: unknown) => {
     environment.logger.error("review.failed", {
-      error: error instanceof Error ? error.message : String(error),
-      errorName: error instanceof Error ? error.name : "Error",
+      error: errorMessage(error),
+      errorName: errorName(error),
     });
     environment.setExitCode(1);
   });

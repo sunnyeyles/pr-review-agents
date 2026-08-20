@@ -18,13 +18,16 @@
  * to validating the RAW candidates — synthesis failure never kills the
  * review.
  */
+import { startObservation } from "@langfuse/tracing";
 import {
   addTokenUsage,
   emptyTokenUsage,
   extractAgentOutput,
+  traceModelCall,
   type AnthropicLike,
   type TokenUsage,
 } from "@pr-review/ai";
+import { errorMessage } from "@pr-review/logging";
 import { reviewFindingSchema, type ReviewFinding } from "@pr-review/schemas";
 
 /** A synthesis-level failure (the model broke the output contract). */
@@ -81,6 +84,11 @@ export interface SynthesiserDeps {
   anthropic: AnthropicLike;
   /** Model id from configuration (ANTHROPIC_MODEL); never hard-coded. */
   model: string;
+  /**
+   * Pre-resolved synthesis system prompt. Omitted means the in-code
+   * SYNTHESIS_SYSTEM_PROMPT below.
+   */
+  systemPrompt?: string | undefined;
 }
 
 /**
@@ -105,43 +113,88 @@ export interface Synthesiser {
 
 /** Builds the Synthesiser over the shared Anthropic seam. */
 export function createSynthesiser(deps: SynthesiserDeps): Synthesiser {
+  const systemPrompt = deps.systemPrompt ?? SYNTHESIS_SYSTEM_PROMPT;
+
   return {
     async synthesise(candidates) {
-      // Only schema-valid candidates are worth refining (and worth
-      // model tokens); malformed ones could never survive validation.
-      const wellFormed: ReviewFinding[] = [];
-      for (const candidate of candidates) {
-        const parsed = reviewFindingSchema.safeParse(candidate);
-        if (parsed.success) {
-          wellFormed.push(parsed.data);
+      // Children hang off this observation explicitly, so the body
+      // below keeps its shape. Without tracing configured every call
+      // on it is a no-op.
+      const observation = startObservation(
+        "synthesise-findings",
+        { input: { candidateCount: candidates.length } },
+        { asType: "chain" },
+      );
+
+      try {
+        // Only schema-valid candidates are worth refining (and worth
+        // model tokens); malformed ones could never survive validation.
+        const wellFormed: ReviewFinding[] = [];
+        for (const candidate of candidates) {
+          const parsed = reviewFindingSchema.safeParse(candidate);
+          if (parsed.success) {
+            wellFormed.push(parsed.data);
+          }
         }
-      }
+        observation.update({
+          metadata: { model: deps.model, wellFormedCount: wellFormed.length },
+        });
 
-      if (wellFormed.length === 0) {
-        // Nothing to refine: skip the model call entirely (see the
-        // module doc comment for the documented choice).
-        return { findings: [], usage: emptyTokenUsage() };
-      }
+        if (wellFormed.length === 0) {
+          // Nothing to refine: skip the model call entirely (see the
+          // module doc comment for the documented choice).
+          observation.update({ output: { findingCount: 0, skipped: true } });
+          return { findings: [], usage: emptyTokenUsage() };
+        }
 
-      const response = await deps.anthropic.messages.create({
-        model: deps.model,
-        max_tokens: MAX_OUTPUT_TOKENS,
-        system: SYNTHESIS_SYSTEM_PROMPT,
-        messages: [{ role: "user", content: buildSynthesisMessage(wellFormed) }],
-      });
-      const usage = addTokenUsage(emptyTokenUsage(), response.usage);
-
-      const text = response.content
-        .flatMap((block) => (block.type === "text" ? [block.text] : []))
-        .join("\n");
-      const output = extractAgentOutput(text);
-      if (!output.ok) {
-        throw new SynthesisError(
-          `synthesiser produced invalid findings output ` +
-            `(stop_reason: ${response.stop_reason ?? "unknown"}): ${output.error}`,
+        const response = await traceModelCall(
+          observation,
+          {
+            model: deps.model,
+            input: { wellFormedCount: wellFormed.length },
+            maxTokens: MAX_OUTPUT_TOKENS,
+          },
+          () =>
+            deps.anthropic.messages.create({
+              model: deps.model,
+              max_tokens: MAX_OUTPUT_TOKENS,
+              system: systemPrompt,
+              messages: [
+                { role: "user", content: buildSynthesisMessage(wellFormed) },
+              ],
+            }),
         );
+        const usage = addTokenUsage(emptyTokenUsage(), response.usage);
+
+        const text = response.content
+          .flatMap((block) => (block.type === "text" ? [block.text] : []))
+          .join("\n");
+        const output = extractAgentOutput(text);
+        if (!output.ok) {
+          throw new SynthesisError(
+            `synthesiser produced invalid findings output ` +
+              `(stop_reason: ${response.stop_reason ?? "unknown"}): ${output.error}`,
+          );
+        }
+        observation.update({
+          output: { findingCount: output.findings.length },
+          metadata: {
+            inputTokens: usage.inputTokens,
+            outputTokens: usage.outputTokens,
+          },
+        });
+        return { findings: output.findings, usage };
+      } catch (error) {
+        // Unlike the agents, a failed synthesis is a hard failure for
+        // the review, so it is recorded at ERROR here too.
+        observation.update({
+          level: "ERROR",
+          statusMessage: errorMessage(error),
+        });
+        throw error;
+      } finally {
+        observation.end();
       }
-      return { findings: output.findings, usage };
     },
   };
 }

@@ -6,6 +6,10 @@
  * before import, because importing this module evaluates the guard and
  * CI itself sets that marker to "true".
  */
+import {
+  validRemotePrompt,
+  validRemoteSynthesisPrompt,
+} from "../../../packages/ai/src/agent-test-support.js";
 import { createCapturingLogger } from "@pr-review/logging";
 import type { GithubInstallationClient } from "@pr-review/github";
 import { afterAll, describe, expect, it, vi } from "vitest";
@@ -59,17 +63,37 @@ interface Harness {
   entries: ReturnType<typeof createCapturingLogger>["entries"];
   anthropicConfigs: { apiKey: string }[];
   tokenConfigs: { token: string }[];
+  promptClientConfigs: { publicKey: string; secretKey: string; baseUrl: string }[];
+  /** Prompt names fetched, in order, across every client built. */
+  promptFetches: { name: string; label: string | undefined }[];
+  tracingConfigs: { baseUrl: string; release?: string | undefined }[];
+  /** How many times spans were flushed across the run. */
+  flushCount: () => number;
   readPaths: string[];
   exitCodes: number[];
+}
+
+/**
+ * Optional Langfuse behaviour for one harness. Absent means the seams
+ * are still wired but must never be reached — which is what the
+ * default (no Langfuse inputs) path asserts.
+ */
+interface HarnessOptions {
+  prompts?: Record<string, string | Error> | undefined;
 }
 
 function harness(
   env: Record<string, string | undefined>,
   eventFile: string | Error = JSON.stringify({ action: "opened" }),
+  options: HarnessOptions = {},
 ): Harness {
   const { logger, entries } = createCapturingLogger();
   const anthropicConfigs: { apiKey: string }[] = [];
   const tokenConfigs: { token: string }[] = [];
+  const promptClientConfigs: Harness["promptClientConfigs"] = [];
+  const promptFetches: Harness["promptFetches"] = [];
+  const tracingConfigs: Harness["tracingConfigs"] = [];
+  let flushCount = 0;
   const readPaths: string[] = [];
   const exitCodes: number[] = [];
 
@@ -77,6 +101,10 @@ function harness(
     entries,
     anthropicConfigs,
     tokenConfigs,
+    promptClientConfigs,
+    promptFetches,
+    tracingConfigs,
+    flushCount: () => flushCount,
     readPaths,
     exitCodes,
     environment: {
@@ -94,6 +122,37 @@ function harness(
       createTokenClient: (config) => {
         tokenConfigs.push({ token: config.token });
         return stubGithubClient();
+      },
+      createPromptClient: (config) => {
+        promptClientConfigs.push({
+          publicKey: config.publicKey,
+          secretKey: config.secretKey,
+          baseUrl: config.baseUrl,
+        });
+        return {
+          getTextPrompt: (name, fetchOptions) => {
+            promptFetches.push({ name, label: fetchOptions?.label });
+            const scripted = options.prompts?.[name];
+            if (scripted === undefined) {
+              return Promise.reject(new Error(`unexpected prompt fetch: ${name}`));
+            }
+            return scripted instanceof Error
+              ? Promise.reject(scripted)
+              : Promise.resolve(scripted);
+          },
+        };
+      },
+      createLangfuseRuntime: (config) => {
+        tracingConfigs.push({
+          baseUrl: config.baseUrl,
+          release: config.release,
+        });
+        return {
+          forceFlush: () => {
+            flushCount += 1;
+            return Promise.resolve();
+          },
+        };
       },
       logger,
       setExitCode: (code) => exitCodes.push(code),
@@ -250,6 +309,198 @@ describe("runAction", () => {
   });
 });
 
+const remotePrompts = {
+  correctness_system: validRemotePrompt("correctness", "REMOTE CORRECTNESS"),
+  security_system: validRemotePrompt("security", "REMOTE SECURITY"),
+  architecture_system: validRemotePrompt("architecture", "REMOTE ARCHITECTURE"),
+  synthesis_system: validRemoteSynthesisPrompt("REMOTE SYNTHESIS"),
+};
+
+const langfuseInputs = {
+  "INPUT_LANGFUSE-PUBLIC-KEY": "pk-test",
+  "INPUT_LANGFUSE-SECRET-KEY": "sk-test",
+};
+
+describe("Langfuse wiring", () => {
+  it("builds no prompt client and no tracing when neither key is set", async () => {
+    const { environment, promptClientConfigs, tracingConfigs, flushCount, entries } =
+      harness({ ...validInputs, GITHUB_EVENT_PATH: "/tmp/event.json" });
+
+    await runAction(environment);
+
+    expect(promptClientConfigs).toEqual([]);
+    expect(tracingConfigs).toEqual([]);
+    expect(flushCount()).toBe(0);
+    // The default path stays silent about a feature nobody asked for.
+    expect(entries.map((entry) => entry["event"])).toEqual(["review.skipped"]);
+  });
+
+  it("fetches prompts and starts tracing when both keys are set", async () => {
+    const {
+      environment,
+      promptClientConfigs,
+      promptFetches,
+      tracingConfigs,
+      flushCount,
+      entries,
+    } = harness(
+      {
+        ...validInputs,
+        ...langfuseInputs,
+        GITHUB_EVENT_PATH: "/tmp/event.json",
+        GITHUB_SHA: "abc123",
+      },
+      JSON.stringify({ action: "opened" }),
+      { prompts: remotePrompts },
+    );
+
+    await runAction(environment);
+
+    expect(promptClientConfigs).toEqual([
+      {
+        publicKey: "pk-test",
+        secretKey: "sk-test",
+        baseUrl: "https://cloud.langfuse.com",
+      },
+    ]);
+    expect(promptFetches.map((fetch) => fetch.name).sort()).toEqual([
+      "architecture_system",
+      "correctness_system",
+      "security_system",
+      "synthesis_system",
+    ]);
+    expect(promptFetches.every((fetch) => fetch.label === "production")).toBe(true);
+    // Fetching is not accepting: without this the test would still
+    // pass if the contract guard rejected all four and fell back.
+    expect(entries).toContainEqual(
+      expect.objectContaining({
+        event: "langfuse.prompts.loaded",
+        loadedCount: 4,
+        fallbackCount: 0,
+      }),
+    );
+    expect(tracingConfigs).toEqual([
+      { baseUrl: "https://cloud.langfuse.com", release: "abc123" },
+    ]);
+    expect(flushCount()).toBe(1);
+  });
+
+  it("honours a custom host and prompt label", async () => {
+    const { environment, promptClientConfigs, promptFetches } = harness(
+      {
+        ...validInputs,
+        ...langfuseInputs,
+        "INPUT_LANGFUSE-BASE-URL": "https://langfuse.internal",
+        "INPUT_LANGFUSE-PROMPT-LABEL": "staging",
+        GITHUB_EVENT_PATH: "/tmp/event.json",
+      },
+      JSON.stringify({ action: "opened" }),
+      { prompts: remotePrompts },
+    );
+
+    await runAction(environment);
+
+    expect(promptClientConfigs[0]?.baseUrl).toBe("https://langfuse.internal");
+    expect(promptFetches.every((fetch) => fetch.label === "staging")).toBe(true);
+  });
+
+  it.each([
+    ["INPUT_LANGFUSE-SECRET-KEY", "langfuse-secret-key"],
+    ["INPUT_LANGFUSE-PUBLIC-KEY", "langfuse-public-key"],
+  ])(
+    "reports half-configured credentials and reviews anyway when %s is missing",
+    async (variable, missingInput) => {
+      const env: Record<string, string | undefined> = {
+        ...validInputs,
+        ...langfuseInputs,
+        GITHUB_EVENT_PATH: "/tmp/event.json",
+      };
+      delete env[variable];
+      const { environment, promptClientConfigs, tracingConfigs, entries } =
+        harness(env);
+
+      await expect(runAction(environment)).resolves.toBeUndefined();
+
+      expect(promptClientConfigs).toEqual([]);
+      expect(tracingConfigs).toEqual([]);
+      expect(entries).toContainEqual({
+        level: "error",
+        event: "langfuse.disabled_incomplete_credentials",
+        missingInput,
+      });
+    },
+  );
+
+  it("never logs key material", async () => {
+    const { environment, entries } = harness(
+      {
+        ...validInputs,
+        ...langfuseInputs,
+        GITHUB_EVENT_PATH: "/tmp/event.json",
+      },
+      JSON.stringify({ action: "opened" }),
+      { prompts: remotePrompts },
+    );
+
+    await runAction(environment);
+
+    const logged = JSON.stringify(entries);
+    expect(logged).not.toContain("pk-test");
+    expect(logged).not.toContain("sk-test");
+  });
+
+  it("falls back to the in-code prompts when every fetch fails", async () => {
+    const { environment, entries } = harness(
+      {
+        ...validInputs,
+        ...langfuseInputs,
+        GITHUB_EVENT_PATH: "/tmp/event.json",
+      },
+      JSON.stringify({ action: "opened" }),
+      {
+        prompts: {
+          correctness_system: new Error("langfuse unavailable"),
+          security_system: new Error("langfuse unavailable"),
+          architecture_system: new Error("langfuse unavailable"),
+          synthesis_system: new Error("langfuse unavailable"),
+        },
+      },
+    );
+
+    await expect(runAction(environment)).resolves.toBeUndefined();
+
+    expect(entries).toContainEqual(
+      expect.objectContaining({
+        event: "langfuse.prompts.loaded",
+        loadedCount: 0,
+        fallbackCount: 4,
+      }),
+    );
+  });
+
+  it("flushes spans even when the run fails after tracing started", async () => {
+    const env: Record<string, string | undefined> = {
+      ...validInputs,
+      ...langfuseInputs,
+      GITHUB_EVENT_PATH: "/tmp/event.json",
+    };
+    // The github-token input is read after tracing starts, so removing
+    // it fails the run at a point where spans already exist.
+    delete env["INPUT_GITHUB-TOKEN"];
+    const { environment, flushCount } = harness(
+      env,
+      JSON.stringify({ action: "opened" }),
+      { prompts: remotePrompts },
+    );
+
+    await expect(runAction(environment)).rejects.toThrow(
+      "Missing required action input: github-token",
+    );
+
+    expect(flushCount()).toBe(1);
+  });
+});
+
 describe("runEntrypoint", () => {
   it.each([undefined, "", "false", "TRUE", "1"])(
     "performs no work when GITHUB_ACTIONS is %o",
@@ -337,6 +588,8 @@ describe("actionEnvironment", () => {
     expect(typeof environment.readEventFile).toBe("function");
     expect(typeof environment.createAnthropicClient).toBe("function");
     expect(typeof environment.createTokenClient).toBe("function");
+    expect(typeof environment.createPromptClient).toBe("function");
+    expect(typeof environment.createLangfuseRuntime).toBe("function");
     expect(typeof environment.setExitCode).toBe("function");
     expect(typeof environment.logger.info).toBe("function");
     expect(typeof environment.logger.error).toBe("function");

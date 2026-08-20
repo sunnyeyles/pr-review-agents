@@ -11,6 +11,7 @@
  * job, never from the model.
  */
 import type { GithubInstallationClient } from "@pr-review/github";
+import { errorMessage } from "@pr-review/logging";
 import { z } from "zod";
 
 /** The repository/PR coordinates a job pins its tools to. */
@@ -288,7 +289,7 @@ export async function dispatchReviewTool(
   } catch (error) {
     return {
       ok: false,
-      error: error instanceof Error ? error.message : String(error),
+      error: errorMessage(error),
     };
   }
 }

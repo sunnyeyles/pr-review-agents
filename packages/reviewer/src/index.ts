@@ -13,6 +13,7 @@ export {
   type ReviewPipelineResult,
 } from "./review-graph.js";
 export {
+  SYNTHESIS_SYSTEM_PROMPT,
   SynthesisError,
   createSynthesiser,
   type SynthesisResult,

@@ -25,6 +25,7 @@ export {
   createReviewAgent,
   type ReviewAgentDeps,
   type ReviewLens,
+  type ReviewSystemPrompts,
 } from "./agent-runtime.js";
 export {
   architectureLens,
@@ -33,3 +34,23 @@ export {
   reviewLenses,
   securityLens,
 } from "./agents.js";
+export {
+  DEFAULT_LANGFUSE_BASE_URL,
+  DEFAULT_PROMPT_LABEL,
+  MANAGED_PROMPT_KEYS,
+  createLangfusePromptClient,
+  loadManagedPrompts,
+  reviewPromptContractProblems,
+  type LangfusePromptClient,
+  type LangfusePromptClientConfig,
+  type LoadManagedPromptsOptions,
+  type LoadPromptsResult,
+  type ManagedPromptId,
+  type ManagedPrompts,
+  type PromptSource,
+} from "./prompts.js";
+export {
+  traceModelCall,
+  type GenerationParent,
+  type ModelCallTrace,
+} from "./model-tracing.js";

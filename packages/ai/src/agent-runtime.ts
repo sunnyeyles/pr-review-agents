@@ -24,12 +24,19 @@
  * @pr-review/reviewer owns that boundary.
  */
 import type Anthropic from "@anthropic-ai/sdk";
+import { startObservation } from "@langfuse/tracing";
 import type { GithubInstallationClient } from "@pr-review/github";
-import { createConsoleLogger, type StructuredLogger } from "@pr-review/logging";
+import {
+  createConsoleLogger,
+  errorMessage,
+  errorName,
+  type StructuredLogger,
+} from "@pr-review/logging";
 import type { FindingCategory } from "@pr-review/schemas";
 
 import { extractAgentOutput } from "./agent-output.js";
 import type { AnthropicLike } from "./anthropic.js";
+import { traceModelCall } from "./model-tracing.js";
 import type { ReviewAgent, ReviewContext } from "./review-types.js";
 import { dispatchReviewTool, reviewTools, type ReviewToolScope } from "./tools.js";
 import { addTokenUsage, emptyTokenUsage } from "./usage.js";
@@ -162,6 +169,13 @@ const anthropicToolDefinitions: Anthropic.Messages.Tool[] = reviewTools.map(
   }),
 );
 
+/**
+ * Per-lens system prompts resolved once at startup (see
+ * @pr-review/ai's prompts module). A lens with no entry uses the
+ * in-code prompt from buildReviewSystemPrompt.
+ */
+export type ReviewSystemPrompts = Partial<Record<FindingCategory, string>>;
+
 /** What every review agent needs, regardless of lens. */
 export interface ReviewAgentDeps {
   anthropic: AnthropicLike;
@@ -177,6 +191,11 @@ export interface ReviewAgentDeps {
    * CloudWatch); tests inject a capturing logger.
    */
   logger?: StructuredLogger | undefined;
+  /**
+   * Pre-resolved system prompts. Missing lenses fall back to the
+   * in-code prompt, so an empty map behaves exactly like none.
+   */
+  systemPrompts?: ReviewSystemPrompts | undefined;
 }
 
 /** The tool_use blocks of one message's content, in order. */
@@ -215,7 +234,8 @@ export function createReviewAgent(
   deps: ReviewAgentDeps,
 ): ReviewAgent {
   const maxTurns = deps.maxTurns ?? DEFAULT_MAX_TURNS;
-  const systemPrompt = buildReviewSystemPrompt(lens);
+  const systemPrompt =
+    deps.systemPrompts?.[lens.category] ?? buildReviewSystemPrompt(lens);
   const logger = deps.logger ?? createConsoleLogger();
 
   return {
@@ -241,6 +261,22 @@ export function createReviewAgent(
         agent: lens.category,
       };
       logger.info("agent.started", eventFields);
+      // Children are attached to this observation explicitly rather
+      // than through ambient context, so the loop below keeps its
+      // shape. With no tracing configured every call here is a no-op.
+      const agentObservation = startObservation(
+        `review-agent-${lens.category}`,
+        {
+          input: {
+            repository: eventFields.repository,
+            pullRequestNumber: eventFields.pullRequestNumber,
+            headSha: eventFields.headSha,
+            changedFileCount: context.changedFiles.length,
+          },
+          metadata: { agent: lens.category, model: deps.model },
+        },
+        { asType: "agent" },
+      );
       const startedAt = Date.now();
       const messages: Anthropic.Messages.MessageParam[] = [
         { role: "user", content: buildOpeningMessage(context) },
@@ -253,13 +289,22 @@ export function createReviewAgent(
 
       /** One model call, accumulating usage and the last stop_reason. */
       const callModel = async (): Promise<Anthropic.Messages.Message> => {
-        const response = await deps.anthropic.messages.create({
-          model: deps.model,
-          max_tokens: MAX_OUTPUT_TOKENS,
-          system: systemPrompt,
-          tools: anthropicToolDefinitions,
-          messages,
-        });
+        const response = await traceModelCall(
+          agentObservation,
+          {
+            model: deps.model,
+            input: { messageCount: messages.length },
+            maxTokens: MAX_OUTPUT_TOKENS,
+          },
+          () =>
+            deps.anthropic.messages.create({
+              model: deps.model,
+              max_tokens: MAX_OUTPUT_TOKENS,
+              system: systemPrompt,
+              tools: anthropicToolDefinitions,
+              messages,
+            }),
+        );
         usage = addTokenUsage(usage, response.usage);
         apiStopReason = response.stop_reason ?? undefined;
         return response;
@@ -271,12 +316,30 @@ export function createReviewAgent(
       ): Promise<Anthropic.Messages.ToolResultBlockParam[]> => {
         const results: Anthropic.Messages.ToolResultBlockParam[] = [];
         for (const toolUse of toolUses) {
+          const toolObservation = agentObservation.startObservation(
+            `execute-tool-${toolUse.name}`,
+            { input: toolUse.input, metadata: { toolUseId: toolUse.id } },
+            { asType: "tool" },
+          );
           const outcome = await dispatchReviewTool(
             deps.github,
             scope,
             toolUse.name,
             toolUse.input,
           );
+          // A failed tool is reported to the model rather than thrown,
+          // so the span records it without ending the run.
+          toolObservation
+            .update(
+              outcome.ok
+                ? { output: { ok: true, contentLength: outcome.content.length } }
+                : {
+                    level: "ERROR",
+                    statusMessage: "tool dispatch failed",
+                    output: { ok: false },
+                  },
+            )
+            .end();
           results.push(
             outcome.ok
               ? {
@@ -340,6 +403,15 @@ export function createReviewAgent(
           outputTokens: usage.outputTokens,
           findingCount: findings.length,
         });
+        agentObservation
+          .update({
+            output: { findingCount: findings.length },
+            metadata: {
+              inputTokens: usage.inputTokens,
+              outputTokens: usage.outputTokens,
+            },
+          })
+          .end();
         return findings;
       } catch (error) {
         logger.error("agent.failed", {
@@ -347,9 +419,19 @@ export function createReviewAgent(
           durationMs: Date.now() - startedAt,
           inputTokens: usage.inputTokens,
           outputTokens: usage.outputTokens,
-          error: error instanceof Error ? error.message : String(error),
-          errorName: error instanceof Error ? error.name : "Error",
+          error: errorMessage(error),
+          errorName: errorName(error),
         });
+        agentObservation
+          .update({
+            level: "ERROR",
+            statusMessage: errorMessage(error),
+            metadata: {
+              inputTokens: usage.inputTokens,
+              outputTokens: usage.outputTokens,
+            },
+          })
+          .end();
         throw error;
       }
     },

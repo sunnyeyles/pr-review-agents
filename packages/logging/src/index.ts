@@ -90,3 +90,20 @@ export function createCapturingLogger(): CapturingLogger {
     entries,
   };
 }
+
+/**
+ * The message to log for a thrown value.
+ *
+ * Every failure path needs this, and a `catch` binding is `unknown`:
+ * anything can be thrown, so the non-Error case has to be handled.
+ * Keeping one definition means "what do we log for a non-Error throw"
+ * is decided once rather than at each call site.
+ */
+export function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/** The error name to log for a thrown value; "Error" when unknown. */
+export function errorName(error: unknown): string {
+  return error instanceof Error ? error.name : "Error";
+}

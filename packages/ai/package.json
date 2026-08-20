@@ -11,6 +11,8 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.115.0",
+    "@langfuse/client": "^5.10.1",
+    "@langfuse/tracing": "^5.10.1",
     "@pr-review/github": "workspace:*",
     "@pr-review/logging": "workspace:*",
     "@pr-review/schemas": "workspace:*",

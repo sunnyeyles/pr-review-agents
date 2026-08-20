@@ -6,6 +6,7 @@
  */
 import type Anthropic from "@anthropic-ai/sdk";
 import { createCapturingLogger } from "@pr-review/logging";
+import type { FindingCategory } from "@pr-review/schemas";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -13,6 +14,7 @@ import {
   createReviewAgent,
   type ReviewAgentDeps,
 } from "./agent-runtime.js";
+import { reviewPromptContractProblems } from "./prompts.js";
 import {
   context,
   finalFindingsJson,
@@ -62,14 +64,16 @@ function makeDeps(responses: Anthropic.Messages.Message[]) {
 }
 
 /**
- * Asserts the spec §21 prompt-injection hardening — the same checks the
- * Correctness agent has always had, applied verbatim to every lens.
+ * Asserts the prompt-injection hardening and output contract every
+ * lens prompt must carry.
+ *
+ * The rules live in reviewPromptContractProblems rather than here so
+ * that ONE definition governs both the prompts this repo ships and the
+ * ones fetched from Langfuse. Asserting them separately here is what
+ * previously let the remote gate drift weaker than this bar.
  */
-function expectInjectionHardened(system: string): void {
-  expect(system).toMatch(/data.*not instructions|never instructions/is);
-  expect(system).toMatch(/comments?.*(never|not).*instructions/is);
-  expect(system).toMatch(/tool (results?|output).*(no|cannot|never).*(permission|privilege)/is);
-  expect(system).toMatch(/final JSON/i);
+function expectInjectionHardened(system: string, category: FindingCategory): void {
+  expect(reviewPromptContractProblems(system, category)).toEqual([]);
 }
 
 describe("agent names", () => {
@@ -117,7 +121,7 @@ describe("the Security lens prompt", () => {
   });
 
   it("carries the same §21 prompt-injection hardening as Correctness", () => {
-    expectInjectionHardened(SECURITY_SYSTEM_PROMPT);
+    expectInjectionHardened(SECURITY_SYSTEM_PROMPT, "security");
   });
 });
 
@@ -145,7 +149,7 @@ describe("the Architecture lens prompt", () => {
   });
 
   it("carries the same §21 prompt-injection hardening as Correctness", () => {
-    expectInjectionHardened(ARCHITECTURE_SYSTEM_PROMPT);
+    expectInjectionHardened(ARCHITECTURE_SYSTEM_PROMPT, "architecture");
   });
 });
 

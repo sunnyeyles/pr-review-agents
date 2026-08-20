@@ -19,6 +19,7 @@ import type {
 } from "./index.js";
 
 const DOCUMENTED_EXPORTS = [
+  "SYNTHESIS_SYSTEM_PROMPT",
   "SynthesisError",
   "createCheckRunPublisher",
   "createSynthesiser",
