@@ -1,22 +1,20 @@
 /**
- * The Synthesiser: one single-turn model call — NO tools, no agentic
- * loop — between the raw agent candidates and the deterministic
- * validation chain. It removes duplicates, combines overlaps, drops
- * speculative findings, corrects severity, and prioritises what's left.
+ * The Synthesiser: ONE model call, no tools and no loop, sitting
+ * between the raw agent candidates and the deterministic validation
+ * chain. It dedupes, merges overlaps, drops speculation, corrects
+ * severity, and orders what's left most important first.
  *
- * It is NEVER the final authority and never touches GitHub: its output
- * still flows through the ENTIRE deterministic chain unchanged, so a
- * fabricated file/line, padded confidence, or over-long list is still
- * dropped.
+ * It is never the final authority and never touches GitHub — its output
+ * still passes through the entire validation chain, so a fabricated
+ * file/line or padded confidence is still dropped there.
  *
- * When no candidate is well-formed — including the zero-candidate case
- * — synthesise resolves [] WITHOUT a model call: malformed candidates
- * could never survive validateFindings anyway.
+ * With no well-formed candidate (including zero candidates) it resolves
+ * [] without calling the model: malformed input could not survive
+ * validateFindings anyway.
  *
- * Failure semantics: invalid model output rejects with SynthesisError;
- * model API errors propagate as-is. Either way the caller falls back
- * to validating the RAW candidates — synthesis failure never kills the
- * review.
+ * Failure: bad output rejects with SynthesisError, API errors propagate
+ * as-is. Either way the caller validates the RAW candidates instead, so
+ * a synthesis failure never kills the review.
  */
 import { startObservation } from "@langfuse/tracing";
 import {

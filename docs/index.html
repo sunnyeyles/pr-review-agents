@@ -1,0 +1,1184 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="A stage-by-stage trace of the pr-review-agents pipeline: three agents propose, one synthesiser refines, deterministic code decides.">
+<meta name="color-scheme" content="light dark">
+
+<meta property="og:type" content="website">
+<meta property="og:title" content="Propose, Refine, Decide">
+<meta property="og:description" content="How the pr-review-agents pipeline executes: three agents propose, one synthesiser refines, deterministic code decides.">
+<meta name="twitter:card" content="summary_large_image">
+
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%94%8E%3C/text%3E%3C/svg%3E">
+
+<style>
+/* minimal reset — the Artifact host supplies one; GitHub Pages does not */
+*, *::before, *::after { box-sizing: border-box; }
+body, h1, h2, h3, p, ol, ul, figure, pre { margin: 0; }
+img, svg { display: block; max-width: 100%; }
+</style>
+<title>Propose, Refine, Decide</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300..700;1,6..72,300..600&family=JetBrains+Mono:ital,wght@0,400..700;1,400..600&display=swap">
+
+<style>
+/* ============================================================
+   TOKENS — light is the bare :root; dark redefines tokens only
+   ============================================================ */
+:root {
+  --paper:      #F3F5F7;
+  --surface:    #FFFFFF;
+  --surface-2:  #EAEEF2;
+  --ink:        #10151C;
+  --slate:      #5A6878;
+  --slate-dim:  #8C99A7;
+  --rule:       #CFD8E1;
+  --rule-soft:  #E1E7ED;
+
+  --accent:     #B4133F;
+  --accent-ink: #FFFFFF;
+  --accent-wash:#FBE9EE;
+
+  --lens-c:     #12666A;   /* correctness — teal   */
+  --lens-s:     #B4133F;   /* security    — crimson*/
+  --lens-a:     #7E5A12;   /* architecture— bronze */
+
+  --code-bg:    #10151C;
+  --code-fg:    #DCE4EC;
+  --code-com:   #7C8B9B;
+  --code-str:   #6ECFC4;
+  --code-key:   #FF7D9E;
+  --code-num:   #E9B872;
+
+  --ok:         #12666A;
+  --warn:       #8A6010;
+  --stop:       #B4133F;
+
+  --shadow: 0 1px 2px rgba(16,21,28,.05), 0 8px 24px -12px rgba(16,21,28,.18);
+
+  --measure: 67ch;
+  --step--1: clamp(.78rem, .76rem + .1vw, .84rem);
+  --step-0:  clamp(1.02rem, .99rem + .16vw, 1.12rem);
+  --step-1:  clamp(1.24rem, 1.17rem + .34vw, 1.45rem);
+  --step-2:  clamp(1.55rem, 1.4rem + .72vw, 2.05rem);
+  --step-3:  clamp(2.1rem, 1.7rem + 1.9vw, 3.5rem);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper:      #0C1116;
+    --surface:    #141B23;
+    --surface-2:  #1B242E;
+    --ink:        #DFE6ED;
+    --slate:      #93A2B2;
+    --slate-dim:  #6C7B8B;
+    --rule:       #2A3642;
+    --rule-soft:  #202A34;
+
+    --accent:     #FF5B80;
+    --accent-ink: #1A0710;
+    --accent-wash:#2A1119;
+
+    --lens-c:     #4FBDB6;
+    --lens-s:     #FF5B80;
+    --lens-a:     #D9A94A;
+
+    --code-bg:    #070B0F;
+    --code-fg:    #D3DCE5;
+
+    --ok:         #4FBDB6;
+    --warn:       #D9A94A;
+    --stop:       #FF5B80;
+
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px -14px rgba(0,0,0,.7);
+  }
+}
+
+:root[data-theme="dark"] {
+  --paper:      #0C1116;
+  --surface:    #141B23;
+  --surface-2:  #1B242E;
+  --ink:        #DFE6ED;
+  --slate:      #93A2B2;
+  --slate-dim:  #6C7B8B;
+  --rule:       #2A3642;
+  --rule-soft:  #202A34;
+
+  --accent:     #FF5B80;
+  --accent-ink: #1A0710;
+  --accent-wash:#2A1119;
+
+  --lens-c:     #4FBDB6;
+  --lens-s:     #FF5B80;
+  --lens-a:     #D9A94A;
+
+  --code-bg:    #070B0F;
+  --code-fg:    #D3DCE5;
+
+  --ok:         #4FBDB6;
+  --warn:       #D9A94A;
+  --stop:       #FF5B80;
+
+  --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px -14px rgba(0,0,0,.7);
+}
+
+/* ============================================================
+   BASE
+   ============================================================ */
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: "Newsreader", "Iowan Old Style", Georgia, serif;
+  font-size: var(--step-0);
+  font-optical-sizing: auto;
+  line-height: 1.62;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+a:focus-visible, summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
+h1, h2, h3 { text-wrap: balance; line-height: 1.15; margin: 0; font-weight: 600; }
+p { margin: 0; }
+
+/* mono utility face — every label, path, number, and code sample */
+.mono, code, pre, th, .rail, .eyebrow, .chip, .stat-n, .badge {
+  font-family: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  font-feature-settings: "ss01", "cv02";
+}
+
+.eyebrow {
+  font-size: .68rem;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--slate-dim);
+  font-weight: 500;
+}
+
+/* ============================================================
+   SHELL — sticky mono rail + single reading column
+   ============================================================ */
+.shell {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 0 clamp(1.1rem, 4vw, 2.5rem) 6rem;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0 4rem;
+}
+
+@media (min-width: 1060px) {
+  .shell { grid-template-columns: 13rem minmax(0, 1fr); }
+  .rail { display: block; }
+}
+
+.rail {
+  display: none;
+  grid-column: 1;
+  position: sticky;
+  top: 0;
+  align-self: start;
+  padding-top: 5.2rem;
+  font-size: .7rem;
+  line-height: 1.5;
+}
+.rail-title {
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--slate-dim);
+  padding-bottom: .7rem;
+  border-bottom: 1px solid var(--rule);
+  margin-bottom: .9rem;
+}
+.rail ol { list-style: none; margin: 0; padding: 0; display: grid; gap: .55rem; }
+.rail a {
+  color: var(--slate);
+  text-decoration: none;
+  display: grid;
+  grid-template-columns: 1.6rem 1fr;
+  gap: .35rem;
+  align-items: baseline;
+}
+.rail a:hover { color: var(--accent); }
+.rail .n { color: var(--slate-dim); font-variant-numeric: tabular-nums; }
+
+.col { grid-column: 1; min-width: 0; }
+@media (min-width: 1060px) { .col { grid-column: 2; } }
+
+.prose { max-width: var(--measure); }
+.prose p + p { margin-top: .85rem; }
+
+/* ============================================================
+   HERO
+   ============================================================ */
+.hero { padding: clamp(3rem, 8vw, 5.6rem) 0 0; }
+.hero h1 {
+  font-size: var(--step-3);
+  font-weight: 500;
+  letter-spacing: -.022em;
+  margin: .55rem 0 0;
+}
+.hero h1 em { font-style: italic; color: var(--accent); }
+.lede {
+  max-width: 46ch;
+  margin-top: 1.1rem;
+  font-size: var(--step-1);
+  color: var(--slate);
+  line-height: 1.5;
+}
+.thesis {
+  margin-top: 1.6rem;
+  padding-left: 1.1rem;
+  border-left: 2px solid var(--accent);
+  max-width: 52ch;
+  font-size: var(--step-0);
+}
+.thesis strong { font-weight: 600; }
+
+/* stat strip */
+.stats {
+  margin-top: 3rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 1px;
+  background: var(--rule);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.stat { background: var(--surface); padding: .95rem 1.1rem; }
+.stat-n {
+  font-size: 1.5rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  display: block;
+  line-height: 1.1;
+}
+.stat-l {
+  display: block;
+  margin-top: .3rem;
+  font-size: .68rem;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--slate-dim);
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+}
+
+/* ============================================================
+   PIPELINE DIAGRAM — CSS only, fully responsive
+   ============================================================ */
+.diagram {
+  margin: 3.4rem 0 0;
+  padding: 2.2rem clamp(.8rem, 3vw, 2rem);
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  box-shadow: var(--shadow);
+  overflow-x: auto;
+}
+.diagram-inner { min-width: 460px; max-width: 720px; margin: 0 auto; }
+
+.node {
+  background: var(--surface-2);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: .6rem .85rem;
+  text-align: center;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: .76rem;
+  line-height: 1.45;
+}
+.node .n-sub {
+  display: block;
+  font-size: .66rem;
+  color: var(--slate-dim);
+  margin-top: .12rem;
+}
+.node.terminal {
+  background: transparent;
+  border-style: dashed;
+  color: var(--slate);
+}
+.node.trust {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+.node.trust .n-sub { color: var(--accent-ink); opacity: .8; }
+
+/* vertical spine segment */
+.link { width: 2px; height: 22px; background: var(--rule); margin: 0 auto; }
+.link.long { height: 30px; }
+
+/* the three lens cards */
+.lenses { display: grid; grid-template-columns: repeat(3, 1fr); gap: .6rem; }
+.lens {
+  border: 1px solid var(--rule);
+  border-top: 3px solid var(--lc);
+  border-radius: 3px;
+  background: var(--surface-2);
+  padding: .65rem .5rem;
+  text-align: center;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: .72rem;
+}
+.lens b { display: block; color: var(--lc); font-weight: 600; }
+.lens span { display: block; font-size: .64rem; color: var(--slate-dim); margin-top: .15rem; }
+.lens.c { --lc: var(--lens-c); }
+.lens.s { --lc: var(--lens-s); }
+.lens.a { --lc: var(--lens-a); }
+
+/* fan brackets: ::before draws the horizontal half-segments,
+   ::after drops the vertical stub at each column centre */
+.fan { display: grid; grid-template-columns: repeat(3, 1fr); height: 22px; }
+.fan > i { position: relative; display: block; }
+.fan > i::after {
+  content: "";
+  position: absolute;
+  left: calc(50% - 1px);
+  width: 2px;
+  top: 0; bottom: 0;
+  background: var(--rule);
+}
+.fan.out > i::before {
+  content: "";
+  position: absolute;
+  top: 0; height: 0;
+  border-top: 2px solid var(--rule);
+}
+.fan.out > i:nth-child(1)::before { left: 50%; right: 0; }
+.fan.out > i:nth-child(2)::before { left: 0; right: 0; }
+.fan.out > i:nth-child(3)::before { left: 0; right: 50%; }
+
+.fan.in > i::before {
+  content: "";
+  position: absolute;
+  bottom: 0; height: 0;
+  border-bottom: 2px solid var(--rule);
+}
+.fan.in > i:nth-child(1)::before { left: 50%; right: 0; }
+.fan.in > i:nth-child(2)::before { left: 0; right: 0; }
+.fan.in > i:nth-child(3)::before { left: 0; right: 50%; }
+
+/* the two publish outcomes */
+.split { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem; }
+.diagram-note {
+  margin-top: 1.4rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--rule-soft);
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: .68rem;
+  color: var(--slate);
+  line-height: 1.6;
+  text-align: center;
+}
+.diagram-note b { color: var(--accent); }
+
+/* ============================================================
+   SECTIONS
+   ============================================================ */
+.stage { padding-top: clamp(3.4rem, 7vw, 5rem); scroll-margin-top: 1.5rem; }
+.stage-head { display: flex; align-items: baseline; gap: .9rem; flex-wrap: wrap; }
+.stage-num {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: .78rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+  font-weight: 600;
+  padding: .12rem .45rem;
+  border: 1px solid var(--accent);
+  border-radius: 2px;
+  line-height: 1.4;
+}
+.stage h2 { font-size: var(--step-2); font-weight: 500; letter-spacing: -.015em; }
+.stage h3 {
+  font-size: var(--step-1);
+  font-weight: 600;
+  margin-top: 2.4rem;
+  letter-spacing: -.01em;
+}
+.stage > .prose { margin-top: 1.1rem; }
+.stage h3 + .prose { margin-top: .7rem; }
+
+/* file path pill */
+.paths { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: 1rem; }
+.chip {
+  font-size: .7rem;
+  color: var(--slate);
+  background: var(--surface-2);
+  border: 1px solid var(--rule-soft);
+  border-radius: 2px;
+  padding: .2rem .5rem;
+  white-space: nowrap;
+}
+.chip b { color: var(--ink); font-weight: 600; }
+
+/* inline code */
+p code, li code, td code {
+  font-size: .84em;
+  background: var(--surface-2);
+  border: 1px solid var(--rule-soft);
+  border-radius: 2px;
+  padding: .05em .3em;
+}
+
+/* ============================================================
+   CODE BLOCKS — styled as a diff hunk with a path header
+   ============================================================ */
+figure.code { margin: 1.5rem 0 0; }
+.code-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+  background: var(--surface-2);
+  border: 1px solid var(--rule);
+  border-bottom: 0;
+  border-radius: 3px 3px 0 0;
+  padding: .42rem .8rem;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: .68rem;
+  color: var(--slate);
+}
+.code-head .p { color: var(--ink); overflow: hidden; text-overflow: ellipsis; }
+.code-head .ln { color: var(--slate-dim); font-variant-numeric: tabular-nums; white-space: nowrap; }
+figure.code pre {
+  margin: 0;
+  background: var(--code-bg);
+  color: var(--code-fg);
+  border: 1px solid var(--rule);
+  border-radius: 0 0 3px 3px;
+  padding: .95rem 1rem;
+  overflow-x: auto;
+  font-size: .78rem;
+  line-height: 1.68;
+  tab-size: 2;
+}
+.c-com { color: var(--code-com); font-style: italic; }
+.c-str { color: var(--code-str); }
+.c-key { color: var(--code-key); }
+.c-num { color: var(--code-num); }
+
+/* ============================================================
+   TABLES
+   ============================================================ */
+.table-wrap { overflow-x: auto; margin-top: 1.4rem; }
+table {
+  border-collapse: collapse;
+  width: 100%;
+  min-width: 30rem;
+  font-size: .92rem;
+}
+th {
+  text-align: left;
+  font-size: .66rem;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--slate-dim);
+  font-weight: 500;
+  padding: 0 .8rem .5rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+td {
+  padding: .6rem .8rem .6rem 0;
+  border-bottom: 1px solid var(--rule-soft);
+  vertical-align: top;
+  color: var(--slate);
+}
+td:first-child { color: var(--ink); }
+tr:last-child td { border-bottom: 0; }
+
+.badge {
+  display: inline-block;
+  font-size: .64rem;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  font-weight: 600;
+  padding: .15rem .42rem;
+  border-radius: 2px;
+  border: 1px solid currentColor;
+  white-space: nowrap;
+}
+.badge.stop { color: var(--stop); }
+.badge.warn { color: var(--warn); }
+.badge.ok   { color: var(--ok); }
+
+/* ordered rules list, e.g. the six validation steps */
+ol.rules { counter-reset: r; list-style: none; margin: 1.3rem 0 0; padding: 0; max-width: var(--measure); }
+ol.rules li {
+  counter-increment: r;
+  position: relative;
+  padding: .55rem 0 .55rem 2.6rem;
+  border-bottom: 1px solid var(--rule-soft);
+}
+ol.rules li:last-child { border-bottom: 0; }
+ol.rules li::before {
+  content: counter(r);
+  position: absolute;
+  left: 0; top: .72rem;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: .68rem;
+  color: var(--accent);
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  width: 1.5rem;
+  text-align: center;
+  line-height: 1.4;
+}
+ol.rules b { font-weight: 600; }
+
+/* callout */
+.note {
+  margin-top: 1.4rem;
+  max-width: var(--measure);
+  background: var(--accent-wash);
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--accent);
+  border-radius: 0 3px 3px 0;
+  padding: .9rem 1.1rem;
+  font-size: .95rem;
+}
+.note .eyebrow { color: var(--accent); display: block; margin-bottom: .3rem; }
+
+/* log lifecycle */
+.log {
+  margin-top: 1.4rem;
+  background: var(--code-bg);
+  color: var(--code-fg);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 1rem 1.1rem;
+  overflow-x: auto;
+  font-size: .75rem;
+  line-height: 1.85;
+}
+
+/* footer */
+.foot {
+  margin-top: 5rem;
+  padding-top: 1.4rem;
+  border-top: 1px solid var(--rule);
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: .7rem;
+  color: var(--slate-dim);
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}
+html { scroll-behavior: smooth; }
+</style>
+</head>
+<body>
+
+<div class="shell">
+
+  <nav class="rail" aria-label="Pipeline stages">
+    <div class="rail-title">Stages</div>
+    <ol>
+      <li><a href="#s1"><span class="n">01</span><span>Boot</span></a></li>
+      <li><a href="#s2"><span class="n">02</span><span>Inspect event</span></a></li>
+      <li><a href="#s3"><span class="n">03</span><span>Load the PR</span></a></li>
+      <li><a href="#s4"><span class="n">04</span><span>The graph</span></a></li>
+      <li><a href="#s5"><span class="n">05</span><span>Render</span></a></li>
+      <li><a href="#s6"><span class="n">06</span><span>Publish</span></a></li>
+      <li><a href="#fail"><span class="n">—</span><span>Failure modes</span></a></li>
+      <li><a href="#logs"><span class="n">—</span><span>Log events</span></a></li>
+      <li><a href="#map"><span class="n">—</span><span>File map</span></a></li>
+    </ol>
+  </nav>
+
+  <main class="col">
+
+    <!-- ========== HERO ========== -->
+    <header class="hero">
+      <div class="eyebrow">pr-review-agents · architecture</div>
+      <h1>Propose, refine,<br><em>decide.</em></h1>
+      <p class="lede">
+        One pull request event in, one check run out — traced in the order it
+        actually executes.
+      </p>
+      <p class="thesis">
+        Three agents <strong>propose</strong> candidate findings. One
+        synthesiser <strong>refines</strong> them. Then deterministic code
+        <strong>decides</strong> — and only that last step is ever allowed to
+        reach the GitHub API.
+      </p>
+
+      <div class="stats">
+        <div class="stat"><span class="stat-n">3</span><span class="stat-l">Review lenses</span></div>
+        <div class="stat"><span class="stat-n">6</span><span class="stat-l">Read-only tools</span></div>
+        <div class="stat"><span class="stat-n">12</span><span class="stat-l">Turn cap / agent</span></div>
+        <div class="stat"><span class="stat-n">6</span><span class="stat-l">Validation steps</span></div>
+        <div class="stat"><span class="stat-n">10</span><span class="stat-l">Findings published</span></div>
+      </div>
+    </header>
+
+    <!-- ========== DIAGRAM ========== -->
+    <section class="diagram" aria-label="Pipeline diagram">
+      <div class="diagram-inner">
+
+        <div class="node terminal">pull_request event<span class="n-sub">GITHUB_EVENT_PATH</span></div>
+        <div class="link"></div>
+
+        <div class="node">runAction<span class="n-sub">lenses · clients · tracing · prompts</span></div>
+        <div class="link"></div>
+
+        <div class="node">inspectEvent<span class="n-sub">reviewable? otherwise a clean no-op</span></div>
+        <div class="link"></div>
+
+        <div class="node">reviewPullRequest<span class="n-sub">load PR + changed files + diff</span></div>
+        <div class="link"></div>
+
+        <div class="node terminal">START<span class="n-sub">LangGraph StateGraph</span></div>
+
+        <div class="fan out"><i></i><i></i><i></i></div>
+
+        <div class="lenses">
+          <div class="lens c"><b>correctness</b><span>bugs · async · edges</span></div>
+          <div class="lens s"><b>security</b><span>authz · injection · leaks</span></div>
+          <div class="lens a"><b>architecture</b><span>layers · coupling · reuse</span></div>
+        </div>
+
+        <div class="fan in"><i></i><i></i><i></i></div>
+
+        <div class="node">join<span class="n-sub">fan-in, re-sorted to agent order</span></div>
+        <div class="link"></div>
+
+        <div class="node">synthesise<span class="n-sub">one model call · no tools · no loop</span></div>
+        <div class="link"></div>
+
+        <div class="node trust">validate<span class="n-sub">the trust boundary · 6 deterministic steps</span></div>
+        <div class="link"></div>
+
+        <div class="node">renderCheckRun<span class="n-sub">pure · no I/O</span></div>
+        <div class="link long"></div>
+
+        <div class="split">
+          <div class="node">check run<span class="n-sub">+ inline annotations</span></div>
+          <div class="node">job summary<span class="n-sub">fork fallback · 403/404</span></div>
+        </div>
+
+        <p class="diagram-note">
+          Everything above <b>validate</b> is untrusted model output.<br>
+          Nothing above it can reach the GitHub API.
+        </p>
+      </div>
+    </section>
+
+    <!-- ========== 1 · BOOT ========== -->
+    <section class="stage" id="s1">
+      <div class="stage-head">
+        <span class="stage-num">01</span>
+        <h2>Boot — the Action entrypoint</h2>
+      </div>
+      <div class="paths">
+        <span class="chip">apps/action/src/<b>index.ts</b></span>
+      </div>
+      <div class="prose">
+        <p>
+          <code>runEntrypoint()</code> runs at import time, but returns
+          immediately unless <code>GITHUB_ACTIONS === "true"</code> — so
+          importing the module in a test does no work and needs no
+          configuration.
+        </p>
+        <p>
+          <code>runAction</code> then resolves configuration in a deliberate
+          order. Lens selection happens <em>first</em>, before a single client
+          exists, because an unrecognised agent name is a typo in a workflow
+          file and must cost nothing to discover.
+        </p>
+      </div>
+
+      <figure class="code">
+        <div class="code-head"><span class="p">apps/action/src/index.ts</span><span class="ln">line 227</span></div>
+<pre><span class="c-com">// Resolved before any client is built: an unrecognised agent name</span>
+<span class="c-com">// is a typo in the workflow file, and must cost nothing to find.</span>
+<span class="c-key">const</span> lenses = resolveReviewLenses(getInput(env, <span class="c-str">"agents"</span>));</pre>
+      </figure>
+
+      <div class="note">
+        <span class="eyebrow">Why it throws</span>
+        A silently dropped <code>agents: secuirty</code> would run a review that
+        reports nothing — indistinguishable from a clean bill of health. So
+        <code>resolveReviewLenses</code> rejects unknown names rather than
+        ignoring them.
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Step</th><th>Function</th><th>Fails the run?</th></tr></thead>
+          <tbody>
+            <tr><td>Resolve lenses</td><td><code>resolveReviewLenses</code></td><td><span class="badge stop">Yes</span> unknown name</td></tr>
+            <tr><td>Anthropic client</td><td><code>createAnthropicClient</code></td><td><span class="badge stop">Yes</span> missing key</td></tr>
+            <tr><td>Langfuse tracing</td><td><code>createLangfuseRuntime</code></td><td><span class="badge ok">No</span> optional</td></tr>
+            <tr><td>Managed prompts</td><td><code>loadManagedPrompts</code></td><td><span class="badge ok">No</span> falls back per prompt</td></tr>
+            <tr><td>GitHub client</td><td><code>createTokenClient</code></td><td><span class="badge stop">Yes</span> missing token</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="prose" style="margin-top:1.1rem">
+        <p>
+          Tracing starts before the prompt fetch, so the fetch's own spans are
+          captured; prompts resolve before anything that consumes them is
+          built.
+        </p>
+      </div>
+    </section>
+
+    <!-- ========== 2 · EVENT ========== -->
+    <section class="stage" id="s2">
+      <div class="stage-head">
+        <span class="stage-num">02</span>
+        <h2>Is this even a review?</h2>
+      </div>
+      <div class="paths">
+        <span class="chip">apps/action/src/<b>event.ts</b> · inspectEvent</span>
+        <span class="chip">apps/action/src/<b>handler.ts</b></span>
+      </div>
+      <div class="prose">
+        <p>
+          Two outcomes, and the difference between them is the whole point of
+          this file.
+        </p>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Outcome</th><th>When</th><th>Result</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>Not a review</td>
+              <td>Wrong event name, or an ignored action like <code>labeled</code></td>
+              <td>Logs <code>review.skipped</code>, step <span class="badge ok">succeeds</span></td>
+            </tr>
+            <tr>
+              <td>Malformed</td>
+              <td>Claims to be a supported <code>pull_request</code> event but fails the schema</td>
+              <td>Throws — <span class="badge stop">fails</span> the workflow</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="prose" style="margin-top:1.1rem">
+        <p>
+          Most workflow triggers are not reviews, so ignoring one quietly has
+          to be a success. A payload that <em>should</em> have parsed and
+          didn't is a bug worth failing over.
+        </p>
+      </div>
+    </section>
+
+    <!-- ========== 3 · LOAD ========== -->
+    <section class="stage" id="s3">
+      <div class="stage-head">
+        <span class="stage-num">03</span>
+        <h2>Load the pull request</h2>
+      </div>
+      <div class="paths">
+        <span class="chip">packages/reviewer/src/<b>review-pull-request.ts</b></span>
+      </div>
+      <div class="prose">
+        <p>
+          Three GitHub reads, concurrently. This is the only place the review
+          context is built.
+        </p>
+      </div>
+
+      <figure class="code">
+        <div class="code-head"><span class="p">packages/reviewer/src/review-pull-request.ts</span><span class="ln">line 154</span></div>
+<pre><span class="c-key">const</span> [pullRequest, changedFiles, diff] = <span class="c-key">await</span> Promise.all([
+  client.getPullRequest(ref),
+  client.listChangedFiles(ref),
+  client.getDiff(ref),
+]);</pre>
+      </figure>
+
+      <div class="note">
+        <span class="eyebrow">One source of truth</span>
+        <code>changedFiles</code> is read by the agents <em>and</em> by
+        <code>validate</code>. Because both read the same list, validation can
+        never check findings against a different set of files than the one the
+        agents actually reviewed.
+      </div>
+    </section>
+
+    <!-- ========== 4 · GRAPH ========== -->
+    <section class="stage" id="s4">
+      <div class="stage-head">
+        <span class="stage-num">04</span>
+        <h2>The graph</h2>
+      </div>
+      <div class="paths">
+        <span class="chip">packages/reviewer/src/<b>review-graph.ts</b></span>
+      </div>
+      <div class="prose">
+        <p>
+          Agent nodes are added dynamically — one per selected lens — each
+          wired straight from <code>START</code> so they run concurrently. The
+          three nodes after them run in sequence once every agent has settled.
+        </p>
+      </div>
+
+      <figure class="code">
+        <div class="code-head"><span class="p">packages/reviewer/src/review-graph.ts</span><span class="ln">line 197 · buildReviewGraph</span></div>
+<pre><span class="c-key">const</span> agentNodeNames = agents.map((agent, index) =&gt; {
+  <span class="c-key">const</span> nodeName = <span class="c-str">`agent__${agent.name}`</span>;
+  graph.addNode(nodeName, agentNode(index, agent));
+  graph.addEdge(START, nodeName);
+  <span class="c-key">return</span> nodeName;
+});
+
+<span class="c-key">return</span> graph
+  .addNode(<span class="c-str">"join"</span>, makeJoinNode(agents.length))
+  .addEdge(agentNodeNames, <span class="c-str">"join"</span>)      <span class="c-com">// fan-in: waits for all</span>
+  .addNode(<span class="c-str">"synthesise"</span>, makeSynthesiseNode(synthesiser))
+  .addEdge(<span class="c-str">"join"</span>, <span class="c-str">"synthesise"</span>)
+  .addNode(<span class="c-str">"validate"</span>, validateNode)
+  .addEdge(<span class="c-str">"synthesise"</span>, <span class="c-str">"validate"</span>)
+  .addEdge(<span class="c-str">"validate"</span>, END)
+  .compile();</pre>
+      </figure>
+
+      <h3>4a · Each agent node</h3>
+      <div class="paths">
+        <span class="chip">packages/ai/src/<b>agent-runtime.ts</b> · createReviewAgent</span>
+        <span class="chip">packages/ai/src/<b>agents.ts</b> · the lenses</span>
+      </div>
+      <div class="prose">
+        <p>
+          All three lenses share one runtime. A <code>ReviewLens</code>
+          supplies only the role, the focus text, and the category — the loop,
+          the six tools, the injection hardening, and the output contract are
+          identical by construction.
+        </p>
+      </div>
+
+      <figure class="code">
+        <div class="code-head"><span class="p">packages/ai/src/agent-runtime.ts</span><span class="ln">line 365</span></div>
+<pre><span class="c-key">for</span> (<span class="c-key">let</span> turn = <span class="c-num">1</span>; ; turn += <span class="c-num">1</span>) {
+  <span class="c-key">const</span> response = <span class="c-key">await</span> callModel();
+  <span class="c-key">const</span> toolUses = toolUseBlocks(response.content);
+  <span class="c-key">if</span> (toolUses.length === <span class="c-num">0</span>) {
+    finalText = textOf(response.content);   <span class="c-com">// this is the answer</span>
+    <span class="c-key">break</span>;
+  }
+  <span class="c-key">if</span> (turn &gt;= maxTurns) {
+    <span class="c-key">throw</span> turnCapExceeded;
+  }
+  messages.push({ role: <span class="c-str">"assistant"</span>, content: response.content });
+  messages.push({ role: <span class="c-str">"user"</span>, content: <span class="c-key">await</span> answerToolUses(toolUses) });
+}</pre>
+      </figure>
+
+      <div class="prose" style="margin-top:1.2rem">
+        <p>
+          The cap bounds <strong>model calls</strong>, not tool round trips. A
+          response with no tool uses always ends the run on the call it arrived
+          on, so the cap can never burn a call the agent is unable to answer.
+        </p>
+        <p>
+          After parsing, the runtime <em>filters</em> findings down to the
+          lens's own category. Cross-category leaks are dropped, never
+          re-stamped — re-stamping would fabricate a claim the model never
+          made, while dropping keeps category provenance deterministic.
+        </p>
+      </div>
+
+      <h3>The six tools</h3>
+      <div class="paths">
+        <span class="chip">packages/ai/src/<b>tools.ts</b></span>
+      </div>
+      <div class="prose">
+        <p>
+          These are the only tools any agent ever gets. There is no write,
+          comment, approve, merge, or execute tool anywhere in the package — so
+          the restriction holds by construction rather than by prompt.
+        </p>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Tool</th><th>Reads</th></tr></thead>
+          <tbody>
+            <tr><td><code>get_pull_request</code></td><td>Title, description, author, branches, SHAs</td></tr>
+            <tr><td><code>list_changed_files</code></td><td>The changed-file list</td></tr>
+            <tr><td><code>get_diff</code></td><td>The full unified diff</td></tr>
+            <tr><td><code>get_file</code></td><td>One file at the <strong>head</strong> SHA — the proposed state</td></tr>
+            <tr><td><code>get_base_file</code></td><td>One file at the <strong>base</strong> SHA — before this PR</td></tr>
+            <tr><td><code>search_repository</code></td><td>Code search, always scoped to this repository</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="prose" style="margin-top:1.1rem">
+        <p>
+          Every input is Zod-validated before it touches the GitHub client, and
+          <code>dispatchReviewTool</code> never throws: failures come back as
+          <code>{ ok: false }</code> and reach the model as an error
+          <code>tool_result</code>, so a bad tool call costs a turn rather than
+          the run.
+        </p>
+      </div>
+
+      <h3>4b · <code>join</code> — the fan-in</h3>
+      <div class="prose">
+        <p>
+          LangGraph only runs this node once every incoming edge's source has
+          completed. It re-sorts outcomes by the agent's <strong>input
+          position</strong>, never completion order, so the result never
+          depends on which agent happened to settle first.
+        </p>
+      </div>
+      <figure class="code">
+        <div class="code-head"><span class="p">packages/reviewer/src/review-graph.ts</span><span class="ln">line 126 · makeJoinNode</span></div>
+<pre><span class="c-key">if</span> (agentFailures.length === agentCount) {
+  <span class="c-key">throw</span> <span class="c-key">new</span> Error(<span class="c-str">`every review agent failed — ${details}`</span>);
+}</pre>
+      </figure>
+      <div class="prose" style="margin-top:1.1rem">
+        <p>One failed agent does not fail the review. All of them does.</p>
+      </div>
+
+      <h3>4c · <code>synthesise</code></h3>
+      <div class="paths">
+        <span class="chip">packages/reviewer/src/<b>synthesiser.ts</b></span>
+      </div>
+      <div class="prose">
+        <p>
+          <strong>One</strong> model call. No tools, no loop. It removes
+          duplicates, merges overlapping findings, drops speculation, corrects
+          severity where it is clearly wrong, and orders what survives most
+          important first.
+        </p>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Path</th><th>Trigger</th><th>synthesisOutcome</th></tr></thead>
+          <tbody>
+            <tr><td>Skipped</td><td>Zero candidates — nothing to refine, so no model call at all</td><td><code>"skipped"</code></td></tr>
+            <tr><td>Completed</td><td>Model returned valid JSON</td><td><code>"completed"</code></td></tr>
+            <tr><td>Failed</td><td>Bad output or an API error — the <strong>raw</strong> candidates are used instead</td><td><code>"failed"</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="prose" style="margin-top:1.1rem">
+        <p>
+          A synthesis failure never fails the review. It is safe to fall back
+          to the raw candidates precisely because the synthesiser's output was
+          never trusted either — both paths flow through the same chain next.
+        </p>
+      </div>
+
+      <h3>4d · <code>validate</code> — the trust boundary</h3>
+      <div class="paths">
+        <span class="chip">packages/reviewer/src/<b>validate-findings.ts</b></span>
+      </div>
+      <div class="prose">
+        <p>
+          Six deterministic steps, in this order. No I/O, no model, no
+          mutation of its inputs.
+        </p>
+      </div>
+      <ol class="rules">
+        <li><b>Schema validity</b> — <code>reviewFindingSchema</code> (Zod)</li>
+        <li><b>The file exists</b> among the PR's changed files</li>
+        <li><b>The line is an added line</b> in that file's diff, when a line is given</li>
+        <li><b>Confidence ≥ 0.7</b> — <code>CONFIDENCE_THRESHOLD</code></li>
+        <li><b>Cap at 10</b> — <code>MAX_FINDINGS</code>, keeping the strongest</li>
+        <li><b>Duplicate removal</b> — the strongest of each group survives</li>
+      </ol>
+      <div class="prose" style="margin-top:1.3rem">
+        <p>
+          "Strongest" is fully deterministic: severity rank, then confidence
+          descending, then input order. Note the ordering consequence — the cap
+          runs <em>before</em> dedup, so a review can publish fewer than ten
+          findings even when more valid candidates existed. That is the spec's
+          order, kept deliberately.
+        </p>
+      </div>
+      <div class="note">
+        <span class="eyebrow">This is where bad output dies</span>
+        A fabricated file path, an invented line number, or a padded confidence
+        score is dropped here — regardless of how confident the model sounded
+        when it proposed it.
+      </div>
+    </section>
+
+    <!-- ========== 5 · RENDER ========== -->
+    <section class="stage" id="s5">
+      <div class="stage-head">
+        <span class="stage-num">05</span>
+        <h2>Render</h2>
+      </div>
+      <div class="paths">
+        <span class="chip">packages/reviewer/src/<b>render-check-run.ts</b></span>
+      </div>
+      <div class="prose">
+        <p>Pure — the caller owns the actual GitHub API call.</p>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Situation</th><th>Conclusion</th><th>Why</th></tr></thead>
+          <tbody>
+            <tr><td>No findings, no failures</td><td><span class="badge ok">success</span></td><td>"No issues found"</td></tr>
+            <tr><td>Any findings</td><td><span class="badge warn">neutral</span></td><td>Advisory — the app never blocks or approves a merge</td></tr>
+            <tr><td>An agent failed, even with zero findings</td><td><span class="badge warn">neutral</span></td><td>An incomplete review must not publish a clean bill of health</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="prose" style="margin-top:1.1rem">
+        <p>
+          Line-anchored findings also become inline annotations. Failed lenses
+          appear in the summary <em>by name only</em> — the error detail was
+          already logged as <code>agent.failed</code> at failure time and is
+          never re-emitted here.
+        </p>
+      </div>
+    </section>
+
+    <!-- ========== 6 · PUBLISH ========== -->
+    <section class="stage" id="s6">
+      <div class="stage-head">
+        <span class="stage-num">06</span>
+        <h2>Publish</h2>
+      </div>
+      <div class="paths">
+        <span class="chip">apps/action/src/<b>summary.ts</b> · createFallbackPublisher</span>
+      </div>
+      <div class="prose">
+        <p>
+          Try the check run first. On a <strong>403 or 404</strong>, write the
+          same rendered review to the workflow job summary and exit cleanly —
+          that is the fork case, where GitHub hands the workflow a read-only
+          token.
+        </p>
+      </div>
+
+      <figure class="code">
+        <div class="code-head"><span class="p">apps/action/src/summary.ts</span><span class="ln">line 45 · isPermissionError</span></div>
+<pre><span class="c-com">// Status alone, deliberately. Matching on message text would couple</span>
+<span class="c-com">// the fork fallback to GitHub's wording, which is not part of any</span>
+<span class="c-com">// API contract and has been reworded before.</span>
+<span class="c-key">const</span> status = httpStatus(error);
+<span class="c-key">return</span> status === <span class="c-num">403</span> || status === <span class="c-num">404</span>;</pre>
+      </figure>
+
+      <div class="prose" style="margin-top:1.2rem">
+        <p>
+          Everything else propagates and fails the step: <code>401</code> is a
+          bad token, <code>429</code> is rate limiting, <code>5xx</code> is an
+          outage, and an error with no status at all is a network failure. None
+          of those may masquerade as a delivered review.
+        </p>
+        <p>
+          The cost of being wrong is asymmetric in both directions, which is
+          why the rule is this narrow. Too permissive, and a real GitHub outage
+          renders as a clean review nobody investigates. Too strict, and every
+          fork pull request fails CI.
+        </p>
+      </div>
+    </section>
+
+    <!-- ========== FAILURE MODES ========== -->
+    <section class="stage" id="fail">
+      <div class="stage-head">
+        <span class="stage-num">—</span>
+        <h2>What fails the run, and what doesn't</h2>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Event</th><th>Result</th></tr></thead>
+          <tbody>
+            <tr><td>Unknown agent name</td><td><span class="badge stop">Fails</span> before any model call</td></tr>
+            <tr><td>Missing API key or token</td><td><span class="badge stop">Fails</span></td></tr>
+            <tr><td>Malformed <code>pull_request</code> payload</td><td><span class="badge stop">Fails</span></td></tr>
+            <tr><td><strong>Every</strong> agent fails</td><td><span class="badge stop">Fails</span> — re-runnable from the Actions UI</td></tr>
+            <tr><td>Unsupported event or ignored action</td><td><span class="badge ok">Clean no-op</span></td></tr>
+            <tr><td>One or two agents fail</td><td><span class="badge warn">Continues</span> — names listed in the check run</td></tr>
+            <tr><td>Synthesis fails</td><td><span class="badge warn">Continues</span> — raw candidates published</td></tr>
+            <tr><td>A tool call fails</td><td><span class="badge warn">Continues</span> — reported to the model</td></tr>
+            <tr><td>Langfuse unreachable</td><td><span class="badge warn">Continues</span> — in-code prompts, no traces</td></tr>
+            <tr><td>Check run forbidden (fork)</td><td><span class="badge warn">Degrades</span> — job summary instead</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ========== LOGS ========== -->
+    <section class="stage" id="logs">
+      <div class="stage-head">
+        <span class="stage-num">—</span>
+        <h2>Lifecycle log events</h2>
+      </div>
+      <div class="prose">
+        <p>
+          Every event of one review carries <code>repository</code>,
+          <code>pullRequestNumber</code>, and <code>headSha</code> — so an
+          operator can answer "what happened to the review for PR&nbsp;N?" from
+          the logs alone.
+        </p>
+      </div>
+      <div class="log mono">
+review.started<br>
+&nbsp;&nbsp;→ review.loaded<br>
+&nbsp;&nbsp;&nbsp;&nbsp;→ agent.started ×N&nbsp;&nbsp;→ agent.completed <span style="color:var(--code-com)">/</span> agent.failed ×N<br>
+&nbsp;&nbsp;&nbsp;&nbsp;→ synthesis.started → synthesis.completed <span style="color:var(--code-com)">/</span> .failed <span style="color:var(--code-com)">/</span> .skipped<br>
+&nbsp;&nbsp;&nbsp;&nbsp;→ findings.validated<br>
+&nbsp;&nbsp;→ review.published <span style="color:var(--code-com)">/</span> review.published.degraded
+      </div>
+    </section>
+
+    <!-- ========== FILE MAP ========== -->
+    <section class="stage" id="map">
+      <div class="stage-head">
+        <span class="stage-num">—</span>
+        <h2>Where things live</h2>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Path</th><th>Owns</th></tr></thead>
+          <tbody>
+            <tr><td><code>apps/action/src/index.ts</code></td><td>Inputs, client construction, wiring</td></tr>
+            <tr><td><code>apps/action/src/event.ts</code></td><td>Actions event parsing, the ignore-quietly rule</td></tr>
+            <tr><td><code>apps/action/src/handler.ts</code></td><td>Event → review handoff</td></tr>
+            <tr><td><code>apps/action/src/summary.ts</code></td><td>Fork fallback to the job summary</td></tr>
+            <tr><td><code>apps/action/src/langfuse.ts</code></td><td>Span export for one run</td></tr>
+            <tr><td><code>packages/reviewer/src/review-pull-request.ts</code></td><td>One review, end to end</td></tr>
+            <tr><td><code>packages/reviewer/src/review-graph.ts</code></td><td>The StateGraph</td></tr>
+            <tr><td><code>packages/reviewer/src/synthesiser.ts</code></td><td>The single refining model call</td></tr>
+            <tr><td><code>packages/reviewer/src/validate-findings.ts</code></td><td>The trust boundary</td></tr>
+            <tr><td><code>packages/reviewer/src/render-check-run.ts</code></td><td>Findings → check run payload</td></tr>
+            <tr><td><code>packages/ai/src/agents.ts</code></td><td>The three lenses, lens selection</td></tr>
+            <tr><td><code>packages/ai/src/agent-runtime.ts</code></td><td>The shared agentic loop</td></tr>
+            <tr><td><code>packages/ai/src/tools.ts</code></td><td>The six read-only tools</td></tr>
+            <tr><td><code>packages/ai/src/prompts.ts</code></td><td>Managed prompts and their fallback</td></tr>
+            <tr><td><code>packages/schemas/src/review-finding.ts</code></td><td>The finding contract</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="foot">
+        <span>pnpm test · pnpm typecheck · pnpm build · pnpm eval</span>
+        <span>docs/agent-flow.md</span>
+      </div>
+    </section>
+
+  </main>
+</div>
+</body>
+</html>

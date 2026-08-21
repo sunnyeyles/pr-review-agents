@@ -1,17 +1,15 @@
 /**
- * One review, end to end: load the PR, run the pipeline, render the
- * check run, publish it, and emit the spec §26 lifecycle events along
- * the way.
+ * One review, end to end:
  *
- * This is the shared body of the review, kept separate from the
- * delivery path that triggers it: the GitHub Action wraps it in
- * Actions event parsing and nothing more. The wrapper does not own the
- * publish step, which matters: the deterministic side-effect boundary
- * (spec §17) is enforced here, once, rather than in the wrapper.
+ *   load PR -> runReviewPipeline -> renderCheckRun -> publish
  *
- * What stays outside: authentication (the caller resolves its own
- * client from the workflow token) and retry semantics (a workflow run
- * is re-runnable from the Actions UI).
+ * with a lifecycle log line at each step (spec §26).
+ *
+ * This is the shared body, kept separate from the delivery path that
+ * triggers it. It owns the publish step deliberately: the side-effect
+ * boundary (spec §17) is enforced here, once, not in each wrapper.
+ *
+ * Outside its scope: authentication and retries, both the caller's.
  */
 import type { ReviewContext } from "@pr-review/ai";
 import type { GithubInstallationClient } from "@pr-review/github";
@@ -43,14 +41,13 @@ export interface ReviewPullRequestDeps {
   /** Authenticated read-only GitHub client for this repository. */
   client: GithubInstallationClient;
   /**
-   * Runs the full review pipeline (@pr-review/reviewer's LangGraph
-   * StateGraph, spec §8/§16/§17/§20): the review agents fan out over
-   * the loaded PR context, their raw candidates are refined by the AI
-   * Synthesiser, and the deterministic validation chain produces the
-   * final findings. Throws when every agent failed, which callers
-   * surface as a failed review so their own retry semantics apply. A
-   * synthesis failure never throws — it is reported on the result and
-   * the raw candidates are published instead.
+   * Runs the LangGraph pipeline: agents fan out over the loaded PR
+   * context, the Synthesiser refines their raw candidates, and the
+   * deterministic chain validates what survives.
+   *
+   * Throws only when every agent failed, so callers apply their own
+   * retry semantics. A synthesis failure never throws — it is reported
+   * on the result and the raw candidates are published instead.
    */
   runReviewPipeline: (
     client: GithubInstallationClient,
@@ -59,11 +56,9 @@ export interface ReviewPullRequestDeps {
   /** Defaults to publishing a check run through `client`. */
   publishReview?: PublishReview | undefined;
   /**
-   * Structured lifecycle logger (spec §26): every event of one review
-   * carries repository, PR number, and head SHA so an operator can
-   * answer "what happened to the review for PR N?" from the logs
-   * alone. Defaults to the console logger; tests inject a capturing
-   * logger.
+   * Structured lifecycle logger (spec §26). Every event carries
+   * repository, PR number, and head SHA, so an operator can answer
+   * "what happened to the review for PR N?" from the logs alone.
    */
   logger?: StructuredLogger | undefined;
 }
@@ -95,12 +90,10 @@ export function createCheckRunPublisher(
 }
 
 /**
- * Logs the §16 synthesis outcome the pipeline already computed. The
- * two non-model paths carry their own event: a clean review (zero
- * candidates) logs synthesis.skipped; a synthesis failure logs
- * synthesis.failed and notes the fallback — the raw candidates still
- * flow through validateFindings inside the pipeline, so the review
- * never dies from a synthesis failure.
+ * Logs the synthesis outcome the pipeline already computed — one of
+ * skipped (no candidates), completed, or failed. A failure notes the
+ * fallback: the raw candidates still flow through validateFindings, so
+ * the review never dies from a synthesis failure.
  */
 function logSynthesisOutcome(
   logger: StructuredLogger,
@@ -169,11 +162,9 @@ export async function reviewPullRequest(
     diffLength: diff.length,
   });
 
-  // The AI boundary: the pipeline's agent nodes only ever PROPOSE
-  // candidate findings, and its synthesise node only ever REFINES
-  // them. The validate node inside the pipeline is the deterministic
-  // side-effect boundary — only its output ever reaches the GitHub
-  // API, and only through application code below.
+  // The AI boundary. Agent nodes only PROPOSE candidates; the
+  // synthesise node only REFINES them. Only the validate node's output
+  // (review.findings) ever reaches the GitHub API, via the code below.
   const review = await runReviewPipeline(client, {
     owner: target.owner,
     repo: target.repo,
@@ -181,9 +172,8 @@ export async function reviewPullRequest(
     changedFiles,
     diff,
   });
-  // Failed lenses are noted in the check run by name only; the error
-  // detail was already logged as agent.failed by the agent runtime at
-  // failure time (see agent-runtime.ts) — this never re-emits it.
+  // Failed lenses reach the check run by name only; agent-runtime.ts
+  // already logged the error detail as agent.failed.
   logSynthesisOutcome(logger, target, review);
 
   logger.info("findings.validated", {

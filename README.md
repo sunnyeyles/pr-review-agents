@@ -299,6 +299,11 @@ single review is greppable end to end by `headSha`.
 
 ## Further reading
 
+- **[Propose, Refine, Decide](https://sunnyeyles.github.io/pr-review-agents/)**
+  — the pipeline traced stage by stage, with a diagram, the file that owns each
+  step, and the failure modes. Source: [`docs/index.html`](docs/index.html).
+- [`docs/agent-flow.md`](docs/agent-flow.md) — the same walkthrough as Markdown,
+  for reading inside the repository.
 - [`spec.md`](spec.md) — the original specification this implementation
   follows (predates the GitHub Action; see its header note). Source comments
   reference its sections (`spec §17`, `spec §21`, …).
