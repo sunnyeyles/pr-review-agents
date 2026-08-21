@@ -1,27 +1,26 @@
 /**
- * The shared review-agent runtime: one small agentic loop over the
- * Anthropic Messages API, parameterised by a ReviewLens (name, review
- * focus, category). Every agent starts from the PR title, description,
- * changed-file list, and diff, may request further context through the
- * six read-only tools, and reports findings ONLY as a final JSON
- * object validated by agentOutputSchema.
+ * The shared review-agent runtime — the loop all three lenses run.
+ * A ReviewLens supplies the role, focus, and category; everything else
+ * here is identical for every agent.
  *
- * The loop is a plain `for` over turns: call the model, and if it
- * asked for tools, dispatch them and go round again, up to the turn
- * cap. Token usage accumulates in a local so it survives a mid-loop
- * API error and still reaches the agent.failed log line.
+ * One run:
  *
- * Category integrity (ticket 07 decision): the runtime FILTERS the
- * validated findings to the lens's own category. Leaked cross-category
- * findings are dropped, not re-stamped — re-stamping would fabricate a
- * claim the model never made, while filtering keeps category
- * provenance deterministic: downstream code can trust that every
- * candidate an agent contributes carries that agent's lens.
+ *   opening message (PR + files + diff)
+ *     -> call model
+ *     -> tool_use blocks? dispatch the six read-only tools, loop again
+ *     -> no tool_use? that message is the final JSON
+ *     -> parse, then keep only findings in this lens's category
  *
- * Failure semantics: invalid final output, an exceeded turn cap, or a
- * model API error reject with AgentRunError (or the underlying error).
- * Nothing here writes to GitHub — the deterministic pipeline in
- * @pr-review/reviewer owns that boundary.
+ * The loop is a plain `for` capped at maxTurns. Token usage lives in a
+ * local outside the try so a mid-loop API error still reports the
+ * tokens it spent on the agent.failed line.
+ *
+ * Category integrity: cross-category findings are DROPPED, never
+ * re-stamped. Re-stamping would fabricate a claim the model never made;
+ * dropping keeps category provenance deterministic downstream.
+ *
+ * Failure: bad final output, an exceeded turn cap, or an API error all
+ * reject. Nothing here writes to GitHub.
  */
 import type Anthropic from "@anthropic-ai/sdk";
 import { startObservation } from "@langfuse/tracing";
@@ -250,10 +249,8 @@ export function createReviewAgent(
         baseSha: context.pullRequest.baseSha,
       };
 
-      // every event of one agent run carries the review's
-      // correlation fields plus the agent name, and the completed /
-      // failed events add duration and the token usage aggregated
-      // across every model call of the run.
+      // Every event of this run carries these fields; completed/failed
+      // add duration and the usage aggregated across all model calls.
       const eventFields = {
         repository: `${context.owner}/${context.repo}`,
         pullRequestNumber: context.pullRequest.number,
@@ -281,8 +278,7 @@ export function createReviewAgent(
       const messages: Anthropic.Messages.MessageParam[] = [
         { role: "user", content: buildOpeningMessage(context) },
       ];
-      // Running totals live OUTSIDE the try so a mid-loop API error
-      // still reports the tokens it already spent on agent.failed.
+      // Outside the try: a mid-loop API error still reports its spend.
       let usage = emptyTokenUsage();
       let apiStopReason: string | undefined;
       let finalText = "";
@@ -390,8 +386,7 @@ export function createReviewAgent(
               `(stop_reason: ${apiStopReason ?? "unknown"}): ${output.error}`,
           );
         }
-        // Category integrity: an agent only ever contributes findings
-        // in its own category (see the module doc comment).
+        // Category integrity — see the module doc comment.
         const findings = output.findings.filter(
           (finding) => finding.category === lens.category,
         );

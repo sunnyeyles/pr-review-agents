@@ -1,21 +1,15 @@
 /**
- * @pr-review/action
+ * @pr-review/action — the GitHub Action entrypoint.
  *
- * GitHub Action entrypoint: runs the review inside the customer's own
- * workflow. The review agents, the Synthesiser, and the deterministic
- * validation chain all live in shared code (@pr-review/reviewer); this
- * app only adapts the Actions environment to it.
+ * Wiring only: read action inputs, build the clients, hand off to the
+ * handler. The review itself is shared code (@pr-review/reviewer).
  *
- * What the runner provides, so this app does not: the retry semantics
- * (a workflow run, re-runnable from the Actions UI), the compute, and
- * the credentials. Nothing is fetched from a secrets store — the
- * Anthropic key arrives as an action input backed by a repository
- * secret, and the GitHub token is the one GitHub already handed the
- * workflow.
+ * The runner supplies what this app therefore doesn't: compute, retries
+ * (re-run the workflow), and credentials (no secrets store — the
+ * Anthropic key is an action input, the GitHub token is the workflow's).
  *
- * Failure semantics: a review that fails outright (every agent
- * produced invalid output) fails the step, so the run can be retried.
- * An event that is not a reviewable pull request is a clean no-op.
+ * Failure: a review that fails outright fails the step. An event that
+ * is not a reviewable pull request is a clean no-op.
  */
 import { readFile } from "node:fs/promises";
 import process from "node:process";
@@ -62,11 +56,9 @@ import {
 import { createFallbackPublisher } from "./summary.js";
 
 /**
- * Everything the entrypoint reads from outside itself: the process
- * environment, the event file, the two client factories, the logger,
- * and the way a failed run marks the process. Production passes
- * {@link actionEnvironment}; tests pass fakes, so the entrypoint can be
- * exercised without a runner, a filesystem, or a model.
+ * Everything the entrypoint reads from outside itself. Production
+ * passes {@link actionEnvironment}; tests pass fakes, so the entrypoint
+ * runs without a runner, a filesystem, or a model.
  */
 export interface ActionEnvironment {
   /** The process environment the action's inputs arrive in. */
@@ -208,9 +200,10 @@ async function resolveManagedPrompts(
 }
 
 /**
- * One action run: read the event, build the clients, hand the payload
- * to the handler. Every failure propagates to the caller, which is the
- * entrypoint's catch — the single place a failed review is reported.
+ * One action run, in order: resolve the lenses, build the Anthropic and
+ * GitHub clients, start tracing, resolve the prompts, then hand the
+ * event payload to the handler. Failures propagate to runEntrypoint's
+ * catch — the single place a failed review is reported.
  */
 export async function runAction(
   environment: ActionEnvironment = actionEnvironment(),

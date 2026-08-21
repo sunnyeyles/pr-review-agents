@@ -14,10 +14,9 @@ export interface ActionHandlerDeps {
   /** Token-authenticated read-only client for this repository. */
   client: GithubInstallationClient;
   /**
-   * Runs the full review pipeline (@pr-review/reviewer's LangGraph
-   * StateGraph, spec §8/§16/§17/§20). Throws when every agent failed,
-   * which fails the workflow step so the run can be retried from the
-   * Actions UI.
+   * Runs the LangGraph pipeline (agents -> join -> synthesise ->
+   * validate). Throws when every agent failed, failing the workflow
+   * step so the run can be retried from the Actions UI.
    */
   runReviewPipeline: (
     client: GithubInstallationClient,
@@ -47,16 +46,13 @@ export type ActionHandler = (
 ) => Promise<ActionResult>;
 
 /**
- * Builds the Action handler: inspect the workflow event, and if it is
- * a reviewable pull request, hand it to reviewPullRequest
- * (@pr-review/reviewer) — the shared body that loads the PR, runs the
- * pipeline, and publishes the result.
+ * Builds the Action handler: inspect the workflow event, and if it is a
+ * reviewable pull request, hand it to reviewPullRequest — the shared
+ * body that loads the PR, runs the pipeline, and publishes the result.
  *
- * Everything specific to this delivery path lives here and in
- * event.ts: Actions event parsing and the ignore-quietly rule.
- * Authentication, retries, and compute all belong to the runner, which
- * is why this app has no queue and no secrets client. The review
- * itself is entirely shared code.
+ * Only two things are specific to this delivery path, and both live
+ * here and in event.ts: Actions event parsing and the ignore-quietly
+ * rule.
  */
 export function createActionHandler({
   client,

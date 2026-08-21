@@ -5,19 +5,16 @@
  *         \-> agent__security     --> join --> synthesise --> validate --> END
  *          \-> agent__architecture-/
  *
- * Partial failure: one failed agent does not fail the review while at
- * least one other succeeded; when EVERY agent fails, `join` throws so
- * the whole invocation rejects. Outcomes are re-sorted by the agent's
- * position in the input list, so the result never depends on which
- * agent happens to settle first.
+ * The agent nodes run concurrently; the three after them run in
+ * sequence once every agent has settled. Three rules shape the flow:
  *
- * Synthesis has two non-model paths: zero candidates skips the model
- * call entirely, and a synthesis failure falls back to the RAW
- * candidates rather than failing the review — the caller reads
- * `synthesisOutcome` / `synthesisError` to log accordingly.
- *
- * `validate` is the ONLY node whose output the caller may treat as
- * trustworthy.
+ * - Partial failure survives. `join` throws only when EVERY agent
+ *   failed, and re-sorts outcomes by input position so the result never
+ *   depends on which agent settled first.
+ * - Synthesis is optional. Zero candidates skips the model call; a
+ *   failure falls back to the RAW candidates. The caller reads
+ *   `synthesisOutcome` / `synthesisError` to log which happened.
+ * - `validate` is the ONLY node whose output the caller may trust.
  */
 import { emptyTokenUsage, type ReviewAgent, type ReviewContext, type TokenUsage } from "@pr-review/ai";
 import { errorMessage, errorName } from "@pr-review/logging";
@@ -151,14 +148,13 @@ function makeJoinNode(agentCount: number) {
 }
 
 /**
- * The synthesis step. Empty-input choice (documented): with no
- * candidates at all there is nothing to refine, so the model call is
- * skipped entirely — the Synthesiser itself additionally skips its
- * model call when candidates exist but none are well-formed, which
- * still counts as "completed" here since the boundary this node
- * reports on is whether it invoked the Synthesiser at all. A synthesis
- * failure falls back to the raw candidates rather than failing the
- * review.
+ * The synthesis step. Zero candidates means nothing to refine, so the
+ * Synthesiser is not invoked at all — that is what "skipped" reports.
+ * (The Synthesiser separately skips its own model call when candidates
+ * exist but none are well-formed; that still counts as "completed"
+ * here, since this node only reports whether it invoked it.)
+ *
+ * A failure falls back to the raw candidates, never failing the review.
  */
 function makeSynthesiseNode(synthesiser: Synthesiser) {
   return async (state: ReviewGraphStateT): Promise<ReviewGraphUpdate> => {
@@ -197,12 +193,7 @@ function validateNode(state: ReviewGraphStateT): ReviewGraphUpdate {
   };
 }
 
-/**
- * Builds the compiled review pipeline graph for one set of agents and
- * one Synthesiser. Agents run as parallel nodes fanning out from START;
- * `join`, `synthesise`, and `validate` run in sequence after every
- * agent settles.
- */
+/** Compiles the graph above for one set of agents and one Synthesiser. */
 export function buildReviewGraph(
   agents: readonly ReviewAgent[],
   synthesiser: Synthesiser,
@@ -261,10 +252,10 @@ export interface ReviewPipelineResult {
 
 /**
  * Runs the full pipeline — agents, synthesis, validation — for one
- * review. Throws when every agent failed (the review itself fails, so
- * the workflow step fails and the run can be retried from the Actions
- * UI); a synthesis failure never throws, it is reported on the result
- * instead.
+ * review, and flattens the final graph state into a plain result.
+ *
+ * Throws when every agent failed, so the workflow step fails and the
+ * run can be retried. A synthesis failure never throws.
  */
 export async function runReviewPipeline(
   agents: readonly ReviewAgent[],
