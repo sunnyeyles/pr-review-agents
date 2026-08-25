@@ -21,12 +21,13 @@ import {
   addTokenUsage,
   emptyTokenUsage,
   extractAgentOutput,
+  messageText,
   traceModelCall,
   type AnthropicLike,
   type TokenUsage,
 } from "@pr-review/ai";
 import { errorMessage } from "@pr-review/logging";
-import { reviewFindingSchema, type ReviewFinding } from "@pr-review/schemas";
+import { wellFormedFindings, type ReviewFinding } from "@pr-review/schemas";
 
 /** A synthesis-level failure (the model broke the output contract). */
 export class SynthesisError extends Error {
@@ -127,13 +128,7 @@ export function createSynthesiser(deps: SynthesiserDeps): Synthesiser {
       try {
         // Only schema-valid candidates are worth refining (and worth
         // model tokens); malformed ones could never survive validation.
-        const wellFormed: ReviewFinding[] = [];
-        for (const candidate of candidates) {
-          const parsed = reviewFindingSchema.safeParse(candidate);
-          if (parsed.success) {
-            wellFormed.push(parsed.data);
-          }
-        }
+        const wellFormed = wellFormedFindings(candidates);
         observation.update({
           metadata: { model: deps.model, wellFormedCount: wellFormed.length },
         });
@@ -164,10 +159,7 @@ export function createSynthesiser(deps: SynthesiserDeps): Synthesiser {
         );
         const usage = addTokenUsage(emptyTokenUsage(), response.usage);
 
-        const text = response.content
-          .flatMap((block) => (block.type === "text" ? [block.text] : []))
-          .join("\n");
-        const output = extractAgentOutput(text);
+        const output = extractAgentOutput(messageText(response.content));
         if (!output.ok) {
           throw new SynthesisError(
             `synthesiser produced invalid findings output ` +

@@ -371,7 +371,7 @@ describe("agent selection", () => {
     });
 
     await expect(runAction(environment)).rejects.toThrow(
-      /Unknown review agent: security/,
+      /Unknown review agent: secuirty/,
     );
     expect(anthropicConfigs).toEqual([]);
     expect(tokenConfigs).toEqual([]);

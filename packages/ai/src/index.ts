@@ -16,6 +16,7 @@ export {
 } from "./anthropic.js";
 export {
   extractAgentOutput,
+  messageText,
   type AgentOutputResult,
 } from "./agent-output.js";
 export type { ReviewAgent, ReviewContext } from "./review-types.js";

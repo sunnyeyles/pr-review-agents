@@ -66,6 +66,46 @@ describe("reviewTools", () => {
       expect(tool.description.length).toBeGreaterThan(0);
     }
   });
+
+  /**
+   * The schemas are DERIVED from the Zod schemas that validate the
+   * same input, so the old failure mode — two declarations drifting
+   * apart — is gone. The new one is a derivation that silently drops a
+   * parameter, leaving a tool the model cannot call correctly because
+   * it was never told the argument exists. This pins the parameters.
+   */
+  it("derives each tool's parameters from its Zod schema", () => {
+    const parametersOf = (name: string): string[] =>
+      Object.keys(
+        reviewTools.find((tool) => tool.name === name)?.inputSchema
+          .properties ?? {},
+      );
+
+    expect(parametersOf("get_pull_request")).toEqual([]);
+    expect(parametersOf("list_changed_files")).toEqual([]);
+    expect(parametersOf("get_diff")).toEqual([]);
+    expect(parametersOf("get_file")).toEqual(["path"]);
+    expect(parametersOf("get_base_file")).toEqual(["path"]);
+    expect(parametersOf("search_repository")).toEqual(["query"]);
+  });
+
+  /**
+   * A described parameter is how the model learns what to put in it;
+   * an undescribed one is a guess. The descriptions live on the Zod
+   * schemas now, where it is easy to add a field and forget one.
+   */
+  it("describes every parameter it exposes", () => {
+    for (const tool of reviewTools) {
+      for (const [name, schema] of Object.entries(
+        tool.inputSchema.properties,
+      )) {
+        expect(
+          (schema as { description?: string }).description,
+          `${tool.name}.${name} has no description`,
+        ).toBeTruthy();
+      }
+    }
+  });
 });
 
 describe("dispatchReviewTool", () => {

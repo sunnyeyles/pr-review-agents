@@ -19,7 +19,6 @@
  * is superseded only when someone runs the seeder again, which leaves
  * the edited version intact in Langfuse's history.
  */
-import { LangfuseClient } from "@langfuse/client";
 import {
   createConsoleLogger,
   errorMessage,
@@ -28,8 +27,9 @@ import {
 
 import {
   DEFAULT_PROMPT_LABEL,
-  DEFAULT_PROMPT_TIMEOUT_MS,
   MANAGED_PROMPT_KEYS,
+  createLangfuseClient,
+  fetchTextPrompt,
   promptContractProblems,
   type LangfusePromptClientConfig,
   type ManagedPromptId,
@@ -69,24 +69,12 @@ export interface LangfusePromptWriter {
 export function createLangfusePromptWriter(
   config: LangfusePromptClientConfig,
 ): LangfusePromptWriter {
-  const client = new LangfuseClient({
-    publicKey: config.publicKey,
-    secretKey: config.secretKey,
-    baseUrl: config.baseUrl,
-  });
+  const client = createLangfuseClient(config);
 
   return {
     async readLabelled(name, label) {
       try {
-        const prompt = await client.prompt.get(name, {
-          type: "text",
-          label,
-          // The seeder compares against what Langfuse holds right now;
-          // a cached answer could make it skip a prompt that needs
-          // republishing.
-          cacheTtlSeconds: 0,
-          fetchTimeoutMs: DEFAULT_PROMPT_TIMEOUT_MS,
-        });
+        const prompt = await fetchTextPrompt(client, name, label);
         return { text: prompt.prompt, version: prompt.version };
       } catch (error: unknown) {
         if (isNotFound(error)) {

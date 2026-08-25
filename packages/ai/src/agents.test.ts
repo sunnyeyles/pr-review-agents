@@ -156,7 +156,7 @@ describe("resolveReviewLenses", () => {
     // A dropped name would run a narrower review than asked for and
     // report nothing, which is indistinguishable from a clean review.
     expect(() => resolveReviewLenses("secuirty")).toThrow(
-      /Unknown review agent: security/,
+      /Unknown review agent: secuirty/,
     );
     expect(() => resolveReviewLenses("secuirty")).toThrow(/architecture/);
   });

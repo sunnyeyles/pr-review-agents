@@ -7,6 +7,7 @@
 export { isSupportedPullRequestAction } from "./pull-request-event.js";
 export {
   reviewFindingSchema,
+  wellFormedFindings,
   type FindingCategory,
   type ReviewFinding,
 } from "./review-finding.js";

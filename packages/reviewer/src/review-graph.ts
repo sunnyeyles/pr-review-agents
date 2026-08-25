@@ -38,6 +38,77 @@ interface AgentOutcome {
   error?: string;
 }
 
+/**
+ * A channel exactly one node writes: the last write wins, which is what
+ * a plain variable already does. Most channels are this, so spelling
+ * the reducer out at each one only buried the ONE channel below whose
+ * reducer carries real meaning.
+ *
+ * A channel with no default is set at invoke and must be.
+ */
+function lastWins<T>(defaultValue?: () => T) {
+  const reducer = (_left: T, right: T): T => right;
+  return defaultValue === undefined
+    ? Annotation<T>({ reducer })
+    : Annotation<T>({ reducer, default: defaultValue });
+}
+
+/** A channel several nodes append to concurrently, in no fixed order. */
+function appendTo<T>() {
+  return Annotation<T[]>({
+    reducer: (left: T[], right: T[]) => left.concat(right),
+    default: (): T[] => [],
+  });
+}
+
+/** What `join` derives from the agent outcomes. */
+interface JoinedCandidates {
+  /** Untrusted candidate findings, in agent order. */
+  candidates: unknown[];
+  /** Agents that failed while at least one other agent succeeded. */
+  agentFailures: AgentFailure[];
+}
+
+/**
+ * What the `synthesise` node writes.
+ *
+ * A discriminated union on `outcome` rather than one shape with
+ * optional fields, matching how the rest of the repository models "it
+ * worked, or it didn't and here's why" (AgentOutputResult,
+ * ToolDispatchResult, EventInspection, ActionResult). That makes the
+ * invariants structural instead of documentary: `error` exists ONLY on
+ * the failed branch, and `durationMs` only where a model call was
+ * actually timed, so a "completed" state carrying an error — or a
+ * "failed" one carrying no reason — cannot be constructed at all.
+ *
+ * `candidates` and `usage` sit on every branch because
+ * ReviewPipelineResult promises both unconditionally: the raw
+ * candidates are the fallback a failed synthesis publishes, and usage
+ * is zero rather than absent when no call was made.
+ */
+type SynthesisState =
+  | { outcome: "skipped"; candidates: unknown[]; usage: TokenUsage }
+  | {
+      outcome: "completed";
+      candidates: unknown[];
+      usage: TokenUsage;
+      durationMs: number;
+    }
+  | {
+      outcome: "failed";
+      candidates: unknown[];
+      usage: TokenUsage;
+      error: string;
+      errorName: string;
+      durationMs: number;
+    };
+
+/**
+ * The graph's channels, one per node that writes it. Grouping by
+ * WRITER rather than by field is what collapses eleven channels into
+ * five: `join` produces one value and `synthesise` produces one, so
+ * each node's output is a channel and the state reads like the flow.
+ */
 const ReviewGraphState = Annotation.Root({
   /**
    * The loaded PR context every agent reviews. Set once at invoke, and
@@ -46,53 +117,24 @@ const ReviewGraphState = Annotation.Root({
    * validation can never filter against a different list than the one
    * the agents saw.
    */
-  context: Annotation<ReviewContext>({ reducer: (_left, right) => right }),
-  /** One entry per agent node, merged (order-independent) by `join`. */
-  agentOutcomes: Annotation<AgentOutcome[]>({
-    reducer: (left, right) => left.concat(right),
-    default: () => [],
-  }),
-  /** Untrusted candidate findings, in agent order, set by `join`. */
-  candidates: Annotation<unknown[]>({
-    reducer: (_left, right) => right,
-    default: () => [],
-  }),
-  agentFailures: Annotation<AgentFailure[]>({
-    reducer: (_left, right) => right,
-    default: () => [],
-  }),
-  /** The synthesiser's refined candidates, or the raw ones on fallback. */
-  synthesisedCandidates: Annotation<unknown[]>({
-    reducer: (_left, right) => right,
-    default: () => [],
-  }),
-  synthesisOutcome: Annotation<"skipped" | "completed" | "failed">({
-    reducer: (_left, right) => right,
-    default: () => "skipped",
-  }),
-  synthesisError: Annotation<string | undefined>({
-    reducer: (_left, right) => right,
-    default: () => undefined,
-  }),
-  synthesisErrorName: Annotation<string | undefined>({
-    reducer: (_left, right) => right,
-    default: () => undefined,
-  }),
-  /** The synthesiser's single-call token usage; zero when skipped. */
-  synthesisUsage: Annotation<TokenUsage>({
-    reducer: (_left, right) => right,
-    default: emptyTokenUsage,
-  }),
-  /** Wall-clock time spent in the synthesise node; unset when skipped. */
-  synthesisDurationMs: Annotation<number | undefined>({
-    reducer: (_left, right) => right,
-    default: () => undefined,
-  }),
+  context: lastWins<ReviewContext>(),
+  /**
+   * One entry per agent node. The ONLY channel with a meaningful
+   * reducer: every agent node writes it in the same superstep, so the
+   * writes are concatenated and `join` re-sorts them by `index`.
+   */
+  agentOutcomes: appendTo<AgentOutcome>(),
+  joined: lastWins<JoinedCandidates>(() => ({
+    candidates: [],
+    agentFailures: [],
+  })),
+  synthesis: lastWins<SynthesisState>(() => ({
+    outcome: "skipped",
+    candidates: [],
+    usage: emptyTokenUsage(),
+  })),
   /** The final, deterministically validated findings. */
-  findings: Annotation<ReviewFinding[]>({
-    reducer: (_left, right) => right,
-    default: () => [],
-  }),
+  findings: lastWins<ReviewFinding[]>(() => []),
 });
 
 type ReviewGraphUpdate = typeof ReviewGraphState.Update;
@@ -143,7 +185,7 @@ function makeJoinNode(agentCount: number) {
       throw new Error(`every review agent failed — ${details}`);
     }
 
-    return { candidates, agentFailures };
+    return { joined: { candidates, agentFailures } };
   };
 }
 
@@ -158,26 +200,39 @@ function makeJoinNode(agentCount: number) {
  */
 function makeSynthesiseNode(synthesiser: Synthesiser) {
   return async (state: ReviewGraphStateT): Promise<ReviewGraphUpdate> => {
-    if (state.candidates.length === 0) {
-      return { synthesisedCandidates: [], synthesisOutcome: "skipped" };
+    const { candidates } = state.joined;
+    if (candidates.length === 0) {
+      return {
+        synthesis: {
+          outcome: "skipped",
+          candidates: [],
+          usage: emptyTokenUsage(),
+        },
+      };
     }
 
     const startedAt = Date.now();
     try {
-      const result = await synthesiser.synthesise(state.candidates);
+      const result = await synthesiser.synthesise(candidates);
       return {
-        synthesisedCandidates: result.findings,
-        synthesisOutcome: "completed",
-        synthesisUsage: result.usage,
-        synthesisDurationMs: Date.now() - startedAt,
+        synthesis: {
+          outcome: "completed",
+          candidates: result.findings,
+          usage: result.usage,
+          durationMs: Date.now() - startedAt,
+        },
       };
     } catch (error) {
       return {
-        synthesisedCandidates: state.candidates,
-        synthesisOutcome: "failed",
-        synthesisError: errorMessage(error),
-        synthesisErrorName: errorName(error),
-        synthesisDurationMs: Date.now() - startedAt,
+        synthesis: {
+          outcome: "failed",
+          // The fallback: the RAW candidates still flow to validation.
+          candidates,
+          usage: emptyTokenUsage(),
+          error: errorMessage(error),
+          errorName: errorName(error),
+          durationMs: Date.now() - startedAt,
+        },
       };
     }
   };
@@ -187,7 +242,7 @@ function makeSynthesiseNode(synthesiser: Synthesiser) {
 function validateNode(state: ReviewGraphStateT): ReviewGraphUpdate {
   return {
     findings: validateFindings(
-      state.synthesisedCandidates,
+      state.synthesis.candidates,
       state.context.changedFiles,
     ),
   };
@@ -263,17 +318,30 @@ export async function runReviewPipeline(
   context: ReviewContext,
 ): Promise<ReviewPipelineResult> {
   const graph = buildReviewGraph(agents, synthesiser);
-  const finalState = await graph.invoke({ context });
+  const { joined, synthesis, findings } = await graph.invoke({ context });
 
+  // The grouped channels are flattened back out here, deliberately.
+  // Grouping is what keeps the GRAPH readable; the result is a record
+  // an operator logs and an evaluation prints, and those read better
+  // flat. This function is the only place the two shapes meet.
   return {
-    candidates: finalState.candidates,
-    agentFailures: finalState.agentFailures,
-    synthesisedCandidateCount: finalState.synthesisedCandidates.length,
-    synthesisOutcome: finalState.synthesisOutcome,
-    synthesisError: finalState.synthesisError,
-    synthesisErrorName: finalState.synthesisErrorName,
-    synthesisUsage: finalState.synthesisUsage,
-    synthesisDurationMs: finalState.synthesisDurationMs,
-    findings: finalState.findings,
+    candidates: joined.candidates,
+    agentFailures: joined.agentFailures,
+    synthesisedCandidateCount: synthesis.candidates.length,
+    synthesisOutcome: synthesis.outcome,
+    synthesisUsage: synthesis.usage,
+    // Narrowed rather than read blindly: the union is what guarantees
+    // an error is only ever reported for a synthesis that actually
+    // failed, and a duration only for one that actually ran.
+    ...(synthesis.outcome === "failed"
+      ? {
+          synthesisError: synthesis.error,
+          synthesisErrorName: synthesis.errorName,
+        }
+      : {}),
+    ...(synthesis.outcome === "skipped"
+      ? {}
+      : { synthesisDurationMs: synthesis.durationMs }),
+    findings,
   };
 }

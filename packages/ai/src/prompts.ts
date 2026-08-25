@@ -84,27 +84,62 @@ export interface LangfusePromptClientConfig {
   baseUrl: string;
 }
 
-/** Builds a LangfusePromptClient over the official SDK. */
-export function createLangfusePromptClient(
+/**
+ * The SDK client both the prompt READER here and the prompt WRITER in
+ * prompt-seed.ts are built on. Package-internal: the two seams stay
+ * separate on purpose (nothing on the review path may reach a writer),
+ * but they authenticate identically, so how a client is constructed is
+ * decided once.
+ */
+export function createLangfuseClient(
   config: LangfusePromptClientConfig,
-): LangfusePromptClient {
-  const client = new LangfuseClient({
+): LangfuseClient {
+  return new LangfuseClient({
     publicKey: config.publicKey,
     secretKey: config.secretKey,
     baseUrl: config.baseUrl,
   });
+}
+
+/**
+ * One uncached prompt fetch at a label — the read the loader and the
+ * seeder both perform.
+ *
+ * `cacheTtlSeconds: 0` is deliberate in both directions, for two
+ * different reasons that happen to agree: the loader caches for the
+ * process lifetime itself, so a second in-SDK cache would only add a
+ * stale TTL, and the seeder compares against what Langfuse holds RIGHT
+ * NOW, so a cached answer could make it skip a prompt that needs
+ * republishing.
+ *
+ * `fetchTimeoutMs` bounds the socket. loadManagedPrompts also bounds
+ * the call, but only this reaches the request itself.
+ */
+export function fetchTextPrompt(
+  client: LangfuseClient,
+  name: string,
+  label: string,
+) {
+  return client.prompt.get(name, {
+    type: "text",
+    label,
+    cacheTtlSeconds: 0,
+    fetchTimeoutMs: DEFAULT_PROMPT_TIMEOUT_MS,
+  });
+}
+
+/** Builds a LangfusePromptClient over the official SDK. */
+export function createLangfusePromptClient(
+  config: LangfusePromptClientConfig,
+): LangfusePromptClient {
+  const client = createLangfuseClient(config);
   return {
     async getTextPrompt(name, options) {
-      const prompt = await client.prompt.get(name, {
-        type: "text",
-        label: options?.label ?? DEFAULT_PROMPT_LABEL,
-        // The one-shot load below caches for the process lifetime;
-        // a second in-SDK cache would only add a stale TTL.
-        cacheTtlSeconds: 0,
-        // Bounds the socket. loadManagedPrompts also bounds the call,
-        // but only this reaches the request itself.
-        fetchTimeoutMs: DEFAULT_PROMPT_TIMEOUT_MS,
-      });
+      const prompt = await fetchTextPrompt(
+        client,
+        name,
+        options?.label ?? DEFAULT_PROMPT_LABEL,
+      );
       const text = prompt.prompt.trim();
       if (text.length === 0) {
         throw new Error(`Langfuse prompt "${name}" is empty`);

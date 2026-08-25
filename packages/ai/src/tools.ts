@@ -23,14 +23,38 @@ export interface ReviewToolScope {
   baseSha: string;
 }
 
-/** JSON-schema shape sent to the model as a tool's input_schema. */
+/**
+ * JSON-schema shape sent to the model as a tool's input_schema. Never
+ * hand-written: {@link toolInputSchema} derives it from the Zod schema
+ * that validates the same input, so the shape the model is SHOWN
+ * cannot drift from the one it is CHECKED against.
+ *
+ * `required` is absent rather than `[]` for a no-argument tool, which
+ * is how JSON Schema spells "nothing is required".
+ */
 export interface ReviewToolInputSchema {
   type: "object";
   properties: Record<string, unknown>;
-  required: string[];
+  required?: string[];
   additionalProperties: false;
   /** Structural compatibility with the SDK's Tool.InputSchema. */
   [key: string]: unknown;
+}
+
+/**
+ * Derives a tool's model-facing JSON Schema from its Zod schema.
+ *
+ * `$schema` is a document-level annotation the tools API has no use
+ * for, so it is dropped. Refinements (path traversal, search
+ * qualifiers) have no JSON Schema equivalent and are simply absent
+ * here — they are enforced in `run` below, where a violation becomes
+ * an error tool_result the model can read and correct.
+ */
+function toolInputSchema(schema: z.ZodType): ReviewToolInputSchema {
+  const { $schema: _annotation, ...jsonSchema } = z.toJSONSchema(schema, {
+    io: "input",
+  });
+  return jsonSchema as ReviewToolInputSchema;
 }
 
 export interface ReviewTool {
@@ -82,7 +106,8 @@ const repositoryPathSchema = z
       message:
         "path must be a repository-relative file path without traversal segments",
     },
-  );
+  )
+  .describe('Repository-relative file path, e.g. "src/index.ts".');
 
 /**
  * A code-search query. Scope qualifiers are rejected so a query can
@@ -96,21 +121,16 @@ const searchQuerySchema = z
   .refine((query) => !/\b(repo|org|user):/i.test(query), {
     message:
       "query must not contain repo:/org:/user: qualifiers; searches are always scoped to the pull request's repository",
-  });
+  })
+  .describe(
+    'Search terms, e.g. "createSession". Do not include repo:/org:/user: qualifiers.',
+  );
 
 const emptyInputSchema = z.strictObject({});
-
-const EMPTY_INPUT_JSON_SCHEMA: ReviewToolInputSchema = {
-  type: "object",
-  properties: {},
-  required: [],
-  additionalProperties: false,
-};
 
 function defineTool<Schema extends z.ZodType>(definition: {
   name: string;
   description: string;
-  inputSchema: ReviewToolInputSchema;
   zodSchema: Schema;
   execute(
     github: GithubInstallationClient,
@@ -121,7 +141,7 @@ function defineTool<Schema extends z.ZodType>(definition: {
   return {
     name: definition.name,
     description: definition.description,
-    inputSchema: definition.inputSchema,
+    inputSchema: toolInputSchema(definition.zodSchema),
     async run(github, scope, input) {
       const parsed = definition.zodSchema.safeParse(input);
       if (!parsed.success) {
@@ -150,7 +170,6 @@ export const reviewTools: readonly ReviewTool[] = [
     name: "get_pull_request",
     description:
       "Get the pull request's title, description, author, branches, and commit SHAs as JSON.",
-    inputSchema: EMPTY_INPUT_JSON_SCHEMA,
     zodSchema: emptyInputSchema,
     async execute(github, scope) {
       const pullRequest = await github.getPullRequest(pullRef(scope));
@@ -161,7 +180,6 @@ export const reviewTools: readonly ReviewTool[] = [
     name: "list_changed_files",
     description:
       "List the files changed by the pull request (filename, status, additions, deletions) as JSON.",
-    inputSchema: EMPTY_INPUT_JSON_SCHEMA,
     zodSchema: emptyInputSchema,
     async execute(github, scope) {
       const files = await github.listChangedFiles(pullRef(scope));
@@ -177,7 +195,6 @@ export const reviewTools: readonly ReviewTool[] = [
   defineTool({
     name: "get_diff",
     description: "Get the pull request's full unified diff.",
-    inputSchema: EMPTY_INPUT_JSON_SCHEMA,
     zodSchema: emptyInputSchema,
     async execute(github, scope) {
       return truncate(await github.getDiff(pullRef(scope)));
@@ -188,17 +205,6 @@ export const reviewTools: readonly ReviewTool[] = [
     description:
       "Read one file's contents at the pull request's HEAD commit (the proposed state). " +
       'The path is relative to the repository root, e.g. "src/index.ts".',
-    inputSchema: {
-      type: "object",
-      properties: {
-        path: {
-          type: "string",
-          description: 'Repository-relative file path, e.g. "src/index.ts".',
-        },
-      },
-      required: ["path"],
-      additionalProperties: false,
-    },
     zodSchema: z.strictObject({ path: repositoryPathSchema }),
     async execute(github, scope, input) {
       return truncate(
@@ -216,17 +222,6 @@ export const reviewTools: readonly ReviewTool[] = [
     description:
       "Read one file's contents at the pull request's BASE commit (the state before this PR). " +
       'The path is relative to the repository root, e.g. "src/index.ts".',
-    inputSchema: {
-      type: "object",
-      properties: {
-        path: {
-          type: "string",
-          description: 'Repository-relative file path, e.g. "src/index.ts".',
-        },
-      },
-      required: ["path"],
-      additionalProperties: false,
-    },
     zodSchema: z.strictObject({ path: repositoryPathSchema }),
     async execute(github, scope, input) {
       return truncate(
@@ -244,18 +239,6 @@ export const reviewTools: readonly ReviewTool[] = [
     description:
       "Search code within the pull request's repository. Returns matching file paths as JSON. " +
       "The search is always scoped to this repository; scope qualifiers are not allowed.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        query: {
-          type: "string",
-          description:
-            'Search terms, e.g. "createSession". Do not include repo:/org:/user: qualifiers.',
-        },
-      },
-      required: ["query"],
-      additionalProperties: false,
-    },
     zodSchema: z.strictObject({ query: searchQuerySchema }),
     async execute(github, scope, input) {
       const matches = await github.searchCode({

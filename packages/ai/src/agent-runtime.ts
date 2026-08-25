@@ -33,7 +33,7 @@ import {
 } from "@pr-review/logging";
 import type { FindingCategory } from "@pr-review/schemas";
 
-import { extractAgentOutput } from "./agent-output.js";
+import { extractAgentOutput, messageText } from "./agent-output.js";
 import type { AnthropicLike } from "./anthropic.js";
 import { traceModelCall } from "./model-tracing.js";
 import type { ReviewAgent, ReviewContext } from "./review-types.js";
@@ -210,20 +210,6 @@ function toolUseBlocks(
   );
 }
 
-/** The concatenated text of one message's content blocks. */
-function textOf(content: readonly unknown[]): string {
-  return content
-    .filter(
-      (block): block is Anthropic.Messages.TextBlock =>
-        typeof block === "object" &&
-        block !== null &&
-        "type" in block &&
-        block.type === "text",
-    )
-    .map((block) => block.text)
-    .join("\n");
-}
-
 /**
  * Builds one review agent: the given lens over the shared runtime,
  * with its tools bound to one installation's GitHub client.
@@ -366,7 +352,7 @@ export function createReviewAgent(
           const response = await callModel();
           const toolUses = toolUseBlocks(response.content);
           if (toolUses.length === 0) {
-            finalText = textOf(response.content);
+            finalText = messageText(response.content);
             break;
           }
           if (turn >= maxTurns) {

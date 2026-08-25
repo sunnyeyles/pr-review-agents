@@ -4,8 +4,35 @@
  * shape. Anything else is an agent failure — never a crash, and never
  * something that reaches the GitHub-writing pipeline.
  */
+import type Anthropic from "@anthropic-ai/sdk";
 import { reviewFindingSchema, type ReviewFinding } from "@pr-review/schemas";
 import { z } from "zod";
+
+/**
+ * The concatenated text of one message's content blocks — the bytes an
+ * agent's or the Synthesiser's final answer actually arrives in.
+ *
+ * Shared because both callers of the Anthropic seam need it and must
+ * read a message the same way: a response mixes text with tool_use
+ * blocks, and a second implementation that joined them differently (or
+ * forgot a block type) would change what {@link extractAgentOutput}
+ * is handed without either caller looking wrong on its own.
+ *
+ * Typed structurally rather than against ContentBlock so a caller can
+ * pass a response's `content` without narrowing it first.
+ */
+export function messageText(content: readonly unknown[]): string {
+  return content
+    .filter(
+      (block): block is Anthropic.Messages.TextBlock =>
+        typeof block === "object" &&
+        block !== null &&
+        "type" in block &&
+        block.type === "text",
+    )
+    .map((block) => block.text)
+    .join("\n");
+}
 
 /** The only output an agent can produce: candidate findings. */
 export const agentOutputSchema = z.object({

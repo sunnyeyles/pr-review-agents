@@ -27,20 +27,10 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { build } from "esbuild";
+import { bundle } from "./lib/bundle.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const entryPoint = path.join(repoRoot, "apps/action/src/prompts-seed-cli.ts");
-
-// Same interop banner as scripts/build-bundle.mjs: the output is ESM
-// but some transitive dependencies are CJS and reach for `require`.
-const banner = `import { createRequire as __banner_createRequire } from "node:module";
-import { fileURLToPath as __banner_fileURLToPath } from "node:url";
-import { dirname as __banner_dirname } from "node:path";
-const require = __banner_createRequire(import.meta.url);
-const __filename = __banner_fileURLToPath(import.meta.url);
-const __dirname = __banner_dirname(__filename);
-`;
 
 /**
  * Reads .env.local into a plain object. It is gitignored and holds
@@ -87,19 +77,7 @@ process.env["LANGFUSE_LOG_LEVEL"] ??= "NONE";
 const work = mkdtempSync(path.join(tmpdir(), "pr-review-seed-"));
 try {
   const outfile = path.join(work, "seed.mjs");
-  await build({
-    entryPoints: [entryPoint],
-    outfile,
-    bundle: true,
-    platform: "node",
-    format: "esm",
-    target: "node22",
-    banner: { js: banner },
-    sourcemap: false,
-    minify: false,
-    legalComments: "none",
-    logLevel: "warning",
-  });
+  await bundle({ entryPoint, outfile, logLevel: "warning" });
 
   const cli = await import(pathToFileURL(outfile).href);
   // The CLI owns its own SDK client, logger, and output stream; this
