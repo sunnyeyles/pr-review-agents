@@ -18,10 +18,11 @@
 import { appendFile } from "node:fs/promises";
 
 import type { StructuredLogger } from "@pr-review/logging";
-import type {
-  PublishReview,
-  RenderedCheckRun,
-  ReviewTarget,
+import {
+  reviewCorrelation,
+  type PublishReview,
+  type RenderedCheckRun,
+  type ReviewTarget,
 } from "@pr-review/reviewer";
 
 /** Reads an HTTP status off an Octokit RequestError, if there is one. */
@@ -129,9 +130,7 @@ export function createFallbackPublisher({
         throw error;
       }
       logger.info("review.published.degraded", {
-        repository: `${target.owner}/${target.repo}`,
-        pullRequestNumber: target.pullRequestNumber,
-        headSha: target.headSha,
+        ...reviewCorrelation(target),
         surface: "job-summary",
         reason: "workflow token cannot create check runs",
         status: httpStatus(error),
