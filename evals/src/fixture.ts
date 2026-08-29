@@ -157,12 +157,9 @@ export function loadFixture(name: string): LoadedFixture {
     const headText = required(headFiles, file.path, "repo");
     const baseText = file.status === "added" ? undefined : baseFiles.get(file.path);
     const patch = buildPatch(baseText, headText, file.path);
-    const additions = patch
-      .split("\n")
-      .filter((line) => line.startsWith("+")).length;
-    const deletions = patch
-      .split("\n")
-      .filter((line) => line.startsWith("-")).length;
+    const patchLines = patch.split("\n");
+    const additions = patchLines.filter((line) => line.startsWith("+")).length;
+    const deletions = patchLines.filter((line) => line.startsWith("-")).length;
     return { filename: file.path, status: file.status, additions, deletions, patch };
   });
 

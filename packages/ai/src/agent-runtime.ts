@@ -33,7 +33,11 @@ import {
 } from "@pr-review/logging";
 import type { FindingCategory } from "@pr-review/schemas";
 
-import { extractAgentOutput, messageText } from "./agent-output.js";
+import {
+  extractAgentOutput,
+  messageText,
+  toolUseBlocks,
+} from "./agent-output.js";
 import type { AnthropicLike } from "./anthropic.js";
 import { traceModelCall } from "./model-tracing.js";
 import type { ReviewAgent, ReviewContext } from "./review-types.js";
@@ -195,19 +199,6 @@ export interface ReviewAgentDeps {
    * in-code prompt, so an empty map behaves exactly like none.
    */
   systemPrompts?: ReviewSystemPrompts | undefined;
-}
-
-/** The tool_use blocks of one message's content, in order. */
-function toolUseBlocks(
-  content: readonly unknown[],
-): Anthropic.Messages.ToolUseBlock[] {
-  return content.filter(
-    (block): block is Anthropic.Messages.ToolUseBlock =>
-      typeof block === "object" &&
-      block !== null &&
-      "type" in block &&
-      block.type === "tool_use",
-  );
 }
 
 /**

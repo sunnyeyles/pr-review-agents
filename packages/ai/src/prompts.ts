@@ -37,6 +37,11 @@ export const MANAGED_PROMPT_KEYS = {
 
 export type ManagedPromptId = keyof typeof MANAGED_PROMPT_KEYS;
 
+/** The four ids in registry order; the one place `Object.keys` is narrowed. */
+export const MANAGED_PROMPT_IDS = Object.keys(
+  MANAGED_PROMPT_KEYS,
+) as ManagedPromptId[];
+
 /** Where a resolved prompt came from. */
 export type PromptSource = "langfuse" | "fallback";
 
@@ -302,9 +307,8 @@ export async function loadManagedPrompts(
     synthesis: "fallback",
   };
 
-  const ids = Object.keys(MANAGED_PROMPT_KEYS) as ManagedPromptId[];
   await Promise.all(
-    ids.map(async (id) => {
+    MANAGED_PROMPT_IDS.map(async (id) => {
       const name = MANAGED_PROMPT_KEYS[id];
       try {
         const text = await withDeadline(
@@ -331,8 +335,8 @@ export async function loadManagedPrompts(
     }),
   );
 
-  const loaded = ids.filter((id) => sources[id] === "langfuse");
-  const fellBack = ids.filter((id) => sources[id] === "fallback");
+  const loaded = MANAGED_PROMPT_IDS.filter((id) => sources[id] === "langfuse");
+  const fellBack = MANAGED_PROMPT_IDS.filter((id) => sources[id] === "fallback");
   logger.info("langfuse.prompts.loaded", {
     label,
     loadedPromptKeys: loaded.map((id) => MANAGED_PROMPT_KEYS[id]),

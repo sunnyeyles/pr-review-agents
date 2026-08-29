@@ -9,6 +9,23 @@ import { reviewFindingSchema, type ReviewFinding } from "@pr-review/schemas";
 import { z } from "zod";
 
 /**
+ * The blocks of one `type`, matched structurally so a caller can pass
+ * a response's `content` without narrowing it first.
+ */
+function blocksOfType<Block extends { type: string }>(
+  content: readonly unknown[],
+  type: Block["type"],
+): Block[] {
+  return content.filter(
+    (block): block is Block =>
+      typeof block === "object" &&
+      block !== null &&
+      "type" in block &&
+      block.type === type,
+  );
+}
+
+/**
  * The concatenated text of one message's content blocks — the bytes an
  * agent's or the Synthesiser's final answer actually arrives in.
  *
@@ -17,21 +34,18 @@ import { z } from "zod";
  * blocks, and a second implementation that joined them differently (or
  * forgot a block type) would change what {@link extractAgentOutput}
  * is handed without either caller looking wrong on its own.
- *
- * Typed structurally rather than against ContentBlock so a caller can
- * pass a response's `content` without narrowing it first.
  */
 export function messageText(content: readonly unknown[]): string {
-  return content
-    .filter(
-      (block): block is Anthropic.Messages.TextBlock =>
-        typeof block === "object" &&
-        block !== null &&
-        "type" in block &&
-        block.type === "text",
-    )
+  return blocksOfType<Anthropic.Messages.TextBlock>(content, "text")
     .map((block) => block.text)
     .join("\n");
+}
+
+/** The tool_use blocks of one message's content, in order. */
+export function toolUseBlocks(
+  content: readonly unknown[],
+): Anthropic.Messages.ToolUseBlock[] {
+  return blocksOfType<Anthropic.Messages.ToolUseBlock>(content, "tool_use");
 }
 
 /** The only output an agent can produce: candidate findings. */

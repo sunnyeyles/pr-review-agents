@@ -28,6 +28,7 @@ import {
 import type { GithubInstallationClient } from "@pr-review/github";
 import {
   createCapturingLogger,
+  createLogger,
   type CapturedLogEvent,
   type StructuredLogger,
 } from "@pr-review/logging";
@@ -114,16 +115,10 @@ function tee(first: StructuredLogger, second: StructuredLogger | undefined): Str
   if (second === undefined) {
     return first;
   }
-  return {
-    info(event, fields) {
-      first.info(event, fields);
-      second.info(event, fields);
-    },
-    error(event, fields) {
-      first.error(event, fields);
-      second.error(event, fields);
-    },
-  };
+  return createLogger((level, event, fields) => {
+    first[level](event, fields);
+    second[level](event, fields);
+  });
 }
 
 /** Runs one fixture through the full review and returns what it produced. */

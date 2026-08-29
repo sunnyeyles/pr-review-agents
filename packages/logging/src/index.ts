@@ -37,6 +37,16 @@ export interface StructuredLogger {
   error(event: string, fields?: LogFields): void;
 }
 
+/** Builds a logger from one levelled emit, so the info/error pair is written once. */
+export function createLogger(
+  emit: (level: LogLevel, event: string, fields: LogFields) => void,
+): StructuredLogger {
+  return {
+    info: (event, fields = {}) => emit("info", event, fields),
+    error: (event, fields = {}) => emit("error", event, fields),
+  };
+}
+
 function logLine(level: LogLevel, event: string, fields: LogFields): string {
   // JSON.stringify drops undefined-valued fields, keeping lines clean
   // when an optional value (e.g. token usage) is absent.
@@ -49,14 +59,14 @@ function logLine(level: LogLevel, event: string, fields: LogFields): string {
  * captures into the workflow run's log stream.
  */
 export function createConsoleLogger(): StructuredLogger {
-  return {
-    info(event, fields = {}) {
-      console.log(logLine("info", event, fields));
-    },
-    error(event, fields = {}) {
-      console.error(logLine("error", event, fields));
-    },
-  };
+  return createLogger((level, event, fields) => {
+    const line = logLine(level, event, fields);
+    if (level === "error") {
+      console.error(line);
+    } else {
+      console.log(line);
+    }
+  });
 }
 
 /** One event recorded by the capturing logger: level + event + fields, flattened. */
@@ -79,14 +89,9 @@ export interface CapturingLogger {
 export function createCapturingLogger(): CapturingLogger {
   const entries: CapturedLogEvent[] = [];
   return {
-    logger: {
-      info(event, fields = {}) {
-        entries.push({ ...fields, level: "info", event });
-      },
-      error(event, fields = {}) {
-        entries.push({ ...fields, level: "error", event });
-      },
-    },
+    logger: createLogger((level, event, fields) => {
+      entries.push({ ...fields, level, event });
+    }),
     entries,
   };
 }

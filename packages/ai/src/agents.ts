@@ -67,6 +67,10 @@ export const reviewLenses = [
 /** The value selecting every lens, and the default when none is given. */
 export const ALL_LENSES = "all";
 
+/** Every lens category, and the sentence that lists them for a caller. */
+const lensCategories = new Set<string>(reviewLenses.map((lens) => lens.category));
+const VALID_VALUES = `Valid values are ${[...lensCategories].join(", ")}, or ${ALL_LENSES}.`;
+
 /**
  * Resolves the `agents` input — a comma-separated list of lens
  * categories, or `all` — into the lenses to run.
@@ -93,27 +97,20 @@ export function resolveReviewLenses(selection: string): ReviewLens[] {
     return [...reviewLenses];
   }
 
-  const known = new Set<string>(reviewLenses.map((lens) => lens.category));
   const requested = new Set<string>();
   for (const part of trimmed.split(",")) {
     const name = part.trim().toLowerCase();
     if (name === "") {
       continue;
     }
-    if (!known.has(name)) {
-      throw new Error(
-        `Unknown review agent: ${name}. Valid values are ` +
-          `${[...known].join(", ")}, or ${ALL_LENSES}.`,
-      );
+    if (!lensCategories.has(name)) {
+      throw new Error(`Unknown review agent: ${name}. ${VALID_VALUES}`);
     }
     requested.add(name);
   }
 
   if (requested.size === 0) {
-    throw new Error(
-      `No review agents selected. Valid values are ${[...known].join(", ")}, ` +
-        `or ${ALL_LENSES}.`,
-    );
+    throw new Error(`No review agents selected. ${VALID_VALUES}`);
   }
   return reviewLenses.filter((lens) => requested.has(lens.category));
 }

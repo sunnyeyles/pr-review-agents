@@ -209,18 +209,16 @@ export function createInstallationClient(
     },
 
     async createCheckRun(input: CreateCheckRunInput): Promise<CheckRun> {
-      const output: {
-        title: string;
-        summary: string;
-        text?: string;
-        annotations?: CheckRunAnnotation[];
-      } = { title: input.output.title, summary: input.output.summary };
-      if (input.output.text !== undefined) {
-        output.text = input.output.text;
-      }
-      if (input.output.annotations !== undefined && input.output.annotations.length > 0) {
-        output.annotations = input.output.annotations;
-      }
+      const { text, annotations } = input.output;
+      const output = {
+        title: input.output.title,
+        summary: input.output.summary,
+        ...(text === undefined ? {} : { text }),
+        // An empty array is omitted: the checks API has no use for it.
+        ...(annotations === undefined || annotations.length === 0
+          ? {}
+          : { annotations }),
+      };
       const response = await octokit.rest.checks.create({
         owner: input.owner,
         repo: input.repo,

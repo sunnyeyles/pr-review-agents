@@ -27,6 +27,7 @@ import {
 
 import {
   DEFAULT_PROMPT_LABEL,
+  MANAGED_PROMPT_IDS,
   MANAGED_PROMPT_KEYS,
   createLangfuseClient,
   fetchTextPrompt,
@@ -162,9 +163,8 @@ export async function seedManagedPrompts(
   const label = options.label ?? DEFAULT_PROMPT_LABEL;
   const dryRun = options.dryRun ?? false;
 
-  const ids = Object.keys(MANAGED_PROMPT_KEYS) as ManagedPromptId[];
   const outcomes = await Promise.all(
-    ids.map(async (id): Promise<SeedOutcome> => {
+    MANAGED_PROMPT_IDS.map(async (id): Promise<SeedOutcome> => {
       const name = MANAGED_PROMPT_KEYS[id];
       const text = options.prompts[id];
 
@@ -229,7 +229,7 @@ export async function seedManagedPrompts(
   );
 
   const report = Object.fromEntries(
-    ids.map((id, index) => [id, outcomes[index]]),
+    MANAGED_PROMPT_IDS.map((id, index) => [id, outcomes[index]]),
   ) as SeedReport;
 
   logger.info("langfuse.prompts.seed_completed", {

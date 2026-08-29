@@ -136,15 +136,13 @@ export function renderCheckRun(
     ...failureNotes(agentFailures),
   ].join("\n\n");
 
-  const annotations: CheckRunAnnotation[] = [];
-  for (const finding of ordered) {
-    if (annotations.length >= MAX_ANNOTATIONS_PER_REQUEST) {
-      break;
-    }
-    if (finding.line !== undefined) {
-      annotations.push(annotate(finding, finding.line));
-    }
-  }
+  const annotations = ordered
+    .filter(
+      (finding): finding is ReviewFinding & { line: number } =>
+        finding.line !== undefined,
+    )
+    .slice(0, MAX_ANNOTATIONS_PER_REQUEST)
+    .map((finding) => annotate(finding, finding.line));
 
   const output: CheckRunOutput = { title, summary };
   if (annotations.length > 0) {

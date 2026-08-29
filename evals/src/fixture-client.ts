@@ -53,6 +53,15 @@ export function createFixtureClient(fixture: LoadedFixture): FixtureClient {
     calls.push({ method, detail });
   };
 
+  const checkRepo = (request: { owner: string; repo: string }): void => {
+    const { owner, repo } = fixture.context;
+    if (request.owner !== owner || request.repo !== repo) {
+      throw new FixtureNotFoundError(
+        `fixture ${fixture.name} serves ${owner}/${repo}, not ${request.owner}/${request.repo}`,
+      );
+    }
+  };
+
   const checkRef = (ref: PullRequestRef): void => {
     const { owner, repo, pullRequest } = fixture.context;
     if (
@@ -87,12 +96,7 @@ export function createFixtureClient(fixture: LoadedFixture): FixtureClient {
     },
 
     async getFileContents(request: FileContentsRequest): Promise<string> {
-      const { owner, repo } = fixture.context;
-      if (request.owner !== owner || request.repo !== repo) {
-        throw new FixtureNotFoundError(
-          `fixture ${fixture.name} serves ${owner}/${repo}, not ${request.owner}/${request.repo}`,
-        );
-      }
+      checkRepo(request);
       // Reads are pinned to a SHA by the tool scope: the head SHA is
       // the proposed state, the base SHA the state before the pull
       // request — where a file the pull request adds does not exist.
@@ -109,12 +113,7 @@ export function createFixtureClient(fixture: LoadedFixture): FixtureClient {
     },
 
     async searchCode(request): Promise<CodeSearchMatch[]> {
-      const { owner, repo } = fixture.context;
-      if (request.owner !== owner || request.repo !== repo) {
-        throw new FixtureNotFoundError(
-          `fixture ${fixture.name} serves ${owner}/${repo}, not ${request.owner}/${request.repo}`,
-        );
-      }
+      checkRepo(request);
       record("searchCode", request.query);
       // GitHub's code search is far cleverer than this, but the
       // property that matters for a review is the same: a query finds
