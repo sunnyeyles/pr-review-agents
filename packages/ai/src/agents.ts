@@ -1,8 +1,6 @@
 /**
- * The three review lenses. Each differs ONLY in its review focus and
- * (for Architecture) extra context guidance; the agentic loop, the six
- * read-only tools, the prompt-injection hardening, and the output
- * contract live once in agent-runtime.ts.
+ * The three review lenses. Each differs only in its focus and, for
+ * Architecture, extra context guidance; the rest lives in agent-runtime.ts.
  */
 import {
   createReviewAgent,
@@ -68,24 +66,9 @@ export const reviewLenses = [
 export const ALL_LENSES = "all";
 
 /**
- * Resolves the `agents` input — a comma-separated list of lens
- * categories, or `all` — into the lenses to run.
- *
- * Narrowing the set is the point: one lens costs roughly a third of a
- * full review, and iterating on the architecture prompt does not need
- * correctness and security running alongside it.
- *
- * Three deliberate choices:
- *
- * - The result is in `reviewLenses` order, never the caller's. Agent
- *   order decides candidate order in `join` and therefore the order
- *   findings reach the synthesiser, so it must not depend on how the
- *   input happened to be typed.
- * - Duplicates collapse. `correctness,correctness` asking for two
- *   identical agents is a typo, not a request.
- * - An unknown name throws rather than being ignored. A silently
- *   dropped `--agents security` would run a review that reports
- *   nothing and looks like a clean bill of health.
+ * Resolves the `agents` input — comma-separated lens categories, or
+ * `all`. Always in `reviewLenses` order, since agent order decides the
+ * order findings reach the synthesiser. An unknown name throws.
  */
 export function resolveReviewLenses(selection: string): ReviewLens[] {
   const trimmed = selection.trim();
@@ -118,12 +101,7 @@ export function resolveReviewLenses(selection: string): ReviewLens[] {
   return reviewLenses.filter((lens) => requested.has(lens.category));
 }
 
-/**
- * Builds the review agents over one installation's GitHub client — the
- * set the orchestrator runs concurrently per review job. Defaults to
- * every lens; pass a narrowed list from {@link resolveReviewLenses} to
- * run a subset.
- */
+/** Builds the review agents the pipeline runs concurrently; defaults to every lens. */
 export function createReviewAgents(
   deps: ReviewAgentDeps,
   lenses: readonly ReviewLens[] = reviewLenses,

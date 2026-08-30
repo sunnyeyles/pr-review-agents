@@ -1,12 +1,7 @@
 /**
- * The seeding command's own wiring: argument parsing, credential
- * handling, and the exit code the runner script acts on.
- *
- * The interesting assertion is the last one — that the text handed to
- * Langfuse is byte-for-byte what a review would have fallen back to.
- * If those two ever diverge, seeding would install prompts that differ
- * from the build in a way no other test can see, and this app is the
- * only place that can compare them.
+ * The seeding command's wiring: argument parsing, credential handling,
+ * exit codes, and that the text handed to Langfuse is byte-for-byte
+ * what a review would have fallen back to.
  */
 import {
   inCodePrompts,
@@ -79,8 +74,7 @@ describe("parseSeedArgs", () => {
   });
 
   it("ignores the separator pnpm forwards", () => {
-    // `pnpm seed-prompts -- --dry-run` reaches the CLI with the `--`
-    // still attached.
+    // pnpm leaves the `--` separator attached when it reaches the CLI.
     expect(parseSeedArgs(["--", "--dry-run"])).toEqual({
       label: "production",
       dryRun: true,

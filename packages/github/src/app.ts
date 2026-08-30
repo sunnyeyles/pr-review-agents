@@ -110,11 +110,8 @@ const codeSearchSchema = z.object({
 });
 
 /**
- * Wraps an authenticated Octokit in the read-only PR client the review
- * pipeline consumes. Exported so authentication stays the only thing a
- * caller has to supply: createTokenClient (token.ts) builds the
- * workflow-token Octokit and hands it here, and everything downstream
- * sees a plain GithubInstallationClient.
+ * Wraps an authenticated Octokit in the read-only PR client, so
+ * authentication is the only thing a caller has to supply.
  */
 export function createInstallationClient(
   octokit: OctokitLike,
@@ -197,8 +194,7 @@ export function createInstallationClient(
         per_page: SEARCH_RESULTS_PER_PAGE,
       });
       const data = codeSearchSchema.parse(response.data);
-      // The query is already repo-scoped; the filter is belt and braces
-      // so nothing outside the PR's repository can ever be returned.
+      // The query is already repo-scoped; this filter is belt and braces.
       return data.items
         .filter(
           (item) =>

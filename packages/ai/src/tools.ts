@@ -1,14 +1,7 @@
 /**
- * The six read-only, repository-scoped review tools from spec §13 —
- * the ONLY tools any review agent ever gets. There is no write,
- * comment, approve, merge, or execute tool anywhere in this package,
- * so the restrictions hold by construction.
- *
- * Every tool input is Zod-validated BEFORE it touches the GitHub
- * client; malformed or out-of-repo requests come back as error
- * results (rendered as error tool_results) and never throw the agent
- * loop. The repository scope (owner/repo/SHAs) comes from the review
- * job, never from the model.
+ * The six read-only, repository-scoped tools a review agent gets — there
+ * is no write tool in this package. Inputs are Zod-validated before they
+ * reach GitHub, and the repository scope comes from the job, not the model.
  */
 import type { GithubInstallationClient } from "@pr-review/github";
 import { errorMessage } from "@pr-review/logging";
@@ -24,13 +17,8 @@ export interface ReviewToolScope {
 }
 
 /**
- * JSON-schema shape sent to the model as a tool's input_schema. Never
- * hand-written: {@link toolInputSchema} derives it from the Zod schema
- * that validates the same input, so the shape the model is SHOWN
- * cannot drift from the one it is CHECKED against.
- *
- * `required` is absent rather than `[]` for a no-argument tool, which
- * is how JSON Schema spells "nothing is required".
+ * The tool input_schema sent to the model. Derived from the Zod schema
+ * that validates the same input, so the two cannot drift apart.
  */
 export interface ReviewToolInputSchema {
   type: "object";
@@ -42,13 +30,8 @@ export interface ReviewToolInputSchema {
 }
 
 /**
- * Derives a tool's model-facing JSON Schema from its Zod schema.
- *
- * `$schema` is a document-level annotation the tools API has no use
- * for, so it is dropped. Refinements (path traversal, search
- * qualifiers) have no JSON Schema equivalent and are simply absent
- * here — they are enforced in `run` below, where a violation becomes
- * an error tool_result the model can read and correct.
+ * Refinements have no JSON Schema equivalent, so they are absent here
+ * and enforced in `run`, where a violation becomes an error tool_result.
  */
 function toolInputSchema(schema: z.ZodType): ReviewToolInputSchema {
   const { $schema: _annotation, ...jsonSchema } = z.toJSONSchema(schema, {
@@ -85,11 +68,7 @@ function truncate(content: string): string {
   return content.slice(0, MAX_TOOL_RESULT_CHARS) + TRUNCATION_MARKER;
 }
 
-/**
- * A repository-relative path: no absolute paths, no traversal, no
- * empty/dot segments. GitHub's API is repo-scoped anyway; this keeps
- * obviously malicious requests from ever leaving the process.
- */
+/** A repository-relative path: no absolute paths, no traversal, no dot segments. */
 const repositoryPathSchema = z
   .string()
   .min(1)
@@ -109,11 +88,7 @@ const repositoryPathSchema = z
   )
   .describe('Repository-relative file path, e.g. "src/index.ts".');
 
-/**
- * A code-search query. Scope qualifiers are rejected so a query can
- * never widen the search beyond the PR's repository (the client adds
- * the one and only repo: qualifier itself).
- */
+/** Scope qualifiers are rejected: the client adds the only repo: qualifier. */
 const searchQuerySchema = z
   .string()
   .min(1)
@@ -164,7 +139,7 @@ function pullRef(scope: ReviewToolScope) {
   };
 }
 
-/** Exactly the six read-only tools, in spec order. */
+/** Exactly the six read-only tools. */
 export const reviewTools: readonly ReviewTool[] = [
   defineTool({
     name: "get_pull_request",
@@ -251,12 +226,7 @@ export const reviewTools: readonly ReviewTool[] = [
   }),
 ];
 
-/**
- * Executes one tool request from the model. NEVER throws: unknown
- * tools, invalid inputs, and GitHub failures all come back as
- * `{ ok: false }` so the agent loop can answer with an error
- * tool_result and keep going.
- */
+/** Never throws: every failure comes back as `{ ok: false }` for the agent loop. */
 export async function dispatchReviewTool(
   github: GithubInstallationClient,
   scope: ReviewToolScope,

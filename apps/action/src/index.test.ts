@@ -1,10 +1,7 @@
 /**
- * The composition root: input mapping, event loading, and the
- * entrypoint guard. Everything ambient is injected, so nothing here
- * reads the real environment, touches the filesystem, or builds an SDK
- * client — the only exception is the GITHUB_ACTIONS marker cleared
- * before import, because importing this module evaluates the guard and
- * CI itself sets that marker to "true".
+ * The composition root: input mapping, event loading, and the entrypoint
+ * guard. GITHUB_ACTIONS is cleared before import because importing the
+ * module under test evaluates the guard.
  */
 import {
   validRemotePrompt,
@@ -73,11 +70,7 @@ interface Harness {
   exitCodes: number[];
 }
 
-/**
- * Optional Langfuse behaviour for one harness. Absent means the seams
- * are still wired but must never be reached — which is what the
- * default (no Langfuse inputs) path asserts.
- */
+/** Absent means the Langfuse seams are wired but must never be reached. */
 interface HarnessOptions {
   prompts?: Record<string, string | Error> | undefined;
 }
@@ -439,8 +432,7 @@ describe("Langfuse wiring", () => {
       "synthesis_system",
     ]);
     expect(promptFetches.every((fetch) => fetch.label === "production")).toBe(true);
-    // Fetching is not accepting: without this the test would still
-    // pass if the contract guard rejected all four and fell back.
+    // Fetching is not accepting: the contract guard could still reject all four.
     expect(entries).toContainEqual(
       expect.objectContaining({
         event: "langfuse.prompts.loaded",
@@ -553,8 +545,7 @@ describe("Langfuse wiring", () => {
       ...langfuseInputs,
       GITHUB_EVENT_PATH: "/tmp/event.json",
     };
-    // The github-token input is read after tracing starts, so removing
-    // it fails the run at a point where spans already exist.
+    // Read after tracing starts, so removing it fails the run once spans exist.
     delete env["INPUT_GITHUB-TOKEN"];
     const { environment, flushCount } = harness(
       env,
@@ -628,7 +619,6 @@ describe("runEntrypoint", () => {
   it("stringifies a non-Error rejection in the review.failed log", async () => {
     const { environment, entries, exitCodes } = harness(
       { ...validInputs, GITHUB_ACTIONS: "true", GITHUB_EVENT_PATH: "/tmp/e.json" },
-      // A rejection that is not an Error, e.g. a thrown string.
       "unused",
     );
     environment.readEventFile = () => Promise.reject("boom");
@@ -643,9 +633,7 @@ describe("runEntrypoint", () => {
   });
 
   it("does not run the action merely by importing the module", () => {
-    // The import at the top of this file already evaluated the guard
-    // with GITHUB_ACTIONS cleared; a run would have thrown on the
-    // missing event path and set an exit code.
+    // The import above already evaluated the guard with GITHUB_ACTIONS cleared.
     expect(process.exitCode).not.toBe(1);
   });
 });

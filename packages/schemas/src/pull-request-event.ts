@@ -1,14 +1,6 @@
 /**
- * Which pull_request webhook actions trigger a review.
- *
- * Shared rather than app-local: what counts as a review trigger is a
- * contract, not a detail of whichever app happens to parse the event
- * payload, so the trigger list lives here while payload schemas stay
- * with their app.
- *
- * `opened` and `reopened` start a review; `synchronize` re-reviews a
- * new head commit. Everything else (labels, assignments, closes) is
- * ignored.
+ * Which pull_request webhook actions trigger a review. Shared, because
+ * the trigger list is a contract; payload schemas stay with their app.
  */
 /** The pull_request actions that trigger a review. */
 const SUPPORTED_PULL_REQUEST_ACTIONS = [

@@ -1,17 +1,7 @@
 /**
- * Renders validated findings into the completed "AI PR Review" check
- * run payload. Pure: the caller owns the actual GitHub API call.
- *
- * - No findings: a clean "No issues found" run with conclusion
- *   "success".
- * - Findings: conclusion "neutral" (the review is advisory; the app
- *   must not block or approve merges), a summary listing every finding
- *   strongest first, and inline annotations for line-anchored findings.
- * - Agent failures (partial failure): the summary notes which
- *   lens did not complete — by name only, error details stay in the
- *   logs — and the conclusion is "neutral" even with zero findings,
- *   because an incomplete review must not publish a clean bill of
- *   health.
+ * Renders validated findings into the check-run payload; the caller owns
+ * the API call. The conclusion is never "failure" — the review is
+ * advisory — and never "success" when an agent failed.
  */
 import type {
   AnnotationLevel,
@@ -82,19 +72,12 @@ function annotate(finding: ReviewFinding, line: number): CheckRunAnnotation {
   };
 }
 
-/**
- * The lens name in prose. Agent names are the finding categories; an
- * unrecognised name falls through verbatim.
- */
+/** The lens name in prose; an unrecognised name falls through verbatim. */
 function lensLabel(agent: string): string {
   return (categoryLabels as Record<string, string | undefined>)[agent] ?? agent;
 }
 
-/**
- * The partial-failure notes for the summary: which lenses did not
- * complete. Names only — failure error strings are internal detail and
- * never reach GitHub (they are logged as agent.failed instead).
- */
+/** Which lenses did not complete. Names only; error strings never reach GitHub. */
 function failureNotes(agentFailures: readonly AgentFailure[]): string[] {
   return agentFailures.map(
     (failure) =>
@@ -102,13 +85,7 @@ function failureNotes(agentFailures: readonly AgentFailure[]): string[] {
   );
 }
 
-/**
- * Builds the completed check-run payload for a set of validated
- * findings and the lenses that failed to produce any. Findings are
- * rendered strongest first (severity rank, then confidence);
- * line-anchored findings additionally become inline annotations,
- * capped at MAX_ANNOTATIONS_PER_REQUEST.
- */
+/** Findings render strongest first; line-anchored ones also become annotations. */
 export function renderCheckRun(
   findings: readonly ReviewFinding[],
   agentFailures: readonly AgentFailure[] = [],

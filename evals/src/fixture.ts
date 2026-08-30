@@ -1,14 +1,7 @@
 /**
- * Loading one evaluation fixture from disk (spec §27).
- *
- * A fixture is a small but complete repository, not a snippet: the
- * `repo/` tree is the code at the pull request's head SHA — the files
- * the pull request touches AND the neighbouring modules an agent can
- * reach with the read-only tools — and `base/` holds the previous
- * contents of the files the pull request modifies. Everything the
- * pipeline sees (PR details, changed-file list with patches, the
- * unified diff, and every file the tools can read) is derived from
- * those two trees, so a fixture is edited by editing code.
+ * Loads one evaluation fixture: `repo/` is the tree at the head SHA and
+ * `base/` holds the previous contents of the modified files. Everything
+ * the pipeline sees is derived from those two trees.
  */
 import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join, posix, relative, resolve, sep } from "node:path";
@@ -109,11 +102,7 @@ function required(files: ReadonlyMap<string, string>, path: string, tree: string
   return contents;
 }
 
-/**
- * Loads one fixture by directory name. Synchronous on purpose: the
- * evaluation file needs the fixtures at module scope to name its
- * test cases after them.
- */
+/** Synchronous on purpose: the evaluation names its cases at module scope. */
 export function loadFixture(name: string): LoadedFixture {
   const dir = join(FIXTURES_DIR, name);
   const manifest = manifestSchema.parse(
@@ -133,8 +122,8 @@ export function loadFixture(name: string): LoadedFixture {
       .map((file) => file.path),
   );
 
-  // The base tree: unchanged files are identical to the head tree,
-  // modified files come from base/, and added files are absent.
+  // Unchanged files match the head tree, modified ones come from base/,
+  // and added files are absent.
   const baseOverrides = modifiedPaths.size === 0 ? new Map<string, string>() : readTree(join(dir, "base"));
   for (const path of baseOverrides.keys()) {
     if (!modifiedPaths.has(path)) {

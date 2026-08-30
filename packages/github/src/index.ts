@@ -1,15 +1,7 @@
 /**
- * @pr-review/github
- *
- * GitHub authentication, Octokit client, and read-only PR tools:
- * clients that load PR details, changed files, and diffs, and publish
- * the "AI PR Review" check run.
- *
- * One way in, one client out: createTokenClient wraps the workflow
- * token the GitHub Action is handed and returns a
- * GithubInstallationClient. The client body behind it (app.ts) is a
- * package-internal detail; OctokitLike is public only because
- * GithubTokenConfig lets a caller inject its own Octokit.
+ * One way in, one client out: createTokenClient wraps the workflow token
+ * and returns a GithubInstallationClient. OctokitLike is public only
+ * because GithubTokenConfig lets a caller inject its own Octokit.
  */
 export type { OctokitLike } from "./app.js";
 export { createTokenClient, type GithubTokenConfig } from "./token.js";

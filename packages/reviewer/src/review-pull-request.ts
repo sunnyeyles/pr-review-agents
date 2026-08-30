@@ -1,15 +1,7 @@
 /**
- * One review, end to end:
- *
- *   load PR -> runReviewPipeline -> renderCheckRun -> publish
- *
- * with a lifecycle log line at each step (spec §26).
- *
- * This is the shared body, kept separate from the delivery path that
- * triggers it. It owns the publish step deliberately: the side-effect
- * boundary (spec §17) is enforced here, once, not in each wrapper.
- *
- * Outside its scope: authentication and retries, both the caller's.
+ * One review, end to end: load PR -> runReviewPipeline -> renderCheckRun
+ * -> publish. The side-effect boundary is enforced here, once, rather
+ * than in each delivery-path wrapper.
  */
 import type { ReviewContext } from "@pr-review/ai";
 import type { GithubInstallationClient } from "@pr-review/github";
@@ -26,12 +18,7 @@ export interface ReviewTarget {
   headSha: string;
 }
 
-/**
- * Delivers the rendered review. The default publishes an "AI PR
- * Review" check run; the Action injects a variant that falls back to
- * the workflow job summary when the workflow token lacks
- * `checks: write` (fork pull requests).
- */
+/** Delivers the rendered review; the default publishes a check run. */
 export type PublishReview = (
   target: ReviewTarget,
   rendered: RenderedCheckRun,
@@ -40,30 +27,18 @@ export type PublishReview = (
 export interface ReviewPullRequestDeps {
   /** Authenticated read-only GitHub client for this repository. */
   client: GithubInstallationClient;
-  /**
-   * Runs the LangGraph pipeline: agents fan out over the loaded PR
-   * context, the Synthesiser refines their raw candidates, and the
-   * deterministic chain validates what survives.
-   *
-   * Throws only when every agent failed, so callers apply their own
-   * retry semantics. A synthesis failure never throws — it is reported
-   * on the result and the raw candidates are published instead.
-   */
+  /** Throws only when every agent failed; a synthesis failure is reported on the result. */
   runReviewPipeline: (
     client: GithubInstallationClient,
     context: ReviewContext,
   ) => Promise<ReviewPipelineResult>;
   /** Defaults to publishing a check run through `client`. */
   publishReview?: PublishReview | undefined;
-  /**
-   * Structured lifecycle logger (spec §26). Every event carries
-   * repository, PR number, and head SHA, so an operator can answer
-   * "what happened to the review for PR N?" from the logs alone.
-   */
+  /** Every event carries repository, PR number, and head SHA. */
   logger?: StructuredLogger | undefined;
 }
 
-/** The correlation fields every event of one review carries (spec §26). */
+/** The correlation fields every event of one review carries. */
 export function reviewCorrelation(
   target: ReviewTarget,
 ): Record<string, unknown> {
@@ -89,12 +64,7 @@ export function createCheckRunPublisher(
   };
 }
 
-/**
- * Logs the synthesis outcome the pipeline already computed — one of
- * skipped (no candidates), completed, or failed. A failure notes the
- * fallback: the raw candidates still flow through validateFindings, so
- * the review never dies from a synthesis failure.
- */
+/** Logs the synthesis outcome: skipped, completed, or failed. */
 function logSynthesisOutcome(
   logger: StructuredLogger,
   target: ReviewTarget,
@@ -130,11 +100,7 @@ function logSynthesisOutcome(
   });
 }
 
-/**
- * Reviews one pull request and publishes the result. Throws when the
- * pipeline fails outright (every agent produced invalid output) or the
- * publish step fails, leaving the retry decision to the caller.
- */
+/** Throws when the pipeline or the publish step fails; retries are the caller's. */
 export async function reviewPullRequest(
   target: ReviewTarget,
   {
@@ -161,9 +127,7 @@ export async function reviewPullRequest(
     diffLength: diff.length,
   });
 
-  // The AI boundary. Agent nodes only PROPOSE candidates; the
-  // synthesise node only REFINES them. Only the validate node's output
-  // (review.findings) ever reaches the GitHub API, via the code below.
+  // The AI boundary: only the validate node's output reaches GitHub.
   const review = await runReviewPipeline(client, {
     owner: target.owner,
     repo: target.repo,
@@ -171,8 +135,6 @@ export async function reviewPullRequest(
     changedFiles,
     diff,
   });
-  // Failed lenses reach the check run by name only; agent-runtime.ts
-  // already logged the error detail as agent.failed.
   logSynthesisOutcome(logger, target, review);
 
   logger.info("findings.validated", {

@@ -1,12 +1,7 @@
 /**
- * Token-usage accounting for model calls (observability):
- * every Anthropic response carries a `usage` block; the agent runtime
- * aggregates it across the turns of one agent run, and the Synthesiser
- * reports it for its single call, so agent.completed /
- * synthesis.completed events can say what a review cost in tokens.
- *
- * Four counters, not two: with caching, `input_tokens` is only the
- * uncached remainder and the three input counters bill differently.
+ * Token-usage accounting for model calls. Four counters, not two: with
+ * caching, `input_tokens` is only the uncached remainder and the three
+ * input counters bill differently.
  */
 import type Anthropic from "@anthropic-ai/sdk";
 

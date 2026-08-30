@@ -1,10 +1,6 @@
 /**
- * The on-demand evaluation project: the model-backed quality suite.
- *
- * Kept in its own config, and matching only `*.eval.ts`, so it can
- * never be picked up by the fast unit run — the root vitest.config.ts
- * lists the unit projects explicitly and this file is not one of them.
- * Run it with `pnpm eval`.
+ * The on-demand model-backed quality suite. Its own config, matching
+ * only `*.eval.ts`, so the fast unit run can never pick it up.
  */
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";

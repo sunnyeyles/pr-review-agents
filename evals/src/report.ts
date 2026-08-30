@@ -1,10 +1,6 @@
 /**
- * The human-readable side of an evaluation run.
- *
- * Pass/fail is what the command exits on, but a quality suite is only
- * useful if a failure can be read: which findings the reviewer
- * actually produced, how much context it went and fetched, and what it
- * cost. That is what this prints under each fixture.
+ * The human-readable side of an evaluation run: what the reviewer
+ * reported, how much context it fetched, and what it cost.
  */
 import type { CapturedLogEvent } from "@pr-review/logging";
 

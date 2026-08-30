@@ -1,23 +1,7 @@
 /**
- * Publishing the in-code system prompts to Langfuse.
- *
- * Managed prompts only pay for themselves once Langfuse actually holds
- * them: until then every review silently runs on its in-code fallback,
- * which looks identical in the output and completely different in the
- * logs. This module is the one place that writes, so a Langfuse project
- * can be brought up to the current build's prompts in one command.
- *
- * Deliberately separate from prompts.ts rather than folded into it.
- * LangfusePromptClient is a read-only seam and the action's runtime
- * path depends on that: a review has no business creating prompt
- * versions, and nothing on the review path can reach a writer it never
- * imports.
- *
- * The repository is the source of truth for the BASELINE, not for
- * every version. A prompt edited in the Langfuse UI keeps serving
- * reviews — that is the entire point of managing prompts there — and
- * is superseded only when someone runs the seeder again, which leaves
- * the edited version intact in Langfuse's history.
+ * Publishes the in-code system prompts to Langfuse. Kept separate from
+ * prompts.ts so nothing on the review path can reach a writer.
+ * The repository is the source of truth for the baseline, not every version.
  */
 import {
   createConsoleLogger,
@@ -43,14 +27,8 @@ export interface LabelledPrompt {
 }
 
 /**
- * Injectable seam over prompt WRITING, mirroring how
- * LangfusePromptClient wraps prompt reading. Production wraps
- * LangfuseClient; tests inject a stub, so the decision logic below is
- * exercised without a Langfuse project.
- *
- * `readLabelled` resolves to undefined for a prompt that does not
- * exist yet — "absent" is an ordinary outcome here (it is what a fresh
- * project looks like), not an error worth a stack trace.
+ * Injectable seam over prompt writing. `readLabelled` resolves to
+ * undefined for a prompt that does not exist yet, which is not an error.
  */
 export interface LangfusePromptWriter {
   readLabelled(
@@ -84,9 +62,8 @@ export function createLangfusePromptWriter(
       }
     },
     async publish({ name, text, label, commitMessage }) {
-      // A Langfuse deployment label points at exactly one version, so
-      // creating a version that carries the label also moves it off
-      // whichever version held it before. No separate update call.
+      // A label points at exactly one version, so creating a version
+      // with the label also moves it off the previous holder.
       const created = await client.prompt.create({
         name,
         prompt: text,
@@ -99,11 +76,7 @@ export function createLangfusePromptWriter(
   };
 }
 
-/**
- * Whether a rejected fetch means "no such prompt" rather than a real
- * failure. Checked structurally: the SDK's error classes are not part
- * of its public surface, but the HTTP status is stable.
- */
+/** Checked structurally: the SDK's error classes are not public, but the status is. */
 function isNotFound(error: unknown): boolean {
   return (
     typeof error === "object" &&
@@ -113,14 +86,7 @@ function isNotFound(error: unknown): boolean {
   );
 }
 
-/**
- * What one seed run did to one prompt.
- *
- * `rejected` is the interesting one: the prompt failed the same
- * contract guard loadManagedPrompts applies to fetched text, so
- * publishing it would install a version that every review refuses and
- * falls back from — a silent no-op dressed up as a successful seed.
- */
+/** What one seed run did to one prompt. `rejected` means it failed the contract guard. */
 export type SeedOutcome =
   | "created"
   | "updated"
@@ -141,18 +107,9 @@ export interface SeedManagedPromptsOptions {
 export type SeedReport = Record<ManagedPromptId, SeedOutcome>;
 
 /**
- * Publishes each managed prompt that Langfuse does not already hold at
- * this label.
- *
- * Idempotent by comparison, not by luck: an unchanged prompt costs one
- * read and no version. That matters because Langfuse versions are
- * permanent — a seeder that pushed unconditionally would bury the real
- * prompt history under identical re-runs.
- *
- * Never rejects. One prompt failing leaves the other three publishable,
- * the same isolation loadManagedPrompts gives each fetch, so a partial
- * outcome is reported rather than hidden behind whichever prompt
- * happened to fail first.
+ * Publishes each managed prompt Langfuse does not already hold at this
+ * label. Unchanged prompts create no version — Langfuse versions are
+ * permanent. Never rejects; each prompt succeeds or fails alone.
  */
 export async function seedManagedPrompts(
   writer: LangfusePromptWriter,
