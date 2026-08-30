@@ -168,10 +168,7 @@ export function createSynthesiser(deps: SynthesiserDeps): Synthesiser {
         }
         observation.update({
           output: { findingCount: output.findings.length },
-          metadata: {
-            inputTokens: usage.inputTokens,
-            outputTokens: usage.outputTokens,
-          },
+          metadata: { ...usage },
         });
         return { findings: output.findings, usage };
       } catch (error) {

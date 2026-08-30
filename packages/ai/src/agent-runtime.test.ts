@@ -23,6 +23,7 @@ import {
   makeGithub,
   message,
   pullRequest,
+  systemPromptOf,
   textBlock,
   toolUseBlock,
 } from "./agent-test-support.js";
@@ -44,7 +45,7 @@ function makeAgent(
   responses: Anthropic.Messages.Message[],
   options: { maxTurns?: number; systemPrompts?: ReviewSystemPrompts } = {},
 ) {
-  const { anthropic, create } = makeAnthropic(responses);
+  const { anthropic, create, requests } = makeAnthropic(responses);
   const github = makeGithub();
   const { logger, entries } = createCapturingLogger();
   const agent = createReviewAgent(correctnessLens, {
@@ -57,7 +58,7 @@ function makeAgent(
       ? { systemPrompts: options.systemPrompts }
       : {}),
   });
-  return { agent, create, github, entries };
+  return { agent, create, requests, github, entries };
 }
 
 describe("the Correctness agent", () => {
@@ -114,7 +115,7 @@ describe("the Correctness agent", () => {
 
     await agent.run(context);
 
-    const system = String(create.mock.calls[0]?.[0]?.system);
+    const system = systemPromptOf(create.mock.calls[0]?.[0]);
     // Spec §21: repository contents are data, comments are not
     // instructions, tool results grant no permissions, findings only
     // via the final JSON — and §9/§14: correctness focus, no style.
@@ -468,6 +469,90 @@ describe("lifecycle events (spec §26)", () => {
   });
 });
 
+describe("prompt caching", () => {
+  it("marks the system prompt as a cache breakpoint on every turn", async () => {
+    // Render order is tools -> system -> messages, so the marker on the
+    // last system block caches the tool schemas too.
+    const { agent, create } = makeAgent([
+      message([toolUseBlock("toolu_1", "get_diff", {})], "tool_use"),
+      message([textBlock(finalJson)], "end_turn"),
+    ]);
+
+    await agent.run(context);
+
+    expect(create).toHaveBeenCalledTimes(2);
+    for (const [params] of create.mock.calls) {
+      expect(params.system).toEqual([
+        {
+          type: "text",
+          text: buildReviewSystemPrompt(correctnessLens),
+          cache_control: { type: "ephemeral" },
+        },
+      ]);
+    }
+  });
+
+  it("asks for automatic caching of the growing conversation tail", async () => {
+    const { agent, create } = makeAgent([
+      message([textBlock(finalJson)], "end_turn"),
+    ]);
+
+    await agent.run(context);
+
+    expect(create.mock.calls[0]?.[0]?.cache_control).toEqual({
+      type: "ephemeral",
+    });
+  });
+
+  it("sends a byte-identical prefix between turns, so the cache can hit", async () => {
+    // The property caching depends on: turn two repeats turn one's
+    // prompt unchanged and only appends.
+    const { agent, requests } = makeAgent([
+      message([toolUseBlock("toolu_1", "get_diff", {})], "tool_use"),
+      message([textBlock(finalJson)], "end_turn"),
+    ]);
+
+    await agent.run(context);
+
+    const [first, second] = requests;
+    expect(second?.system).toEqual(first?.system);
+    expect(second?.tools).toEqual(first?.tools);
+    expect(second?.cache_control).toEqual(first?.cache_control);
+    expect(second?.messages.slice(0, first?.messages.length)).toEqual(
+      first?.messages,
+    );
+    expect(second?.messages.length).toBeGreaterThan(first?.messages.length ?? 0);
+  });
+
+  it("reports cache writes and reads separately on agent.completed", async () => {
+    // The shape a working cache produces: turn one writes the prefix,
+    // turn two reads it back.
+    const { agent, entries } = makeAgent([
+      message([toolUseBlock("toolu_1", "get_diff", {})], "tool_use", {
+        inputTokens: 12,
+        outputTokens: 10,
+        cacheCreationInputTokens: 4_000,
+      }),
+      message([textBlock(finalJson)], "end_turn", {
+        inputTokens: 8,
+        outputTokens: 25,
+        cacheCreationInputTokens: 300,
+        cacheReadInputTokens: 4_000,
+      }),
+    ]);
+
+    await agent.run(context);
+
+    expect(entries[1]).toMatchObject({
+      event: "agent.completed",
+      inputTokens: 20,
+      cacheCreationInputTokens: 4_300,
+      cacheReadInputTokens: 4_000,
+      outputTokens: 35,
+    });
+  });
+});
+
 describe("pre-resolved system prompts", () => {
   it("uses the injected prompt for a lens that has one", async () => {
     const injected = "INJECTED CORRECTNESS SYSTEM PROMPT";
@@ -478,7 +563,7 @@ describe("pre-resolved system prompts", () => {
 
     await agent.run(context);
 
-    expect(create.mock.calls[0]?.[0]?.system).toBe(injected);
+    expect(systemPromptOf(create.mock.calls[0]?.[0])).toBe(injected);
   });
 
   it("falls back to the in-code prompt for a lens that has none", async () => {
@@ -490,7 +575,7 @@ describe("pre-resolved system prompts", () => {
 
     await agent.run(context);
 
-    expect(create.mock.calls[0]?.[0]?.system).toBe(
+    expect(systemPromptOf(create.mock.calls[0]?.[0])).toBe(
       buildReviewSystemPrompt(correctnessLens),
     );
   });

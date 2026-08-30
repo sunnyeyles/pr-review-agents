@@ -82,10 +82,21 @@ export function toolUseBlock(
   return { type: "tool_use", id, name, input, caller: { type: "direct" } };
 }
 
+/**
+ * A scripted response's usage block. Cache counters default to absent,
+ * the shape a response with no caching returns.
+ */
+export interface ScriptedUsage {
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationInputTokens?: number;
+  cacheReadInputTokens?: number;
+}
+
 export function message(
   content: Anthropic.Messages.ContentBlock[],
   stopReason: Anthropic.Messages.Message["stop_reason"],
-  usage: { inputTokens: number; outputTokens: number } = {
+  usage: ScriptedUsage = {
     inputTokens: 1,
     outputTokens: 1,
   },
@@ -104,8 +115,8 @@ export function message(
       input_tokens: usage.inputTokens,
       output_tokens: usage.outputTokens,
       cache_creation: null,
-      cache_creation_input_tokens: null,
-      cache_read_input_tokens: null,
+      cache_creation_input_tokens: usage.cacheCreationInputTokens ?? null,
+      cache_read_input_tokens: usage.cacheReadInputTokens ?? null,
       inference_geo: null,
       output_tokens_details: null,
       server_tool_use: null,
@@ -114,11 +125,31 @@ export function message(
   };
 }
 
-/** A scripted fake Anthropic client that replays queued responses. */
+/**
+ * The system prompt text of one recorded request — the runtime sends
+ * `system` as a block array so it can carry the caching breakpoint.
+ */
+export function systemPromptOf(
+  params: Anthropic.Messages.MessageCreateParamsNonStreaming | undefined,
+): string {
+  const system = params?.system;
+  if (typeof system === "string") {
+    return system;
+  }
+  return (system ?? []).map((block) => block.text).join("");
+}
+
+/**
+ * A scripted fake Anthropic client that replays queued responses.
+ * `requests` holds a deep copy of each request as sent: the loop
+ * mutates one `messages` array in place, so live args would alias.
+ */
 export function makeAnthropic(responses: Anthropic.Messages.Message[]) {
   const queue = [...responses];
+  const requests: Anthropic.Messages.MessageCreateParamsNonStreaming[] = [];
   const create = vi.fn(
-    async (_params: Anthropic.Messages.MessageCreateParamsNonStreaming) => {
+    async (params: Anthropic.Messages.MessageCreateParamsNonStreaming) => {
+      requests.push(structuredClone(params));
       const next = queue.shift();
       if (!next) {
         throw new Error("fake anthropic client ran out of scripted responses");
@@ -126,7 +157,7 @@ export function makeAnthropic(responses: Anthropic.Messages.Message[]) {
       return next;
     },
   );
-  return { anthropic: { messages: { create } }, create };
+  return { anthropic: { messages: { create } }, create, requests };
 }
 
 export function makeGithub() {

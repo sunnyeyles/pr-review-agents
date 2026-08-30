@@ -54,6 +54,10 @@ export const DEFAULT_MAX_TURNS = 12;
 /** Output budget per model call (response text + tool requests). */
 const MAX_OUTPUT_TOKENS = 16_000;
 
+// Marks the cache breakpoints. Nothing above them may vary between
+// turns, or the cache stops hitting silently.
+const CACHE_CONTROL = { type: "ephemeral" } as const;
+
 /** The opening message embeds at most this much of the diff. */
 const MAX_DIFF_CHARS = 80_000;
 
@@ -282,7 +286,14 @@ export function createReviewAgent(
             deps.anthropic.messages.create({
               model: deps.model,
               max_tokens: MAX_OUTPUT_TOKENS,
-              system: systemPrompt,
+              cache_control: CACHE_CONTROL,
+              system: [
+                {
+                  type: "text",
+                  text: systemPrompt,
+                  cache_control: CACHE_CONTROL,
+                },
+              ],
               tools: anthropicToolDefinitions,
               messages,
             }),
@@ -380,16 +391,14 @@ export function createReviewAgent(
         logger.info("agent.completed", {
           ...eventFields,
           durationMs: Date.now() - startedAt,
-          inputTokens: usage.inputTokens,
-          outputTokens: usage.outputTokens,
+          ...usage,
           findingCount: findings.length,
         });
         agentObservation
           .update({
             output: { findingCount: findings.length },
             metadata: {
-              inputTokens: usage.inputTokens,
-              outputTokens: usage.outputTokens,
+              ...usage,
             },
           })
           .end();
@@ -398,8 +407,7 @@ export function createReviewAgent(
         logger.error("agent.failed", {
           ...eventFields,
           durationMs: Date.now() - startedAt,
-          inputTokens: usage.inputTokens,
-          outputTokens: usage.outputTokens,
+          ...usage,
           error: errorMessage(error),
           errorName: errorName(error),
         });
@@ -408,8 +416,7 @@ export function createReviewAgent(
             level: "ERROR",
             statusMessage: errorMessage(error),
             metadata: {
-              inputTokens: usage.inputTokens,
-              outputTokens: usage.outputTokens,
+              ...usage,
             },
           })
           .end();

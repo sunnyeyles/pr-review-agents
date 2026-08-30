@@ -1,4 +1,4 @@
-import type { ReviewAgent, ReviewContext } from "@pr-review/ai";
+import { emptyTokenUsage, type ReviewAgent, type ReviewContext } from "@pr-review/ai";
 import type { ChangedFile } from "@pr-review/github";
 import type { ReviewFinding } from "@pr-review/schemas";
 import { describe, expect, it } from "vitest";
@@ -43,7 +43,7 @@ function agent(name: string, run: ReviewAgent["run"]): ReviewAgent {
 function passthroughSynthesiser(): Synthesiser {
   return {
     async synthesise(candidates) {
-      return { findings: candidates as ReviewFinding[], usage: { inputTokens: 0, outputTokens: 0 } };
+      return { findings: candidates as ReviewFinding[], usage: emptyTokenUsage() };
     },
   };
 }
@@ -230,7 +230,7 @@ describe("runReviewPipeline: synthesis (spec §16)", () => {
     const synthesiser: Synthesiser = {
       async synthesise(candidates) {
         expect(candidates).toEqual([raw]);
-        return { findings: [refined], usage: { inputTokens: 10, outputTokens: 5 } };
+        return { findings: [refined], usage: { ...emptyTokenUsage(), inputTokens: 10, outputTokens: 5 } };
       },
     };
 
@@ -272,7 +272,7 @@ describe("runReviewPipeline: deterministic validation (spec §17)", () => {
     const fabricated = makeFinding({ file: "src/not-part-of-this-pr.ts", line: 7 });
     const synthesiser: Synthesiser = {
       async synthesise() {
-        return { findings: [fabricated], usage: { inputTokens: 0, outputTokens: 0 } };
+        return { findings: [fabricated], usage: emptyTokenUsage() };
       },
     };
 

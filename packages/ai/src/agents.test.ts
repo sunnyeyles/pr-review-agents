@@ -21,6 +21,7 @@ import {
   makeFinding,
   makeGithub,
   message,
+  systemPromptOf,
   textBlock,
 } from "./agent-test-support.js";
 import {
@@ -232,7 +233,7 @@ describe("prompt wiring", () => {
 
       await createReviewAgent(lens, deps).run(context);
 
-      expect(create.mock.calls[0]?.[0]?.system).toBe(
+      expect(systemPromptOf(create.mock.calls[0]?.[0])).toBe(
         buildReviewSystemPrompt(lens),
       );
     }

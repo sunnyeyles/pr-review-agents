@@ -1,4 +1,4 @@
-import type { ReviewContext } from "@pr-review/ai";
+import { emptyTokenUsage, type ReviewContext } from "@pr-review/ai";
 import type {
   ChangedFile,
   CreateCheckRunInput,
@@ -81,7 +81,7 @@ function reviewResult(
     agentFailures: [],
     synthesisedCandidateCount: candidates.length,
     synthesisOutcome: candidates.length === 0 ? "skipped" : "completed",
-    synthesisUsage: { inputTokens: 0, outputTokens: 0 },
+    synthesisUsage: emptyTokenUsage(),
     findings: candidates as ReviewFinding[],
     ...overrides,
   };
