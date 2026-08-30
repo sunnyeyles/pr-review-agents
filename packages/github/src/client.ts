@@ -64,10 +64,7 @@ export type CheckRunConclusion = "success" | "failure" | "neutral";
 
 export type AnnotationLevel = "notice" | "warning" | "failure";
 
-/**
- * One inline annotation on a check run, in the shape the GitHub checks
- * API expects. The API accepts at most 50 annotations per request.
- */
+/** One inline annotation; the checks API accepts at most 50 per request. */
 export interface CheckRunAnnotation {
   path: string;
   start_line: number;
@@ -84,10 +81,7 @@ export interface CheckRunOutput {
   annotations?: CheckRunAnnotation[] | undefined;
 }
 
-/**
- * Input for publishing a completed check run. The name is not
- * configurable: every check run is published as CHECK_RUN_NAME.
- */
+/** Every check run is published as CHECK_RUN_NAME; the name is not configurable. */
 export interface CreateCheckRunInput {
   owner: string;
   repo: string;
@@ -101,10 +95,8 @@ export interface CheckRun {
 }
 
 /**
- * One inline comment on a pull request review. `line` is a new-side
- * line number and must fall inside the pull request's diff — GitHub
- * rejects the whole review, not just the offending comment, when it
- * does not.
+ * One inline comment on a review. `line` is a new-side line number that
+ * must fall inside the diff; GitHub rejects the whole review otherwise.
  */
 export interface ReviewComment {
   path: string;
@@ -112,12 +104,7 @@ export interface ReviewComment {
   body: string;
 }
 
-/**
- * Input for publishing one review. The event is not configurable:
- * every review is posted as a COMMENT, never APPROVE or
- * REQUEST_CHANGES, because the review is advisory and must not gate a
- * merge.
- */
+/** Every review is posted as a COMMENT, never APPROVE or REQUEST_CHANGES. */
 export interface CreateReviewInput {
   owner: string;
   repo: string;
@@ -138,12 +125,9 @@ export interface ExistingReviewComment {
 }
 
 /**
- * A GitHub client authenticated for one repository's installation.
- * Everything is read-only except createCheckRun and createReview, the
- * system's two write paths. The read-only surface (including
- * getFileContents and searchCode, which back the review agents' tools)
- * is always repository-scoped: every method takes an explicit
- * owner/repo and never reaches beyond it.
+ * A GitHub client for one repository's installation. Read-only except
+ * createCheckRun and createReview, and every method is explicitly
+ * repository-scoped.
  */
 export interface GithubInstallationClient {
   getPullRequest(ref: PullRequestRef): Promise<PullRequestDetails>;

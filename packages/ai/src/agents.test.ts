@@ -1,8 +1,6 @@
 /**
- * The three review lenses over the shared agent runtime: names,
- * lens-focused and §21-hardened system prompts, the identical six-tool
- * read-only toolset, and genuinely concurrent execution over one PR
- * context. Model calls are always scripted fakes — no real network.
+ * The three review lenses over the shared agent runtime. Model calls are
+ * always scripted fakes.
  */
 import type Anthropic from "@anthropic-ai/sdk";
 import { createCapturingLogger } from "@pr-review/logging";
@@ -67,13 +65,8 @@ function makeDeps(responses: Anthropic.Messages.Message[]) {
 }
 
 /**
- * Asserts the prompt-injection hardening and output contract every
- * lens prompt must carry.
- *
- * The rules live in reviewPromptContractProblems rather than here so
- * that ONE definition governs both the prompts this repo ships and the
- * ones fetched from Langfuse. Asserting them separately here is what
- * previously let the remote gate drift weaker than this bar.
+ * The rules live in reviewPromptContractProblems so one definition
+ * governs both shipped prompts and ones fetched from Langfuse.
  */
 function expectInjectionHardened(system: string, category: FindingCategory): void {
   expect(reviewPromptContractProblems(system, category)).toEqual([]);
@@ -107,12 +100,7 @@ describe("agent names", () => {
   });
 });
 
-/**
- * Selecting a subset of the lenses. The pipeline below this already
- * copes with any number of agents — buildReviewGraph takes a list and
- * makeJoinNode counts it — so the whole of the feature is getting the
- * list right, which is what these pin.
- */
+/** The pipeline already copes with any number of agents, so these pin the list. */
 describe("resolveReviewLenses", () => {
   const names = (selection: string): string[] =>
     resolveReviewLenses(selection).map((lens) => lens.category);
@@ -134,8 +122,7 @@ describe("resolveReviewLenses", () => {
   });
 
   it("returns the subset in spec order, never the caller's order", () => {
-    // Agent order decides candidate order in `join`, so the result must
-    // not depend on how the input happened to be typed.
+    // Agent order decides candidate order in `join`.
     expect(names("architecture,correctness")).toEqual([
       "correctness",
       "architecture",
@@ -154,8 +141,7 @@ describe("resolveReviewLenses", () => {
   });
 
   it("rejects an unknown name instead of silently dropping it", () => {
-    // A dropped name would run a narrower review than asked for and
-    // report nothing, which is indistinguishable from a clean review.
+    // A dropped name would look exactly like a clean review.
     expect(() => resolveReviewLenses("secuirty")).toThrow(
       /Unknown review agent: secuirty/,
     );
@@ -257,10 +243,8 @@ describe("prompt wiring", () => {
 
 describe("three lenses over one PR context", () => {
   it("runs concurrently and each returns findings in its own category", async () => {
-    // Each fake model call resolves only once ALL THREE agents have
-    // issued their first call: if the agents ran sequentially instead
-    // of concurrently, the first agent would wait forever and the test
-    // would time out.
+    // Each fake call resolves only once all three agents have called,
+    // so sequential execution would deadlock this test.
     const started: string[] = [];
     let releaseAll = (): void => {};
     const allStarted = new Promise<void>((resolve) => {

@@ -1,53 +1,25 @@
 /**
- * @pr-review/logging
- *
- * The shared structured-logging seam for observability. Every
- * lifecycle event (review.received, review.queued, review.started,
- * agent.started/completed/failed, synthesis.*, review.published,
- * review.failed) is emitted through the StructuredLogger interface as
- * ONE single-line JSON object, which CloudWatch ingests as one
- * structured log event per line.
- *
- * Placement decision (ticket 10): logging lives in its own tiny
- * zero-dependency package rather than inside @pr-review/schemas, so
- * the schemas package stays purely data contracts (Zod schemas and
- * types) while logging remains a cross-cutting runtime concern that
- * every package and app can depend on without cycles.
- *
- * Seam convention: production code defaults to createConsoleLogger()
- * (stdout/stderr → CloudWatch); tests inject createCapturingLogger()
- * and assert on the recorded entries — no console spying required.
- *
- * Fields must be JSON-serialisable and must NEVER contain secrets
- * (tokens, keys, webhook secrets) — log identifiers, counts,
- * durations, and error messages only.
+ * The shared structured-logging seam: every lifecycle event is one
+ * single-line JSON object. Fields must be JSON-serialisable and must
+ * never contain secrets.
  */
 export type LogLevel = "info" | "error";
 
 /** Extra structured fields on one log line. Never include secrets. */
 export type LogFields = Record<string, unknown>;
 
-/**
- * The structured logger every pipeline stage receives. `info` records
- * normal lifecycle progress; `error` records failure events (routed to
- * stderr by the console logger so they stand out in CloudWatch).
- */
+/** The structured logger every pipeline stage receives. */
 export interface StructuredLogger {
   info(event: string, fields?: LogFields): void;
   error(event: string, fields?: LogFields): void;
 }
 
 function logLine(level: LogLevel, event: string, fields: LogFields): string {
-  // JSON.stringify drops undefined-valued fields, keeping lines clean
-  // when an optional value (e.g. token usage) is absent.
+  // JSON.stringify drops undefined-valued fields, keeping lines clean.
   return JSON.stringify({ level, event, ...fields });
 }
 
-/**
- * The production logger: one single-line JSON object per event, info
- * to stdout and error to stderr, both of which the Actions runner
- * captures into the workflow run's log stream.
- */
+/** The production logger: info to stdout, error to stderr. */
 export function createConsoleLogger(): StructuredLogger {
   return {
     info(event, fields = {}) {
@@ -71,11 +43,7 @@ export interface CapturingLogger {
   entries: CapturedLogEvent[];
 }
 
-/**
- * A logger that records events into an array instead of writing to the
- * console — the test-side of the seam (usable anywhere event buffering
- * is needed; it has no test-framework dependency).
- */
+/** Records events into an array instead of the console; no test-framework dependency. */
 export function createCapturingLogger(): CapturingLogger {
   const entries: CapturedLogEvent[] = [];
   return {
@@ -91,14 +59,7 @@ export function createCapturingLogger(): CapturingLogger {
   };
 }
 
-/**
- * The message to log for a thrown value.
- *
- * Every failure path needs this, and a `catch` binding is `unknown`:
- * anything can be thrown, so the non-Error case has to be handled.
- * Keeping one definition means "what do we log for a non-Error throw"
- * is decided once rather than at each call site.
- */
+/** The message to log for a thrown value; a `catch` binding is `unknown`. */
 export function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }

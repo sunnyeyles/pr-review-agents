@@ -13,29 +13,17 @@ import { inspectEvent } from "./event.js";
 export interface ActionHandlerDeps {
   /** Token-authenticated read-only client for this repository. */
   client: GithubInstallationClient;
-  /**
-   * Runs the LangGraph pipeline (agents -> join -> synthesise ->
-   * validate). Throws when every agent failed, failing the workflow
-   * step so the run can be retried from the Actions UI.
-   */
+  /** Throws when every agent failed, so the workflow step fails and can be re-run. */
   runReviewPipeline: (
     client: GithubInstallationClient,
     context: ReviewContext,
   ) => Promise<ReviewPipelineResult>;
-  /**
-   * Delivers the rendered review. In the entrypoint this is the
-   * check-run publisher wrapped in the job-summary fallback; tests
-   * inject a recording stub.
-   */
+  /** In the entrypoint, the check-run publisher wrapped in the job-summary fallback. */
   publishReview: PublishReview;
   logger?: StructuredLogger | undefined;
 }
 
-/**
- * What one Action run did. `reviewed: false` is a normal outcome — the
- * workflow fired on an event that is not a reviewable pull request —
- * and must not fail the step.
- */
+/** `reviewed: false` is a normal outcome and must not fail the step. */
 export type ActionResult =
   | { reviewed: true }
   | { reviewed: false; reason: string };
@@ -46,13 +34,9 @@ export type ActionHandler = (
 ) => Promise<ActionResult>;
 
 /**
- * Builds the Action handler: inspect the workflow event, and if it is a
- * reviewable pull request, hand it to reviewPullRequest — the shared
- * body that loads the PR, runs the pipeline, and publishes the result.
- *
- * Only two things are specific to this delivery path, and both live
- * here and in event.ts: Actions event parsing and the ignore-quietly
- * rule.
+ * Inspects the workflow event and hands a reviewable pull request to
+ * reviewPullRequest. Only the event parsing and the ignore-quietly rule
+ * are specific to this delivery path.
  */
 export function createActionHandler({
   client,

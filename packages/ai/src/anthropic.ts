@@ -1,10 +1,6 @@
 /**
- * The Anthropic model client seam. The agents consume only this slice
- * of the official SDK; the real SDK satisfies it structurally and
- * tests inject scripted fakes so no model calls happen in tests.
- *
- * The model id is NEVER hard-coded: it always arrives via
- * configuration (the ANTHROPIC_MODEL environment variable, spec §12).
+ * The Anthropic model client seam — the slice of the SDK the agents
+ * consume. The model id always arrives via configuration.
  */
 import Anthropic from "@anthropic-ai/sdk";
 

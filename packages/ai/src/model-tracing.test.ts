@@ -1,8 +1,4 @@
-/**
- * The generation observation both packages now share. These assert the
- * span SHAPE — the thing that previously drifted because agent-runtime
- * and the synthesiser each wrote their own copy of it.
- */
+/** The shape of the generation observation both packages share. */
 import { describe, expect, it, vi } from "vitest";
 
 import { traceModelCall, type GenerationParent } from "./model-tracing.js";
@@ -88,8 +84,7 @@ describe("traceModelCall", () => {
     ).rejects.toThrow("overloaded");
 
     expect(updates).toEqual([{ level: "ERROR", statusMessage: "overloaded" }]);
-    // An unended observation is never exported, so the failure path
-    // must end it exactly as the success path does.
+    // An unended observation is never exported.
     expect(endCount()).toBe(1);
   });
 

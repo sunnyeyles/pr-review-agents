@@ -1,15 +1,6 @@
 /**
- * @pr-review/action — the GitHub Action entrypoint.
- *
- * Wiring only: read action inputs, build the clients, hand off to the
- * handler. The review itself is shared code (@pr-review/reviewer).
- *
- * The runner supplies what this app therefore doesn't: compute, retries
- * (re-run the workflow), and credentials (no secrets store — the
- * Anthropic key is an action input, the GitHub token is the workflow's).
- *
- * Failure: a review that fails outright fails the step. An event that
- * is not a reviewable pull request is a clean no-op.
+ * The GitHub Action entrypoint. Wiring only: read action inputs, build
+ * the clients, hand off to the handler.
  */
 import { readFile } from "node:fs/promises";
 import process from "node:process";
@@ -55,11 +46,7 @@ import {
 } from "./langfuse.js";
 import { createFallbackPublisher } from "./summary.js";
 
-/**
- * Everything the entrypoint reads from outside itself. Production
- * passes {@link actionEnvironment}; tests pass fakes, so the entrypoint
- * runs without a runner, a filesystem, or a model.
- */
+/** Everything the entrypoint reads from outside itself; tests pass fakes. */
 export interface ActionEnvironment {
   /** The process environment the action's inputs arrive in. */
   env: Record<string, string | undefined>;
@@ -93,10 +80,8 @@ export function actionEnvironment(): ActionEnvironment {
 }
 
 /**
- * Reads an action input. GitHub exposes `with:` entries as
- * INPUT_<NAME> with the name uppercased and spaces replaced by
- * underscores (dashes are preserved) — the same rule @actions/core
- * implements, reproduced here so the bundle stays dependency-free.
+ * Reads an action input. GitHub exposes `with:` entries as INPUT_<NAME>,
+ * uppercased with spaces replaced by underscores.
  */
 export function getInput(
   env: Record<string, string | undefined>,
@@ -126,13 +111,8 @@ export interface LangfuseInputs {
 }
 
 /**
- * Decides whether this run uses Langfuse at all, from the action
- * inputs. Returning undefined means the review runs on its in-code
- * prompts and exports no traces — the default, and the only behaviour
- * available before these inputs existed.
- *
- * Both keys are needed for either feature: prompt fetching and span
- * export authenticate the same way.
+ * undefined means the review runs on in-code prompts and exports no
+ * traces. Both keys are needed: the two features authenticate the same way.
  */
 export function resolveLangfuseInputs(
   env: Record<string, string | undefined>,
@@ -142,14 +122,11 @@ export function resolveLangfuseInputs(
   const secretKey = getInput(env, "langfuse-secret-key");
 
   if (publicKey === "" && secretKey === "") {
-    // The default. Saying so on every run would be noise.
     return undefined;
   }
   if (publicKey === "" || secretKey === "") {
-    // Half-configured is a mistake worth naming: the review still runs,
-    // but prompt edits and traces silently go nowhere, which is hard to
-    // diagnose from the outside. Report which side is missing, never
-    // the value of the side that is present.
+    // Half-configured: the review still runs, but prompt edits and
+    // traces silently go nowhere. Never log the key that is present.
     logger.error("langfuse.disabled_incomplete_credentials", {
       missingInput:
         publicKey === "" ? "langfuse-public-key" : "langfuse-secret-key",
@@ -160,21 +137,14 @@ export function resolveLangfuseInputs(
   return {
     publicKey,
     secretKey,
-    // action.yml defaults both, but a caller invoking the bundle
-    // directly does not go through it, so the library constants are
-    // the single definition and action.yml only documents them.
+    // The library constants are the single definition; a caller
+    // invoking the bundle directly never goes through action.yml.
     baseUrl: getInput(env, "langfuse-base-url") || DEFAULT_LANGFUSE_BASE_URL,
     promptLabel: getInput(env, "langfuse-prompt-label") || DEFAULT_PROMPT_LABEL,
   };
 }
 
-/**
- * Resolves the managed system prompts, absorbing every failure.
- *
- * loadManagedPrompts already falls back per prompt and never rejects;
- * this wrapper covers the one part that still can — building the
- * client — so a Langfuse problem can never fail a review.
- */
+/** Covers the one part loadManagedPrompts cannot: building the client. */
 async function resolveManagedPrompts(
   environment: ActionEnvironment,
   inputs: LangfuseInputs,
@@ -199,12 +169,7 @@ async function resolveManagedPrompts(
   }
 }
 
-/**
- * One action run, in order: resolve the lenses, build the Anthropic and
- * GitHub clients, start tracing, resolve the prompts, then hand the
- * event payload to the handler. Failures propagate to runEntrypoint's
- * catch — the single place a failed review is reported.
- */
+/** One action run. Failures propagate to runEntrypoint's catch. */
 export async function runAction(
   environment: ActionEnvironment = actionEnvironment(),
 ): Promise<void> {
@@ -219,15 +184,10 @@ export async function runAction(
   const payload: unknown = JSON.parse(await environment.readEventFile(eventPath));
   const eventName = env["GITHUB_EVENT_NAME"] ?? "";
 
-  // Resolved before any client is built: an unrecognised agent name is
-  // a typo in the workflow file, and it must cost nothing to discover.
-  // resolveReviewLenses throws rather than dropping the name, so the
-  // step fails here instead of running a review that reports nothing
-  // and looks exactly like a clean one.
+  // Resolved before any client is built, so a typo'd agent name fails
+  // the step rather than producing a review that looks clean.
   const lenses = resolveReviewLenses(getInput(env, "agents"));
   if (lenses.length < reviewLenses.length) {
-    // Only worth saying when the run is NOT the default set — the same
-    // argument resolveLangfuseInputs makes about its own default.
     logger.info("review.agents_selected", {
       agents: lenses.map((lens) => lens.category),
     });
@@ -239,34 +199,24 @@ export async function runAction(
   const model = requireInput(env, "model");
 
   const langfuse = resolveLangfuseInputs(env, logger);
-  // Tracing starts before the prompt fetch so the fetch's own spans are
-  // captured, and the prompts are resolved before anything that
-  // consumes them is built.
+  // Tracing starts before the prompt fetch so the fetch's spans are captured.
   const tracing =
     langfuse === undefined
       ? undefined
       : environment.createLangfuseRuntime({
-          // No `environment`: Langfuse treats it as a slug naming a
-          // deployment stage, and the obvious candidate here
-          // (GITHUB_REPOSITORY) is a slash-separated path, not a stage.
-          // The commit is a genuine release identifier, so it maps.
           publicKey: langfuse.publicKey,
           secretKey: langfuse.secretKey,
           baseUrl: langfuse.baseUrl,
           release: env["GITHUB_SHA"],
         });
-  // Everything below may emit spans, so it all sits inside the
-  // block whose finally flushes them.
+  // Everything below may emit spans, so it sits inside the flushing block.
   try {
     const prompts =
       langfuse === undefined
         ? undefined
         : await resolveManagedPrompts(environment, langfuse);
 
-    // The Synthesiser (spec §16) shares the agents' client and model:
-    // §16 defines no separate model configuration. It is
-    // repository-independent (no GitHub tools), so one instance serves
-    // the single review this process performs.
+    // Repository-independent, so one instance serves the whole run.
     const synthesiser = createSynthesiser({
       anthropic,
       model,
@@ -300,8 +250,7 @@ export async function runAction(
           synthesiser,
           context,
         ),
-      // Check run first; job summary when the workflow token cannot
-      // create one (fork pull requests).
+      // Check run first; job summary when the token cannot create one (forks).
       publishReview: createFallbackPublisher({
         publishCheckRun: createCheckRunPublisher(client),
         summaryPath: env["GITHUB_STEP_SUMMARY"],
@@ -312,8 +261,7 @@ export async function runAction(
 
     await handler(payload, eventName);
   } finally {
-    // A flush failure is worth knowing about but never worth failing a
-    // review that already ran.
+    // A flush failure never fails a review that already ran.
     if (tracing !== undefined) {
       try {
         await tracing.forceFlush();
@@ -326,11 +274,7 @@ export async function runAction(
   }
 }
 
-/**
- * The entrypoint guard and its top-level catch. Only runs as the action
- * entrypoint; importing this module (tests, bundle smoke checks)
- * performs no work and needs no configuration.
- */
+/** The entrypoint guard: importing this module performs no work. */
 export function runEntrypoint(
   environment: ActionEnvironment = actionEnvironment(),
 ): void {

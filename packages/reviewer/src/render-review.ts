@@ -1,18 +1,8 @@
 /**
- * Renders validated findings into a pull request review: a body, and
- * one inline comment per line-anchored finding. Pure — the caller owns
- * the GitHub API call.
- *
- * Why a review as well as a check run: a check annotation cannot be
- * replied to or resolved. A review comment is a thread, so a finding
- * becomes something a reader answers and ticks off rather than a
- * notice they scroll past.
- *
- * Anchoring is already settled upstream. validateFindings drops any
- * finding whose line is not an added line of the diff, which is
- * exactly GitHub's condition for accepting an inline comment — so
- * every surviving line-anchored finding is a valid anchor, and the
- * ones without a line are file-level and carried in the body.
+ * Renders validated findings into a review body plus one inline comment
+ * per line-anchored finding; the caller owns the API call. Anchoring is
+ * settled upstream: validateFindings already drops findings that are not
+ * on an added line, which is GitHub's own condition for a comment.
  */
 import type { ReviewComment } from "@pr-review/github";
 import type { ReviewFinding } from "@pr-review/schemas";
@@ -32,24 +22,16 @@ export interface RenderedReview {
 }
 
 /**
- * Identifies a finding across pushes, so a re-review does not repost
- * what is already on the pull request.
- *
- * File and title, not line: a later push shifts line numbers, and the
- * same finding at a new line is still the same finding. Severity and
- * category are excluded for the same reason — a re-run that reassesses
- * either must not read as something new.
+ * Identifies a finding across pushes. File and title, not line: a later
+ * push shifts line numbers, and the same finding at a new line is still
+ * the same finding.
  */
 export function findingKey(finding: ReviewFinding): string {
   const title = finding.title.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
   return `${finding.file}|${title}`;
 }
 
-/**
- * The marker carrying findingKey inside a published comment. An HTML
- * comment renders as nothing, so the identity travels with the comment
- * itself and no state has to be stored anywhere else.
- */
+/** Carries findingKey inside a comment; an HTML comment renders as nothing. */
 export function findingMarker(finding: ReviewFinding): string {
   return `<!-- pr-review-finding: ${findingKey(finding)} -->`;
 }
@@ -81,11 +63,9 @@ function commentBody(finding: ReviewFinding): string {
 }
 
 /**
- * Builds the review payload, or undefined when there is nothing worth
- * posting — no findings means the check run's "No issues found" is the
- * whole story, and an empty review would be noise on every clean pull
- * request. A push whose findings were all reported on an earlier
- * commit is the same case: the existing threads still stand.
+ * undefined when there is nothing worth posting; a clean PR gets no
+ * review, and neither does one whose findings all stand as comments
+ * from an earlier commit.
  */
 export function renderReview(
   findings: readonly ReviewFinding[],

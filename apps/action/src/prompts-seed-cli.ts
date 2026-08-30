@@ -1,20 +1,7 @@
 /**
- * The `pnpm seed-prompts` entry point.
- *
- * Publishes this build's four system prompts to Langfuse so a project
- * actually holds them. Until it has been run once, every review falls
- * back to the in-code prompts and the managed-prompt feature is inert —
- * visible only as `loadedCount: 0` in the run's logs.
- *
- * It lives in apps/action for the same reason prompts-bootstrap.test.ts
- * does: three of the prompts come from @pr-review/ai and the fourth
- * from @pr-review/reviewer, which depends on it, so this is the one
- * project that can see all four. Nothing imports this module from
- * src/index.ts, so it stays out of the shipped action bundle — the
- * action reads prompts and must never be able to write them.
- *
- * Executes nothing on import: scripts/seed-prompts.mjs bundles this
- * file and calls main(), and the tests call it with fakes.
+ * The `pnpm seed-prompts` entry point. Lives here because this is the
+ * one project that can see all four prompts. Nothing in src/index.ts
+ * imports it, so it stays out of the shipped action bundle.
  */
 import {
   DEFAULT_LANGFUSE_BASE_URL,
@@ -64,11 +51,7 @@ export interface SeedArgs {
   dryRun: boolean;
 }
 
-/**
- * Parses the command line. Unknown flags are a hard error rather than
- * a shrug: a mistyped `--dry-run` that silently published to production
- * is exactly the accident this command must not have.
- */
+/** Unknown flags are a hard error: a mistyped dry-run flag must never publish. */
 export function parseSeedArgs(argv: string[]): SeedArgs {
   let label = DEFAULT_PROMPT_LABEL;
   let dryRun = false;
@@ -76,8 +59,7 @@ export function parseSeedArgs(argv: string[]): SeedArgs {
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index] ?? "";
     if (arg === "--") {
-      // `pnpm seed-prompts -- --dry-run` forwards the separator
-      // verbatim. It is a separator everywhere else, so it is one here.
+      // pnpm forwards the separator verbatim.
       continue;
     }
     if (arg === "--dry-run") {
@@ -102,10 +84,7 @@ export function parseSeedArgs(argv: string[]): SeedArgs {
   return { label, dryRun };
 }
 
-/**
- * Reads Langfuse credentials, or throws with
- * MISSING_CREDENTIALS_MESSAGE. Keys are never logged or echoed.
- */
+/** Reads Langfuse credentials. Keys are never logged or echoed. */
 export function requireLangfuseConfig(
   env: Record<string, string | undefined>,
 ): LangfusePromptClientConfig {
@@ -143,10 +122,7 @@ export function seedCliEnvironment(): SeedCliEnvironment {
   };
 }
 
-/**
- * One seed run. Returns the process exit code rather than exiting, so
- * the runner script owns process control and the tests need none.
- */
+/** Returns the exit code rather than exiting; the runner script owns process control. */
 export async function main(
   argv: string[],
   environment: SeedCliEnvironment = seedCliEnvironment(),

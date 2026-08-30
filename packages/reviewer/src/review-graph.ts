@@ -1,20 +1,6 @@
 /**
- * The review pipeline as one LangGraph StateGraph:
- *
- *   START --> agent__correctness --\
- *         \-> agent__security     --> join --> synthesise --> validate --> END
- *          \-> agent__architecture-/
- *
- * The agent nodes run concurrently; the three after them run in
- * sequence once every agent has settled. Three rules shape the flow:
- *
- * - Partial failure survives. `join` throws only when EVERY agent
- *   failed, and re-sorts outcomes by input position so the result never
- *   depends on which agent settled first.
- * - Synthesis is optional. Zero candidates skips the model call; a
- *   failure falls back to the RAW candidates. The caller reads
- *   `synthesisOutcome` / `synthesisError` to log which happened.
- * - `validate` is the ONLY node whose output the caller may trust.
+ * The review pipeline as one LangGraph StateGraph: agents run
+ * concurrently, then join -> synthesise -> validate in sequence.
  */
 import { emptyTokenUsage, type ReviewAgent, type ReviewContext, type TokenUsage } from "@pr-review/ai";
 import { errorMessage, errorName } from "@pr-review/logging";
@@ -38,14 +24,7 @@ interface AgentOutcome {
   error?: string;
 }
 
-/**
- * A channel exactly one node writes: the last write wins, which is what
- * a plain variable already does. Most channels are this, so spelling
- * the reducer out at each one only buried the ONE channel below whose
- * reducer carries real meaning.
- *
- * A channel with no default is set at invoke and must be.
- */
+/** A channel exactly one node writes. With no default, it must be set at invoke. */
 function lastWins<T>(defaultValue?: () => T) {
   const reducer = (_left: T, right: T): T => right;
   return defaultValue === undefined
@@ -69,23 +48,6 @@ interface JoinedCandidates {
   agentFailures: AgentFailure[];
 }
 
-/**
- * What the `synthesise` node writes.
- *
- * A discriminated union on `outcome` rather than one shape with
- * optional fields, matching how the rest of the repository models "it
- * worked, or it didn't and here's why" (AgentOutputResult,
- * ToolDispatchResult, EventInspection, ActionResult). That makes the
- * invariants structural instead of documentary: `error` exists ONLY on
- * the failed branch, and `durationMs` only where a model call was
- * actually timed, so a "completed" state carrying an error — or a
- * "failed" one carrying no reason — cannot be constructed at all.
- *
- * `candidates` and `usage` sit on every branch because
- * ReviewPipelineResult promises both unconditionally: the raw
- * candidates are the fallback a failed synthesis publishes, and usage
- * is zero rather than absent when no call was made.
- */
 type SynthesisState =
   | { outcome: "skipped"; candidates: unknown[]; usage: TokenUsage }
   | {
@@ -103,26 +65,11 @@ type SynthesisState =
       durationMs: number;
     };
 
-/**
- * The graph's channels, one per node that writes it. Grouping by
- * WRITER rather than by field is what collapses eleven channels into
- * five: `join` produces one value and `synthesise` produces one, so
- * each node's output is a channel and the state reads like the flow.
- */
+/** The graph's channels, one per node that writes it. */
 const ReviewGraphState = Annotation.Root({
-  /**
-   * The loaded PR context every agent reviews. Set once at invoke, and
-   * the single source of truth for the PR's changed files: the agents
-   * and the final validation step both read `context.changedFiles`, so
-   * validation can never filter against a different list than the one
-   * the agents saw.
-   */
+  /** Set once at invoke; the single source of truth for the PR's changed files. */
   context: lastWins<ReviewContext>(),
-  /**
-   * One entry per agent node. The ONLY channel with a meaningful
-   * reducer: every agent node writes it in the same superstep, so the
-   * writes are concatenated and `join` re-sorts them by `index`.
-   */
+  /** Every agent writes in the same superstep, so writes concatenate; `join` re-sorts by `index`. */
   agentOutcomes: appendTo<AgentOutcome>(),
   joined: lastWins<JoinedCandidates>(() => ({
     candidates: [],
@@ -160,10 +107,8 @@ function agentNode(
 }
 
 /**
- * The fan-in point: waits for every agent node (LangGraph only runs a
- * node once all of its incoming edges' sources have completed), then
- * derives `candidates` / `agentFailures` in the agents' original order
- * — never completion order — and throws when every agent failed.
+ * Fan-in: derives candidates/failures in the agents' original order —
+ * never completion order — and throws when every agent failed.
  */
 function makeJoinNode(agentCount: number) {
   return (state: ReviewGraphStateT): ReviewGraphUpdate => {
@@ -190,13 +135,8 @@ function makeJoinNode(agentCount: number) {
 }
 
 /**
- * The synthesis step. Zero candidates means nothing to refine, so the
- * Synthesiser is not invoked at all — that is what "skipped" reports.
- * (The Synthesiser separately skips its own model call when candidates
- * exist but none are well-formed; that still counts as "completed"
- * here, since this node only reports whether it invoked it.)
- *
- * A failure falls back to the raw candidates, never failing the review.
+ * "skipped" means the Synthesiser was never invoked. A failure falls
+ * back to the raw candidates rather than failing the review.
  */
 function makeSynthesiseNode(synthesiser: Synthesiser) {
   return async (state: ReviewGraphStateT): Promise<ReviewGraphUpdate> => {
@@ -226,7 +166,6 @@ function makeSynthesiseNode(synthesiser: Synthesiser) {
       return {
         synthesis: {
           outcome: "failed",
-          // The fallback: the RAW candidates still flow to validation.
           candidates,
           usage: emptyTokenUsage(),
           error: errorMessage(error),
@@ -257,11 +196,8 @@ export function buildReviewGraph(
     throw new Error("buildReviewGraph requires at least one review agent");
   }
 
-  // The node-name generic is pinned to `string` up front: LangGraph's
-  // fluent builder normally accumulates a literal-string union of node
-  // names from each addNode() call so addEdge() can check them at
-  // compile time, but that only works for a statically known chain —
-  // here the agent node names come from the runtime `agents` list.
+  // Node names are pinned to `string`: LangGraph's builder infers a
+  // literal union, which cannot work for a runtime `agents` list.
   const graph = new StateGraph<
     typeof ReviewGraphState,
     ReviewGraphStateT,
@@ -305,13 +241,7 @@ export interface ReviewPipelineResult {
   findings: ReviewFinding[];
 }
 
-/**
- * Runs the full pipeline — agents, synthesis, validation — for one
- * review, and flattens the final graph state into a plain result.
- *
- * Throws when every agent failed, so the workflow step fails and the
- * run can be retried. A synthesis failure never throws.
- */
+/** Throws when every agent failed; a synthesis failure never throws. */
 export async function runReviewPipeline(
   agents: readonly ReviewAgent[],
   synthesiser: Synthesiser,
@@ -320,19 +250,12 @@ export async function runReviewPipeline(
   const graph = buildReviewGraph(agents, synthesiser);
   const { joined, synthesis, findings } = await graph.invoke({ context });
 
-  // The grouped channels are flattened back out here, deliberately.
-  // Grouping is what keeps the GRAPH readable; the result is a record
-  // an operator logs and an evaluation prints, and those read better
-  // flat. This function is the only place the two shapes meet.
   return {
     candidates: joined.candidates,
     agentFailures: joined.agentFailures,
     synthesisedCandidateCount: synthesis.candidates.length,
     synthesisOutcome: synthesis.outcome,
     synthesisUsage: synthesis.usage,
-    // Narrowed rather than read blindly: the union is what guarantees
-    // an error is only ever reported for a synthesis that actually
-    // failed, and a duration only for one that actually ran.
     ...(synthesis.outcome === "failed"
       ? {
           synthesisError: synthesis.error,

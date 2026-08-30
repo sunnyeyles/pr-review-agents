@@ -1,19 +1,7 @@
 /**
- * The fork fallback: delivering a review when the workflow token
- * cannot create a check run.
- *
- * GitHub hands workflows triggered by fork pull requests a read-only
- * token, so `checks: write` is unavailable and createCheckRun fails.
- * Rather than failing the workflow — which would make every fork PR
- * look broken — the Action writes the same rendered review to the
- * workflow job summary and exits cleanly. The reviewer still gets the
- * findings; only the inline annotations are lost, because annotations
- * exist only on check runs.
- *
- * Deliberately narrow: this reacts to the permission error GitHub
- * actually returns rather than trying to predict from the payload
- * whether the token will be read-only. Prediction gets it wrong for
- * same-repo PRs in workflows with a restrictive `permissions:` block.
+ * The fork fallback: when the workflow token cannot create a check run,
+ * the review goes to the job summary instead. Reacts to the permission
+ * error GitHub returns rather than predicting it from the payload.
  */
 import { appendFile } from "node:fs/promises";
 
@@ -67,11 +55,7 @@ export interface FallbackPublisherDeps {
   logger: StructuredLogger;
 }
 
-/**
- * Wraps the check-run publisher with the job-summary fallback. A
- * permission error degrades; anything else propagates unchanged so the
- * workflow fails and the caller's retry decision still applies.
- */
+/** A permission error degrades to the job summary; anything else propagates. */
 export function createFallbackPublisher({
   publishCheckRun,
   summaryPath,
