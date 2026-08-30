@@ -11,21 +11,38 @@ import { addTokenUsage, emptyTokenUsage } from "./usage.js";
 function usage(
   inputTokens: number,
   outputTokens: number,
+  cacheCreationInputTokens: number | null = null,
+  cacheReadInputTokens: number | null = null,
 ): Anthropic.Messages.Usage {
   return {
     input_tokens: inputTokens,
     output_tokens: outputTokens,
-    cache_creation_input_tokens: null,
-    cache_read_input_tokens: null,
+    cache_creation_input_tokens: cacheCreationInputTokens,
+    cache_read_input_tokens: cacheReadInputTokens,
     cache_creation: null,
     server_tool_use: null,
     service_tier: null,
   } as Anthropic.Messages.Usage;
 }
 
+/** The four counters, spelled out where a test asserts a whole total. */
+function total(
+  inputTokens: number,
+  cacheCreationInputTokens: number,
+  cacheReadInputTokens: number,
+  outputTokens: number,
+) {
+  return {
+    inputTokens,
+    cacheCreationInputTokens,
+    cacheReadInputTokens,
+    outputTokens,
+  };
+}
+
 describe("emptyTokenUsage", () => {
-  it("starts both counters at zero", () => {
-    expect(emptyTokenUsage()).toEqual({ inputTokens: 0, outputTokens: 0 });
+  it("starts every counter at zero", () => {
+    expect(emptyTokenUsage()).toEqual(total(0, 0, 0, 0));
   });
 
   it("returns a fresh object each call, so totals never alias", () => {
@@ -37,47 +54,62 @@ describe("emptyTokenUsage", () => {
 
 describe("addTokenUsage", () => {
   it("adds one response's usage to a running total", () => {
-    expect(addTokenUsage(emptyTokenUsage(), usage(120, 45))).toEqual({
-      inputTokens: 120,
-      outputTokens: 45,
-    });
+    expect(addTokenUsage(emptyTokenUsage(), usage(120, 45))).toEqual(
+      total(120, 0, 0, 45),
+    );
   });
 
   it("accumulates across the turns of one agent run", () => {
-    const total = [usage(100, 10), usage(250, 30), usage(5, 1)].reduce(
+    const accumulated = [usage(100, 10), usage(250, 30), usage(5, 1)].reduce(
       addTokenUsage,
       emptyTokenUsage(),
     );
-    expect(total).toEqual({ inputTokens: 355, outputTokens: 41 });
+    expect(accumulated).toEqual(total(355, 0, 0, 41));
   });
 
   it("leaves the total unchanged for a zero usage block", () => {
-    const total = { inputTokens: 7, outputTokens: 3 };
-    expect(addTokenUsage(total, usage(0, 0))).toEqual(total);
+    const running = total(7, 2, 5, 3);
+    expect(addTokenUsage(running, usage(0, 0))).toEqual(running);
   });
 
   it("does not mutate the running total it was given", () => {
-    const total = emptyTokenUsage();
-    const next = addTokenUsage(total, usage(9, 4));
-    expect(total).toEqual({ inputTokens: 0, outputTokens: 0 });
-    expect(next).not.toBe(total);
+    const running = emptyTokenUsage();
+    const next = addTokenUsage(running, usage(9, 4));
+    expect(running).toEqual(total(0, 0, 0, 0));
+    expect(next).not.toBe(running);
   });
 
-  it("counts only the two token fields, ignoring the cache fields", () => {
-    const withCache = {
-      ...usage(10, 2),
-      cache_creation_input_tokens: 999,
-      cache_read_input_tokens: 888,
-    } as Anthropic.Messages.Usage;
-    expect(addTokenUsage(emptyTokenUsage(), withCache)).toEqual({
-      inputTokens: 10,
-      outputTokens: 2,
-    });
+  it("counts cache writes and reads as their own counters", () => {
+    expect(
+      addTokenUsage(emptyTokenUsage(), usage(10, 2, 999, 888)),
+    ).toEqual(total(10, 999, 888, 2));
   });
 
-  it("keeps the accumulated shape to exactly the two counters", () => {
+  it("accumulates the cache counters across the turns of one run", () => {
+    // Turn one writes the prefix; later turns read it back.
+    const accumulated = [
+      usage(20, 10, 4_000, 0),
+      usage(5, 8, 300, 4_000),
+      usage(5, 6, 200, 4_300),
+    ].reduce(addTokenUsage, emptyTokenUsage());
+    expect(accumulated).toEqual(total(30, 4_500, 8_300, 24));
+  });
+
+  it("treats an absent cache counter as zero, not NaN", () => {
+    // A response from a request with no caching reports null here.
+    expect(addTokenUsage(emptyTokenUsage(), usage(10, 2, null, null))).toEqual(
+      total(10, 0, 0, 2),
+    );
+  });
+
+  it("keeps the accumulated shape to exactly the four counters", () => {
     expect(Object.keys(addTokenUsage(emptyTokenUsage(), usage(1, 1))).sort()).toEqual(
-      ["inputTokens", "outputTokens"],
+      [
+        "cacheCreationInputTokens",
+        "cacheReadInputTokens",
+        "inputTokens",
+        "outputTokens",
+      ],
     );
   });
 });

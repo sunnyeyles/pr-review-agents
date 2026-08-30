@@ -161,11 +161,12 @@ Set as `with:` inputs on the Action step ([`apps/action/action.yml`](apps/action
 | `model` | no (default `claude-sonnet-5`) | Anthropic model id the agents and synthesiser use. |
 | `agents` | no (default `all`) | Which agents run: `all`, or a comma-separated subset of `correctness`, `security`, `architecture`. |
 
-### Selecting agents
+### What a review costs
 
-Each agent is an independent tool-calling loop, so the cost of a review is
-essentially the sum of its agents. One measured run of this repository's own
-PR #11 spent ~1.58M input tokens, split very unevenly:
+The Messages API is stateless, so every turn resends the whole conversation —
+tools, system prompt, the opening message with the diff, and every tool result
+so far. A ten-turn agent bills its opening message ten times. One measured run
+of this repository's own PR #11, before caching, spent ~1.58M input tokens:
 
 | Agent | Model calls | Input tokens |
 | --- | --- | --- |
@@ -173,11 +174,26 @@ PR #11 spent ~1.58M input tokens, split very unevenly:
 | Correctness | 9 | ~594k |
 | Security | 4 | ~185k |
 
-Architecture costs the most because its lens explicitly requires retrieving
-surrounding repository context before it may make a claim, and every retrieval
-is another round trip carrying the whole conversation.
+Architecture costs the most because its lens requires retrieving surrounding
+repository context before it may make a claim, and every retrieval is another
+round trip carrying the whole conversation.
 
-So narrowing the set cuts cost roughly in proportion:
+Prompt caching reprices that traffic rather than reducing it: roughly 0.1x for
+a cache read against 1.25x for the write that put it there. Each agent marks
+two breakpoints (`packages/ai/src/agent-runtime.ts`) — an explicit one on the
+system prompt, which also covers the tool schemas, and the automatic one, which
+follows the growing conversation tail.
+
+A cache that stops hitting raises the bill and changes nothing else, so the
+three input counters are reported separately on `agent.completed` and
+`synthesis.completed`, and `pnpm eval` prints the hit rate per fixture. On a
+warmed-up review `cacheReadInputTokens` should dominate `inputTokens`; if it
+collapses to zero, something above a breakpoint started varying between turns.
+
+### Selecting agents
+
+Each agent is an independent tool-calling loop, so a review costs essentially
+the sum of its agents, and narrowing the set cuts that roughly in proportion:
 
 ```yaml
         with:
@@ -292,8 +308,9 @@ under lifecycle event names: `review.skipped`, `review.started`,
 `synthesis.started`, `synthesis.skipped`, `synthesis.completed`,
 `synthesis.failed`, `findings.validated`, `review.published`,
 `review.published.degraded`, and `review.failed`. Events carry the repository, PR
-number, head SHA, agent name, duration, finding count, and token usage, so a
-single review is greppable end to end by `headSha`.
+number, head SHA, agent name, duration, finding count, and token usage (four
+counters: `inputTokens`, `cacheCreationInputTokens`, `cacheReadInputTokens`,
+`outputTokens`), so a single review is greppable end to end by `headSha`.
 
 ---
 

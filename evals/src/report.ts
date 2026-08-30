@@ -11,20 +11,43 @@ import type { CapturedLogEvent } from "@pr-review/logging";
 import { describeFindings } from "./expectations.js";
 import type { FixtureReview } from "./run-fixture-review.js";
 
-function tokensFrom(events: readonly CapturedLogEvent[]): {
-  inputTokens: number;
-  outputTokens: number;
-} {
-  let inputTokens = 0;
-  let outputTokens = 0;
+/** The four token counters, summed across a run's completed units. */
+const TOKEN_COUNTERS = [
+  "inputTokens",
+  "cacheCreationInputTokens",
+  "cacheReadInputTokens",
+  "outputTokens",
+] as const;
+
+type TokenTotals = Record<(typeof TOKEN_COUNTERS)[number], number>;
+
+function tokensFrom(events: readonly CapturedLogEvent[]): TokenTotals {
+  const totals: TokenTotals = {
+    inputTokens: 0,
+    cacheCreationInputTokens: 0,
+    cacheReadInputTokens: 0,
+    outputTokens: 0,
+  };
   for (const entry of events) {
     if (entry.event !== "agent.completed" && entry.event !== "synthesis.completed") {
       continue;
     }
-    inputTokens += typeof entry["inputTokens"] === "number" ? entry["inputTokens"] : 0;
-    outputTokens += typeof entry["outputTokens"] === "number" ? entry["outputTokens"] : 0;
+    for (const counter of TOKEN_COUNTERS) {
+      const value = entry[counter];
+      totals[counter] += typeof value === "number" ? value : 0;
+    }
   }
-  return { inputTokens, outputTokens };
+  return totals;
+}
+
+/** The share of input tokens the prompt cache served. */
+function cacheHitRate(usage: TokenTotals): string {
+  const total =
+    usage.inputTokens + usage.cacheCreationInputTokens + usage.cacheReadInputTokens;
+  if (total === 0) {
+    return "n/a";
+  }
+  return `${Math.round((usage.cacheReadInputTokens / total) * 100)}%`;
 }
 
 /** Groups the agents' repository reads into a one-line summary. */
@@ -61,6 +84,8 @@ export function formatReviewReport(review: FixtureReview): string {
     `  validated:     ${result.findings.length} finding(s), check run conclusion "${review.rendered.conclusion}"`,
     `  repository reads: ${toolSummary(review)}`,
     `  tokens:        ${usage.inputTokens} in / ${usage.outputTokens} out, ${Math.round(review.durationMs / 1000)}s`,
+    `  prompt cache:  ${usage.cacheCreationInputTokens} written / ` +
+      `${usage.cacheReadInputTokens} read (${cacheHitRate(usage)} of input served from cache)`,
     describeFindings(result.findings),
   ].join("\n");
 }

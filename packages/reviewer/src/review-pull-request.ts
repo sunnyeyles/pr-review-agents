@@ -115,8 +115,7 @@ function logSynthesisOutcome(
       ...fields,
       candidateCount: review.candidates.length,
       refinedCount: review.synthesisedCandidateCount,
-      inputTokens: review.synthesisUsage.inputTokens,
-      outputTokens: review.synthesisUsage.outputTokens,
+      ...review.synthesisUsage,
       durationMs: review.synthesisDurationMs,
     });
     return;

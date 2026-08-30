@@ -142,7 +142,12 @@ describe("createSynthesiser", () => {
       securityDuplicate,
     ]);
 
-    expect(usage).toEqual({ inputTokens: 321, outputTokens: 45 });
+    expect(usage).toEqual({
+      inputTokens: 321,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: 0,
+      outputTokens: 45,
+    });
   });
 
   it("makes exactly one single-turn model call with no tools", async () => {
@@ -227,7 +232,12 @@ describe("createSynthesiser", () => {
 
     expect(result).toEqual({
       findings: [],
-      usage: { inputTokens: 0, outputTokens: 0 },
+      usage: {
+        inputTokens: 0,
+        cacheCreationInputTokens: 0,
+        cacheReadInputTokens: 0,
+        outputTokens: 0,
+      },
     });
     expect(calls).toHaveLength(0);
   });
@@ -243,7 +253,12 @@ describe("createSynthesiser", () => {
 
     expect(result).toEqual({
       findings: [],
-      usage: { inputTokens: 0, outputTokens: 0 },
+      usage: {
+        inputTokens: 0,
+        cacheCreationInputTokens: 0,
+        cacheReadInputTokens: 0,
+        outputTokens: 0,
+      },
     });
     expect(calls).toHaveLength(0);
   });
