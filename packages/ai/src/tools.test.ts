@@ -43,6 +43,7 @@ function makeGithub() {
     getDiff: vi.fn(async () => "diff --git a/src/sessions.ts b/src/sessions.ts\n"),
     getFileContents: vi.fn(async () => "export const sessions = [];\n"),
     searchCode: vi.fn(async () => [{ path: "src/sessions.ts", name: "sessions.ts" }]),
+    listReviewComments: vi.fn(async () => []),
     createCheckRun: vi.fn(async () => ({ id: 987 })),
     createReview: vi.fn(async () => ({ id: 654 })),
   } satisfies GithubInstallationClient;

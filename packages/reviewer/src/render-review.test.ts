@@ -1,7 +1,11 @@
 import type { ReviewFinding } from "@pr-review/schemas";
 import { describe, expect, it } from "vitest";
 
-import { renderReview } from "./render-review.js";
+import {
+  findingMarker,
+  postedFindingKeys,
+  renderReview,
+} from "./render-review.js";
 
 function finding(overrides: Partial<ReviewFinding> = {}): ReviewFinding {
   return {
@@ -75,6 +79,39 @@ describe("renderReview", () => {
 
     expect(rendered?.comments[0]?.body).toContain("Strong");
     expect(rendered?.comments[1]?.body).toContain("Weak");
+  });
+
+  it("skips a finding already posted on an earlier commit", () => {
+    const posted = postedFindingKeys([
+      { body: `anything\n\n${findingMarker(finding())}` },
+    ]);
+
+    expect(renderReview([finding()], [], posted)).toBeUndefined();
+  });
+
+  it("keys a finding on file and title, so a moved line is not reposted", () => {
+    const posted = postedFindingKeys([
+      { body: findingMarker(finding({ line: 12 })) },
+    ]);
+
+    expect(renderReview([finding({ line: 400 })], [], posted)).toBeUndefined();
+  });
+
+  it("posts only the findings that are new, and says how many it held back", () => {
+    const posted = postedFindingKeys([{ body: findingMarker(finding()) }]);
+    const rendered = renderReview(
+      [finding(), finding({ title: "Brand new", line: 20 })],
+      [],
+      posted,
+    );
+
+    expect(rendered?.comments).toHaveLength(1);
+    expect(rendered?.comments[0]?.body).toContain("Brand new");
+    expect(rendered?.body).toContain("1 further finding");
+  });
+
+  it("ignores a comment carrying no marker", () => {
+    expect(postedFindingKeys([{ body: "a human wrote this" }]).size).toBe(0);
   });
 
   it("notes a lens that did not complete", () => {

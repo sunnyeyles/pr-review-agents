@@ -3,6 +3,7 @@ import type {
   ChangedFile,
   CreateCheckRunInput,
   CreateReviewInput,
+  ExistingReviewComment,
   GithubInstallationClient,
   PullRequestDetails,
   PullRequestRef,
@@ -12,6 +13,7 @@ import type { ReviewFinding } from "@pr-review/schemas";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { RenderedCheckRun } from "./render-check-run.js";
+import { findingMarker } from "./render-review.js";
 import type { ReviewPipelineResult } from "./review-graph.js";
 import {
   createCheckRunPublisher,
@@ -62,6 +64,11 @@ const finding: ReviewFinding = {
   confidence: 0.9,
 };
 
+/** An Octokit-shaped error: the status is what the code reacts to. */
+function permissionError(status: number): Error {
+  return Object.assign(new Error("boom"), { status });
+}
+
 function makeClient() {
   return {
     getPullRequest: vi.fn(async (_ref: PullRequestRef) => pullRequest),
@@ -69,6 +76,7 @@ function makeClient() {
     getDiff: vi.fn(async (_ref: PullRequestRef) => diff),
     getFileContents: vi.fn(async () => "export const sessions = [];\n"),
     searchCode: vi.fn(async () => []),
+    listReviewComments: vi.fn(async (): Promise<ExistingReviewComment[]> => []),
     createCheckRun: vi.fn(async (_input: CreateCheckRunInput) => ({ id: 987 })),
     createReview: vi.fn(async (_input: CreateReviewInput) => ({ id: 654 })),
   } satisfies GithubInstallationClient;
@@ -294,13 +302,11 @@ describe("reviewPullRequest inline comments", () => {
     ).toBeUndefined();
   });
 
-  it("keeps the annotations when the comments could not be published", async () => {
+  it("keeps the annotations when the token cannot post comments", async () => {
     const { deps, client, entries } = makeDeps(
       reviewResult({ candidates: [finding] }),
     );
-    client.createReview.mockRejectedValueOnce(
-      new Error("Resource not accessible by integration"),
-    );
+    client.createReview.mockRejectedValueOnce(permissionError(403));
 
     await reviewPullRequest(target, deps);
 
@@ -308,9 +314,45 @@ describe("reviewPullRequest inline comments", () => {
       client.createCheckRun.mock.calls[0]?.[0].output.annotations,
     ).toHaveLength(1);
     expect(entries).toContainEqual(
+      expect.objectContaining({ event: "review.comments.degraded", status: 403 }),
+    );
+  });
+
+  it("fails the run on a comment error that is not a permission error", async () => {
+    const { deps, client } = makeDeps(reviewResult({ candidates: [finding] }));
+    client.createReview.mockRejectedValueOnce(permissionError(500));
+
+    await expect(reviewPullRequest(target, deps)).rejects.toThrow("boom");
+    expect(client.createCheckRun).not.toHaveBeenCalled();
+  });
+
+  it("does not repeat a finding already commented on an earlier commit", async () => {
+    const { deps, client } = makeDeps(reviewResult({ candidates: [finding] }));
+    client.listReviewComments.mockResolvedValueOnce([
+      { body: `stale text\n\n${findingMarker(finding)}` },
+    ]);
+
+    await reviewPullRequest(target, deps);
+
+    expect(client.createReview).not.toHaveBeenCalled();
+    expect(
+      client.createCheckRun.mock.calls[0]?.[0].output.annotations,
+    ).toHaveLength(1);
+  });
+
+  it("still reviews when the existing comments cannot be read", async () => {
+    const { deps, client, entries } = makeDeps(
+      reviewResult({ candidates: [finding] }),
+    );
+    client.listReviewComments.mockRejectedValueOnce(new Error("boom"));
+
+    await reviewPullRequest(target, deps);
+
+    expect(client.createReview).toHaveBeenCalledTimes(1);
+    expect(entries).toContainEqual(
       expect.objectContaining({
         level: "error",
-        event: "review.comments.failed",
+        event: "review.comments.list_failed",
       }),
     );
   });

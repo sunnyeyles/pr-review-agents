@@ -9,6 +9,7 @@ import {
   type CodeSearchRequest,
   type CreateCheckRunInput,
   type CreateReviewInput,
+  type ExistingReviewComment,
   type FileContentsRequest,
   type GithubInstallationClient,
   type PullRequestDetails,
@@ -30,6 +31,13 @@ export interface OctokitLike {
         mediaType?: { format: "diff" };
       }): Promise<{ data: unknown }>;
       listFiles(params: {
+        owner: string;
+        repo: string;
+        pull_number: number;
+        per_page: number;
+        page: number;
+      }): Promise<{ data: unknown }>;
+      listReviewComments(params: {
         owner: string;
         repo: string;
         pull_number: number;
@@ -109,6 +117,8 @@ const changedFilesSchema = z.array(
 const checkRunResponseSchema = z.object({ id: z.number() });
 
 const reviewResponseSchema = z.object({ id: z.number() });
+
+const reviewCommentsSchema = z.array(z.object({ body: z.string() }));
 
 /** A repos.getContent response for a single (non-directory) entry. */
 const fileContentsSchema = z.object({
@@ -249,6 +259,26 @@ export function createInstallationClient(
         output,
       });
       return checkRunResponseSchema.parse(response.data);
+    },
+
+    async listReviewComments(
+      ref: PullRequestRef,
+    ): Promise<ExistingReviewComment[]> {
+      const comments: ExistingReviewComment[] = [];
+      for (let page = 1; ; page += 1) {
+        const response = await octokit.rest.pulls.listReviewComments({
+          owner: ref.owner,
+          repo: ref.repo,
+          pull_number: ref.pullRequestNumber,
+          per_page: FILES_PER_PAGE,
+          page,
+        });
+        const pageComments = reviewCommentsSchema.parse(response.data);
+        comments.push(...pageComments);
+        if (pageComments.length < FILES_PER_PAGE) {
+          return comments;
+        }
+      }
     },
 
     async createReview(input: CreateReviewInput): Promise<PullRequestReview> {

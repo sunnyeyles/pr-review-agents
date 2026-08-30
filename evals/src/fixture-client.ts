@@ -17,6 +17,7 @@ import type {
   CodeSearchMatch,
   CreateCheckRunInput,
   CreateReviewInput,
+  ExistingReviewComment,
   FileContentsRequest,
   GithubInstallationClient,
   PullRequestDetails,
@@ -133,6 +134,13 @@ export function createFixtureClient(fixture: LoadedFixture): FixtureClient {
         }
       }
       return matches.slice(0, MAX_SEARCH_MATCHES);
+    },
+
+    async listReviewComments(ref): Promise<ExistingReviewComment[]> {
+      checkRef(ref);
+      // A fixture pull request carries no prior review, so every
+      // finding is new every time.
+      return [];
     },
 
     async createCheckRun(input: CreateCheckRunInput): Promise<CheckRun> {

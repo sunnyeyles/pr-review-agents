@@ -99,6 +99,7 @@ interface StubOptions {
   contentData?: unknown;
   searchData?: unknown;
   reviewData?: unknown;
+  reviewCommentsData?: unknown;
 }
 
 function makeOctokit(options: StubOptions = {}) {
@@ -125,6 +126,13 @@ function makeOctokit(options: StubOptions = {}) {
             per_page: number;
             page: number;
           }) => ({ data: filePages[params.page - 1] ?? [] }),
+        ),
+        listReviewComments: vi.fn(
+          async (
+            _params: Parameters<
+              OctokitLike["rest"]["pulls"]["listReviewComments"]
+            >[0],
+          ) => ({ data: options.reviewCommentsData ?? [] }),
         ),
         createReview: vi.fn(
           async (

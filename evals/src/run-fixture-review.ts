@@ -152,11 +152,16 @@ export async function runFixtureReview(
           deps.synthesiser,
           context,
         ),
-      // The only step an evaluation replaces: the review is judged
-      // here rather than published to GitHub.
+      // The steps an evaluation replaces: the review is judged here
+      // rather than published to GitHub.
       publishReview: async (_target, checkRun) => {
         rendered = checkRun;
       },
+      // Nothing is sent, and reporting false keeps the annotations on
+      // the check run an evaluation judges — the complete artefact,
+      // rather than the reduced one a live review publishes alongside
+      // its comments.
+      publishReviewComments: async () => false,
       logger,
     },
   );

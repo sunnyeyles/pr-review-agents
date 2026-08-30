@@ -12,7 +12,13 @@
  * Outside its scope: authentication and retries, both the caller's.
  */
 import type { ReviewContext } from "@pr-review/ai";
-import type { GithubInstallationClient } from "@pr-review/github";
+import {
+  httpStatus,
+  isPermissionError,
+  type ExistingReviewComment,
+  type GithubInstallationClient,
+  type PullRequestRef,
+} from "@pr-review/github";
 import {
   createConsoleLogger,
   errorMessage,
@@ -20,7 +26,11 @@ import {
 } from "@pr-review/logging";
 
 import { renderCheckRun, type RenderedCheckRun } from "./render-check-run.js";
-import { renderReview, type RenderedReview } from "./render-review.js";
+import {
+  postedFindingKeys,
+  renderReview,
+  type RenderedReview,
+} from "./render-review.js";
 import type { ReviewPipelineResult } from "./review-graph.js";
 
 /** The pull request one review runs against. */
@@ -111,10 +121,12 @@ export function createCheckRunPublisher(
  * The default delivery for inline comments: one advisory review on the
  * head SHA.
  *
- * A failure here is swallowed rather than thrown. Publishing comments
- * needs `pull-requests: write`, which a fork pull request's token does
- * not carry, and a review that cannot be commented on must still be
- * published as a check run rather than lost.
+ * Only a permission error is swallowed: publishing comments needs
+ * `pull-requests: write`, which a fork pull request's token does not
+ * carry, and such a review must still reach the check run rather than
+ * fail the workflow. Everything else — an outage, rate limiting, a
+ * malformed payload — is rethrown, so a real bug here surfaces instead
+ * of quietly downgrading every review to annotations forever.
  */
 export function createReviewCommentPublisher(
   client: GithubInstallationClient,
@@ -132,13 +144,43 @@ export function createReviewCommentPublisher(
       });
       return true;
     } catch (error) {
-      logger.error("review.comments.failed", {
+      if (!isPermissionError(error)) {
+        throw error;
+      }
+      logger.info("review.comments.degraded", {
         ...reviewCorrelation(target),
-        reason: errorMessage(error),
+        reason: "workflow token cannot post review comments",
+        status: httpStatus(error),
       });
       return false;
     }
   };
+}
+
+/**
+ * The comments already on the pull request, or none if they cannot be
+ * read.
+ *
+ * Failing to read them must not fail the review: the cost of being
+ * wrong is one duplicated comment, which is a far smaller loss than a
+ * review that does not run.
+ */
+async function listPostedComments(
+  client: GithubInstallationClient,
+  ref: PullRequestRef,
+  target: ReviewTarget,
+  logger: StructuredLogger,
+): Promise<ExistingReviewComment[]> {
+  try {
+    return await client.listReviewComments(ref);
+  } catch (error) {
+    logger.error("review.comments.list_failed", {
+      ...reviewCorrelation(target),
+      reason: errorMessage(error),
+      fallback: "publishing every finding, which may repeat an earlier one",
+    });
+    return [];
+  }
 }
 
 /**
@@ -236,7 +278,11 @@ export async function reviewPullRequest(
 
   // Inline comments go first: whether they landed decides whether the
   // check run repeats them as annotations against the same lines.
-  const reviewComments = renderReview(review.findings, review.agentFailures);
+  const reviewComments = renderReview(
+    review.findings,
+    review.agentFailures,
+    postedFindingKeys(await listPostedComments(client, ref, target, logger)),
+  );
   const publishComments =
     publishReviewComments ?? createReviewCommentPublisher(client, logger);
   const commented =

@@ -12,6 +12,7 @@
  * GithubTokenConfig lets a caller inject its own Octokit.
  */
 export type { OctokitLike } from "./app.js";
+export { httpStatus, isPermissionError } from "./errors.js";
 export { createTokenClient, type GithubTokenConfig } from "./token.js";
 export {
   CHECK_RUN_NAME,
@@ -25,6 +26,7 @@ export {
   type CodeSearchRequest,
   type CreateCheckRunInput,
   type CreateReviewInput,
+  type ExistingReviewComment,
   type FileContentsRequest,
   type GithubInstallationClient,
   type PullRequestDetails,

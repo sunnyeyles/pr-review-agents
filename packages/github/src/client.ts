@@ -132,6 +132,11 @@ export interface PullRequestReview {
   id: number;
 }
 
+/** An inline comment already on the pull request, from any author. */
+export interface ExistingReviewComment {
+  body: string;
+}
+
 /**
  * A GitHub client authenticated for one repository's installation.
  * Everything is read-only except createCheckRun and createReview, the
@@ -148,6 +153,8 @@ export interface GithubInstallationClient {
   getFileContents(request: FileContentsRequest): Promise<string>;
   /** Searches code within the single named repository. Read-only. */
   searchCode(request: CodeSearchRequest): Promise<CodeSearchMatch[]>;
+  /** Every inline review comment already on the pull request. */
+  listReviewComments(ref: PullRequestRef): Promise<ExistingReviewComment[]>;
   createCheckRun(input: CreateCheckRunInput): Promise<CheckRun>;
   /** Publishes one advisory review with inline comments. */
   createReview(input: CreateReviewInput): Promise<PullRequestReview>;
