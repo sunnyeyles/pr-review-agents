@@ -14,7 +14,10 @@ import {
   summarise,
 } from "./finding-format.js";
 import type { AgentFailure } from "./review-graph.js";
-import { compareFindingStrength } from "./validate-findings.js";
+import {
+  compareFindingStrength,
+  normaliseTitle,
+} from "./validate-findings.js";
 
 export interface RenderedReview {
   body: string;
@@ -27,8 +30,7 @@ export interface RenderedReview {
  * the same finding.
  */
 export function findingKey(finding: ReviewFinding): string {
-  const title = finding.title.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-  return `${finding.file}|${title}`;
+  return `${finding.file}|${normaliseTitle(finding.title)}`;
 }
 
 /** Carries findingKey inside a comment; an HTML comment renders as nothing. */
