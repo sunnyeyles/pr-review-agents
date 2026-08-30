@@ -1,12 +1,7 @@
 /**
- * The evaluation suite: the three fixtures of spec §27 and what each
- * one must produce.
- *
- * The set is fixed by the spec, and the third fixture is the reason
- * the other two are not enough. A reviewer that reports something on
- * every pull request will pass the correctness and security fixtures
- * by accident; only the clean fixture separates a reviewer that finds
- * problems from one that manufactures them.
+ * The three evaluation fixtures and what each must produce. The clean
+ * fixture is what separates a reviewer that finds problems from one
+ * that manufactures them.
  */
 import type { FixtureExpectation } from "./expectations.js";
 
@@ -18,11 +13,8 @@ export interface EvalCase {
 }
 
 /**
- * Every review is expected to complete all three lenses. A failed
- * agent is a degraded review — the pipeline correctly publishes what
- * the others found — but it makes the fixture's real expectation
- * unmeasurable, so it is reported as its own failure rather than
- * left to look like a quality result.
+ * A failed agent makes the fixture's real expectation unmeasurable, so
+ * it is reported separately rather than as a quality result.
  */
 const agentsCompleted: FixtureExpectation = {
   kind: "agents-completed",

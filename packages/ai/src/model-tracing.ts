@@ -1,12 +1,6 @@
 /**
- * The one definition of what a model call records as a trace.
- *
- * Both callers of AnthropicLike.messages.create — the review agents
- * here and the synthesiser in @pr-review/reviewer — want the same
- * generation observation around it: the same name, the same model and
- * token attributes, the same ERROR handling. Writing that twice split
- * the shape of the traces this feature exists to produce, so it lives
- * here, next to the seam it wraps.
+ * The one definition of what a model call records as a trace, shared by
+ * the review agents and the synthesiser.
  */
 import type Anthropic from "@anthropic-ai/sdk";
 import type {
@@ -15,11 +9,7 @@ import type {
 } from "@langfuse/tracing";
 import { errorMessage } from "@pr-review/logging";
 
-/**
- * Any observation that can parent a generation. Structural rather than
- * a union of LangfuseAgent | LangfuseChain | ... so a caller can nest a
- * model call under whatever observation it already holds.
- */
+/** Structural, so a caller can nest a model call under any observation it holds. */
 export interface GenerationParent {
   startObservation(
     name: string,
@@ -36,10 +26,8 @@ export interface ModelCallTrace {
 }
 
 /**
- * Runs one Anthropic call as a `call-anthropic-model` generation under
- * `parent`, recording stop reason, block count, and token usage. The
- * observation is always ended, and a throw is recorded before it
- * propagates — the caller's own error handling is unchanged.
+ * Runs one Anthropic call as a generation under `parent`. The
+ * observation is always ended, and a throw is recorded before it propagates.
  */
 export async function traceModelCall(
   parent: GenerationParent,

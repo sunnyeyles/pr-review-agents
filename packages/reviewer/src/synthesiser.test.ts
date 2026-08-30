@@ -59,10 +59,8 @@ type ScriptedResponse =
   | { text: string; inputTokens: number; outputTokens: number };
 
 /**
- * A scripted fake Anthropic client for the single-turn synthesis call.
- * Each entry is the text of the next response (optionally with token
- * usage) or an Error to reject with. Captures every create() params
- * object for assertions.
+ * Each entry is the next response's text, or an Error to reject with.
+ * Captures every create() params object for assertions.
  */
 function makeAnthropic(script: readonly ScriptedResponse[]) {
   const queue = [...script];
@@ -176,7 +174,7 @@ describe("createSynthesiser", () => {
     const text = content as string;
     expect(text).toContain(correctnessDuplicate.title);
     expect(text).toContain(securityDuplicate.title);
-    // Spec §21 posture: candidate findings are wrapped as data.
+    // Candidate findings are wrapped as data, not instructions.
     expect(text).toContain("<candidate_findings>");
     expect(text).toContain("</candidate_findings>");
     expect(text).toMatch(/untrusted/i);

@@ -1,11 +1,6 @@
 /**
- * @pr-review/reviewer
- *
- * The review pipeline: a LangGraph StateGraph that fans the review
- * agents out over a loaded PR context, joins their candidates with
- * partial-failure semantics, refines them through the AI
- * Synthesiser, and runs the deterministic findings
- * validation chain — plus check-run rendering.
+ * The review pipeline: agent fan-out, join, synthesis, deterministic
+ * validation, and check-run rendering.
  */
 export {
   runReviewPipeline,

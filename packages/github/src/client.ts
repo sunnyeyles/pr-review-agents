@@ -64,10 +64,7 @@ export type CheckRunConclusion = "success" | "failure" | "neutral";
 
 export type AnnotationLevel = "notice" | "warning" | "failure";
 
-/**
- * One inline annotation on a check run, in the shape the GitHub checks
- * API expects. The API accepts at most 50 annotations per request.
- */
+/** One inline annotation; the checks API accepts at most 50 per request. */
 export interface CheckRunAnnotation {
   path: string;
   start_line: number;
@@ -84,10 +81,7 @@ export interface CheckRunOutput {
   annotations?: CheckRunAnnotation[] | undefined;
 }
 
-/**
- * Input for publishing a completed check run. The name is not
- * configurable: every check run is published as CHECK_RUN_NAME.
- */
+/** Every check run is published as CHECK_RUN_NAME; the name is not configurable. */
 export interface CreateCheckRunInput {
   owner: string;
   repo: string;
@@ -101,12 +95,8 @@ export interface CheckRun {
 }
 
 /**
- * A GitHub client authenticated for one repository's installation.
- * Everything is read-only except createCheckRun, the system's single
- * write path. The read-only surface (including getFileContents and
- * searchCode, which back the review agents' tools) is always
- * repository-scoped: every method takes an explicit owner/repo and
- * never reaches beyond it.
+ * A GitHub client for one repository's installation. Read-only except
+ * createCheckRun, and every method is explicitly repository-scoped.
  */
 export interface GithubInstallationClient {
   getPullRequest(ref: PullRequestRef): Promise<PullRequestDetails>;

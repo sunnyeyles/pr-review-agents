@@ -1,16 +1,6 @@
 /**
- * Managed system prompts: registry keys, an injectable retrieval seam,
- * and a one-shot load with per-prompt local fallback.
- *
- * The four system prompts this system runs on are editable in Langfuse
- * so a prompt change does not need a release. They are fetched once per
- * process and used for its lifetime. Every failure mode — the service
- * being down, a missing prompt, empty content, a slow response, or text
- * that no longer honours the output contract — falls back to the
- * in-code prompt for that one entry, so a review always runs.
- *
- * Fetching is opt-in: without Langfuse credentials the caller never
- * builds a client and every prompt is the in-code one.
+ * Managed system prompts, fetched once per process from Langfuse. Any
+ * failure falls back to the in-code prompt for that one entry.
  */
 import { LangfuseClient } from "@langfuse/client";
 import type { FindingCategory } from "@pr-review/schemas";
@@ -62,15 +52,7 @@ export const DEFAULT_LANGFUSE_BASE_URL = "https://cloud.langfuse.com";
 /** How long one prompt fetch may take before it is abandoned. */
 export const DEFAULT_PROMPT_TIMEOUT_MS = 5_000;
 
-/**
- * Injectable seam over prompt retrieval. Production wraps
- * LangfuseClient; tests inject a stub so no network calls happen.
- *
- * Deliberately narrower than the SDK: no prompt objects, no variable
- * compilation, no cache handles — a name goes in and resolved text
- * comes out. Empty content is an error here, not a valid result, so
- * callers need no separate emptiness check.
- */
+/** Injectable seam over prompt retrieval. Empty content is an error, not a result. */
 export interface LangfusePromptClient {
   getTextPrompt(
     name: string,
@@ -84,13 +66,7 @@ export interface LangfusePromptClientConfig {
   baseUrl: string;
 }
 
-/**
- * The SDK client both the prompt READER here and the prompt WRITER in
- * prompt-seed.ts are built on. Package-internal: the two seams stay
- * separate on purpose (nothing on the review path may reach a writer),
- * but they authenticate identically, so how a client is constructed is
- * decided once.
- */
+/** The SDK client shared by the prompt reader here and the writer in prompt-seed.ts. */
 export function createLangfuseClient(
   config: LangfusePromptClientConfig,
 ): LangfuseClient {
@@ -102,18 +78,9 @@ export function createLangfuseClient(
 }
 
 /**
- * One uncached prompt fetch at a label — the read the loader and the
- * seeder both perform.
- *
- * `cacheTtlSeconds: 0` is deliberate in both directions, for two
- * different reasons that happen to agree: the loader caches for the
- * process lifetime itself, so a second in-SDK cache would only add a
- * stale TTL, and the seeder compares against what Langfuse holds RIGHT
- * NOW, so a cached answer could make it skip a prompt that needs
- * republishing.
- *
- * `fetchTimeoutMs` bounds the socket. loadManagedPrompts also bounds
- * the call, but only this reaches the request itself.
+ * One uncached prompt fetch at a label. `cacheTtlSeconds: 0` matters:
+ * the loader caches for the process lifetime, and the seeder must see
+ * what Langfuse holds right now.
  */
 export function fetchTextPrompt(
   client: LangfuseClient,
@@ -149,12 +116,7 @@ export function createLangfusePromptClient(
   };
 }
 
-/**
- * The invariants EVERY system prompt must satisfy, wherever it came
- * from. Repository content reaches all of them, so all of them must
- * say that such content is data rather than instructions, and all of
- * them must end in a JSON contract.
- */
+/** The invariants every system prompt must satisfy, wherever it came from. */
 function sharedPromptProblems(text: string): string[] {
   const problems: string[] = [];
 
@@ -169,17 +131,9 @@ function sharedPromptProblems(text: string): string[] {
 }
 
 /**
- * The invariants a review-lens system prompt must satisfy — the single
- * definition, asserted against the in-code prompts by agents.test.ts
- * and against fetched ones by loadManagedPrompts.
- *
- * A remotely-edited prompt is repository content by another name, and
- * one that has lost its output contract fails SILENTLY: the runtime
- * discards findings whose category is not the lens's own, so a prompt
- * missing its category reports "no findings" on every review rather
- * than erroring. These structural checks catch that before it reaches
- * a model. Keeping one definition is what stops the gate on remote
- * prompts drifting weaker than the bar the shipped prompts meet.
+ * The invariants a review-lens system prompt must satisfy. A prompt that
+ * loses its output contract fails silently — the runtime discards
+ * findings whose category is not the lens's own.
  */
 export function reviewPromptContractProblems(
   text: string,
@@ -201,46 +155,27 @@ export function reviewPromptContractProblems(
     problems.push("missing-final-json-contract");
   }
   if (!text.includes(`"${category}"`)) {
-    // The lens category is quoted into the findings contract; without
-    // it every finding this lens proposes is discarded downstream.
     problems.push("missing-category-contract");
   }
 
   return problems;
 }
 
-/**
- * The contract for one managed prompt, by which prompt it is.
- *
- * Exported because the same gate has to run in both directions: on a
- * prompt fetched from Langfuse before a review trusts it, and on a
- * prompt about to be published to Langfuse. Seeding text that this
- * would reject would install a prompt guaranteed to fall back.
- */
+/** The contract for one managed prompt; gates both fetched and about-to-be-seeded text. */
 export function promptContractProblems(
   id: ManagedPromptId,
   text: string,
 ): string[] {
-  // The synthesiser reads findings rather than a repository, so it
-  // carries the shared hardening but none of the lens-specific rules.
+  // The synthesiser reads findings rather than a repository, so none of
+  // the lens-specific rules apply.
   return id === "synthesis"
     ? sharedPromptProblems(text)
     : reviewPromptContractProblems(text, id);
 }
 
 /**
- * The four prompts exactly as this build defines them, before Langfuse
- * is consulted at all.
- *
- * Two callers need them and must never disagree: loadManagedPrompts
- * uses them as the fallback every fetch is only ever an upgrade on,
- * and the seeder publishes them as the baseline version. Building them
- * here once is what keeps "what a review falls back to" and "what gets
- * pushed to Langfuse" the same text.
- *
- * The synthesis prompt is injected for the same reason it is on
- * LoadManagedPromptsOptions: it lives in @pr-review/reviewer, which
- * depends on this package.
+ * The four prompts as this build defines them: both the loader's
+ * fallback and the seeder's baseline, so the two can never disagree.
  */
 export function inCodePrompts(synthesisFallback: string): ManagedPrompts {
   return {
@@ -257,11 +192,7 @@ export interface LoadManagedPromptsOptions {
   logger?: StructuredLogger | undefined;
   /** Per-prompt deadline. Defaults to DEFAULT_PROMPT_TIMEOUT_MS. */
   timeoutMs?: number | undefined;
-  /**
-   * Fallback for the synthesiser's system prompt. It lives in
-   * @pr-review/reviewer, which depends on this package, so the caller
-   * injects it rather than this package importing it.
-   */
+  /** Injected, not imported: it lives in @pr-review/reviewer, which depends on this package. */
   synthesisFallback: string;
 }
 
@@ -277,13 +208,7 @@ function withDeadline<T>(work: Promise<T>, ms: number, name: string): Promise<T>
   return Promise.race([work, deadline]).finally(() => clearTimeout(timer));
 }
 
-/**
- * Fetches all four managed system prompts.
- *
- * Never rejects and never returns a partial result: each prompt falls
- * back independently, so one broken entry costs one prompt rather than
- * the whole review.
- */
+/** Never rejects: each prompt falls back independently. */
 export async function loadManagedPrompts(
   client: LangfusePromptClient,
   options: LoadManagedPromptsOptions,
@@ -292,8 +217,7 @@ export async function loadManagedPrompts(
   const label = options.label ?? DEFAULT_PROMPT_LABEL;
   const timeoutMs = options.timeoutMs ?? DEFAULT_PROMPT_TIMEOUT_MS;
 
-  // Start from the in-code prompts so nothing can be left undefined
-  // and a fetch is only ever an upgrade.
+  // Start from the in-code prompts so a fetch is only ever an upgrade.
   const prompts: ManagedPrompts = inCodePrompts(options.synthesisFallback);
   const sources: Record<ManagedPromptId, PromptSource> = {
     correctness: "fallback",

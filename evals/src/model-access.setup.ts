@@ -1,10 +1,6 @@
 /**
- * Vitest global setup for the evaluation project: refuse to start
- * without model credentials.
- *
- * This runs before any test file is imported, so a run without a key
- * makes no model call, loads no fixture, and exits non-zero with one
- * actionable message instead of three agent failures.
+ * Refuses to start without model credentials. Runs before any test file
+ * is imported, so a keyless run makes no model call at all.
  */
 import process from "node:process";
 

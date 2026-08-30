@@ -1,19 +1,7 @@
 /**
- * The fork fallback: delivering a review when the workflow token
- * cannot create a check run.
- *
- * GitHub hands workflows triggered by fork pull requests a read-only
- * token, so `checks: write` is unavailable and createCheckRun fails.
- * Rather than failing the workflow — which would make every fork PR
- * look broken — the Action writes the same rendered review to the
- * workflow job summary and exits cleanly. The reviewer still gets the
- * findings; only the inline annotations are lost, because annotations
- * exist only on check runs.
- *
- * Deliberately narrow: this reacts to the permission error GitHub
- * actually returns rather than trying to predict from the payload
- * whether the token will be read-only. Prediction gets it wrong for
- * same-repo PRs in workflows with a restrictive `permissions:` block.
+ * The fork fallback: when the workflow token cannot create a check run,
+ * the review goes to the job summary instead. Reacts to the permission
+ * error GitHub returns rather than predicting it from the payload.
  */
 import { appendFile } from "node:fs/promises";
 
@@ -33,33 +21,11 @@ export function httpStatus(error: unknown): number | undefined {
   return typeof status === "number" ? status : undefined;
 }
 
-/**
- * Whether a failed createCheckRun means "this token lacks
- * checks: write" rather than a genuine failure.
- *
- * This decides whether a review degrades gracefully or fails the
- * workflow, so both directions of error matter: too permissive and a
- * real GitHub outage renders as a clean review nobody investigates;
- * too strict and every fork pull request fails CI.
- */
+/** Whether a failed createCheckRun means the token lacks `checks: write`. */
 export function isPermissionError(error: unknown): boolean {
-  // Status alone, deliberately. Matching on message text would couple
-  // the fork fallback to GitHub's wording ("Resource not accessible by
-  // integration"), which is not part of any API contract and has been
-  // reworded before.
-  //
-  //   403  the token is valid but lacks checks: write — the fork case.
-  //   404  GitHub hides rather than forbids. A read-only token on a
-  //        private repository gets this instead of 403, so it has to
-  //        degrade too. The cost of being wrong here is asymmetric: a
-  //        genuinely bad owner/repo also returns 404, but that mistake
-  //        surfaces immediately as an empty review on a PR that plainly
-  //        exists, whereas failing every fork PR erodes trust quietly.
-  //
-  // Everything else fails the workflow: 401 is a bad or expired token
-  // (a configuration bug), 429 is rate limiting, 5xx is an outage, and
-  // an error with no status at all is a network failure. None of those
-  // may masquerade as a delivered review.
+  // Status alone: GitHub's message wording is not part of any contract.
+  // 404 counts because a read-only token on a private repository gets
+  // it instead of 403. Every other status fails the workflow.
   const status = httpStatus(error);
   return status === 403 || status === 404;
 }
@@ -104,11 +70,7 @@ export interface FallbackPublisherDeps {
   logger: StructuredLogger;
 }
 
-/**
- * Wraps the check-run publisher with the job-summary fallback. A
- * permission error degrades; anything else propagates unchanged so the
- * workflow fails and the caller's retry decision still applies.
- */
+/** A permission error degrades to the job summary; anything else propagates. */
 export function createFallbackPublisher({
   publishCheckRun,
   summaryPath,

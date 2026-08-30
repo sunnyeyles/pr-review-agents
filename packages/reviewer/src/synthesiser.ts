@@ -1,20 +1,7 @@
 /**
- * The Synthesiser: ONE model call, no tools and no loop, sitting
- * between the raw agent candidates and the deterministic validation
- * chain. It dedupes, merges overlaps, drops speculation, corrects
- * severity, and orders what's left most important first.
- *
- * It is never the final authority and never touches GitHub — its output
- * still passes through the entire validation chain, so a fabricated
- * file/line or padded confidence is still dropped there.
- *
- * With no well-formed candidate (including zero candidates) it resolves
- * [] without calling the model: malformed input could not survive
- * validateFindings anyway.
- *
- * Failure: bad output rejects with SynthesisError, API errors propagate
- * as-is. Either way the caller validates the RAW candidates instead, so
- * a synthesis failure never kills the review.
+ * The Synthesiser: one model call, no tools and no loop, between the raw
+ * agent candidates and the deterministic validation chain. Its output is
+ * still untrusted and still passes through that chain.
  */
 import { startObservation } from "@langfuse/tracing";
 import {
@@ -40,11 +27,7 @@ export class SynthesisError extends Error {
 /** Output budget for the single synthesis call. */
 const MAX_OUTPUT_TOKENS = 8_000;
 
-/**
- * Finding texts originated from repository contents (diffs, code, PR
- * descriptions), so they get the same hardening as any repo data: they
- * are never instructions to the model.
- */
+/** Finding texts originate from repository content, so they get the same hardening. */
 export const SYNTHESIS_SYSTEM_PROMPT = `You are the synthesiser in an automated pull-request review system. Three review agents — Correctness, Security, and Architecture — have proposed candidate findings for one pull request. You refine their combined list into the final set worth a human reviewer's attention.
 
 # Task
@@ -83,18 +66,11 @@ export interface SynthesiserDeps {
   anthropic: AnthropicLike;
   /** Model id from configuration (ANTHROPIC_MODEL); never hard-coded. */
   model: string;
-  /**
-   * Pre-resolved synthesis system prompt. Omitted means the in-code
-   * SYNTHESIS_SYSTEM_PROMPT below.
-   */
+  /** Omitted means the in-code SYNTHESIS_SYSTEM_PROMPT. */
   systemPrompt?: string | undefined;
 }
 
-/**
- * The outcome of one synthesis run: the refined findings plus the token
- * usage of the single model call (spec §26: the caller reports it on
- * the synthesis.completed event). Skipped runs report zero usage.
- */
+/** One synthesis run's refined findings and token usage; skipped runs report zero. */
 export interface SynthesisResult {
   /** Refined findings — still UNTRUSTED candidate data. */
   findings: ReviewFinding[];
@@ -102,11 +78,7 @@ export interface SynthesisResult {
 }
 
 export interface Synthesiser {
-  /**
-   * Refines raw candidate findings into the synthesised list. The
-   * findings are still UNTRUSTED candidate output and must pass
-   * validateFindings before anything reaches GitHub.
-   */
+  /** The result is still untrusted and must pass validateFindings. */
   synthesise(candidates: readonly unknown[]): Promise<SynthesisResult>;
 }
 
@@ -116,9 +88,7 @@ export function createSynthesiser(deps: SynthesiserDeps): Synthesiser {
 
   return {
     async synthesise(candidates) {
-      // Children hang off this observation explicitly, so the body
-      // below keeps its shape. Without tracing configured every call
-      // on it is a no-op.
+      // Without tracing configured every observation call is a no-op.
       const observation = startObservation(
         "synthesise-findings",
         { input: { candidateCount: candidates.length } },
@@ -126,16 +96,14 @@ export function createSynthesiser(deps: SynthesiserDeps): Synthesiser {
       );
 
       try {
-        // Only schema-valid candidates are worth refining (and worth
-        // model tokens); malformed ones could never survive validation.
+        // Malformed candidates could never survive validation anyway.
         const wellFormed = wellFormedFindings(candidates);
         observation.update({
           metadata: { model: deps.model, wellFormedCount: wellFormed.length },
         });
 
         if (wellFormed.length === 0) {
-          // Nothing to refine: skip the model call entirely (see the
-          // module doc comment for the documented choice).
+          // Nothing to refine: skip the model call entirely.
           observation.update({ output: { findingCount: 0, skipped: true } });
           return { findings: [], usage: emptyTokenUsage() };
         }
@@ -172,8 +140,6 @@ export function createSynthesiser(deps: SynthesiserDeps): Synthesiser {
         });
         return { findings: output.findings, usage };
       } catch (error) {
-        // Unlike the agents, a failed synthesis is a hard failure for
-        // the review, so it is recorded at ERROR here too.
         observation.update({
           level: "ERROR",
           statusMessage: errorMessage(error),

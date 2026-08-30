@@ -1,21 +1,7 @@
 /**
- * Unified-diff construction for the evaluation fixtures.
- *
- * A fixture stores whole files, not diffs: `repo/` is the tree at the
- * head SHA and `base/` holds the previous contents of the files the
- * fixture's pull request modifies. The diff the agents review — and,
- * crucially, the per-file `patch` the deterministic validation chain
- * anchors findings against (@pr-review/reviewer's diff-lines.ts) — is
- * generated from those files here.
- *
- * Generating rather than hand-writing the patches is deliberate: a
- * hand-written hunk header with a line number one off would silently
- * drop a correct finding during validation and fail an evaluation for
- * a reason that has nothing to do with review quality.
- *
- * The line diff is a plain longest-common-subsequence walk, grouped
- * into hunks with three lines of context — the same shape git emits.
- * Fixture files are small, so the O(n*m) table costs nothing.
+ * Unified-diff construction for the evaluation fixtures, which store
+ * whole files rather than diffs. A plain LCS walk grouped into hunks;
+ * fixture files are small, so the O(n*m) table costs nothing.
  */
 import { createHash } from "node:crypto";
 
@@ -38,10 +24,8 @@ export interface DiffHunk {
 }
 
 /**
- * Splits file text into lines, dropping the single trailing newline.
- * Fixture files must end with one — a file that does not would need a
- * "\ No newline at end of file" marker to diff faithfully, and it is
- * cheaper to reject it than to emit a diff nobody meant to write.
+ * Splits file text into lines, dropping the trailing newline. A file
+ * without one would need a "\ No newline at end of file" marker.
  */
 export function toLines(text: string, path: string): string[] {
   if (text === "") {
@@ -59,11 +43,7 @@ function lineAt(lines: readonly string[], index: number): string {
   return lines[index] ?? "";
 }
 
-/**
- * The line-level diff of two files as a flat operation list, in
- * new-file order (a removed line appears before the added line that
- * replaced it).
- */
+/** The line-level diff as a flat operation list, in new-file order. */
 export function diffOps(
   base: readonly string[],
   head: readonly string[],
@@ -116,11 +96,7 @@ const PREFIX: Record<DiffOp["kind"], string> = {
   remove: "-",
 };
 
-/**
- * Groups diff operations into hunks. Runs of changes closer together
- * than twice the context window share one hunk, so the output looks
- * like the diff a reviewer sees on the pull request.
- */
+/** Runs of changes closer than twice the context window share one hunk. */
 export function buildHunks(ops: readonly DiffOp[]): DiffHunk[] {
   // The old/new-side line number each operation starts at.
   const baseLineAt: number[] = [];
@@ -194,12 +170,7 @@ function renderHunk(hunk: DiffHunk): string {
   ].join("\n");
 }
 
-/**
- * The per-file `patch` string, in the shape GitHub's "list pull
- * request files" API returns it: hunks only, no `diff --git` header.
- * This is what the deterministic validation chain parses to decide
- * whether a finding's line is an added line.
- */
+/** The per-file `patch` as GitHub's "list pull request files" API returns it: hunks only. */
 export function buildPatch(baseText: string | undefined, headText: string, path: string): string {
   const hunks = buildHunks(
     diffOps(baseText === undefined ? [] : toLines(baseText, path), toLines(headText, path)),
@@ -216,11 +187,7 @@ function blobSha(text: string): string {
     .digest("hex");
 }
 
-/**
- * One file's entry in the pull request's unified diff, headers and
- * all — the `.diff` GitHub serves for a pull request is these
- * concatenated.
- */
+/** One file's entry in the unified diff, headers and all. */
 export function buildFileDiff(
   path: string,
   baseText: string | undefined,

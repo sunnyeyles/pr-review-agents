@@ -1,9 +1,4 @@
-/**
- * The token auth path end to end: createTokenClient wrapping an
- * injected Octokit stub, and the shared client body (app.ts) it
- * returns — PR mapping, pagination, the diff media type, file-content
- * errors, repo-scoped search, and check-run creation.
- */
+/** The token auth path end to end, over an injected Octokit stub. */
 import { describe, expect, it, vi } from "vitest";
 
 import type { OctokitLike } from "./app.js";
@@ -21,10 +16,7 @@ const headSha = "6dcb09b5b57875f334f61aebed695e2e4193db5e";
 /** Stand-in for the workflow token Actions hands the step. */
 const token = "ghs_workflowtoken";
 
-/**
- * A pulls.get response trimmed to the fields we map (plus realistic
- * extras the client must ignore).
- */
+/** A pulls.get response with the mapped fields plus extras the client must ignore. */
 const pullResponse = {
   number: 42,
   title: "Add rate limiting to the sessions endpoint",

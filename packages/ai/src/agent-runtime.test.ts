@@ -1,8 +1,6 @@
 /**
- * The shared agent-runtime behaviours (loop, tool wiring, output
- * parsing, failure semantics), exercised through the Correctness agent
- * exactly as they were when it was the only agent — these tests
- * predate the runtime extraction and keep it refactor-safe.
+ * The shared agent-runtime behaviours — loop, tool wiring, output
+ * parsing, failure semantics — exercised through the Correctness agent.
  */
 import type Anthropic from "@anthropic-ai/sdk";
 import { createCapturingLogger } from "@pr-review/logging";
@@ -116,9 +114,7 @@ describe("the Correctness agent", () => {
     await agent.run(context);
 
     const system = systemPromptOf(create.mock.calls[0]?.[0]);
-    // Spec §21: repository contents are data, comments are not
-    // instructions, tool results grant no permissions, findings only
-    // via the final JSON — and §9/§14: correctness focus, no style.
+    // The hardening rules plus the correctness lens's own focus.
     expect(system).toMatch(/data.*not instructions|never instructions/is);
     expect(system).toMatch(/comments?.*(never|not).*instructions/is);
     expect(system).toMatch(/tool (results?|output).*(no|cannot|never).*(permission|privilege)/is);
@@ -276,14 +272,8 @@ describe("the Correctness agent", () => {
 });
 
 describe("category integrity", () => {
-  // Decision (ticket 07): the runtime FILTERS the final findings to the
-  // agent's own category rather than re-stamping leaked ones. Stamping
-  // would fabricate a claim the model never made (a security-worded
-  // finding relabelled "correctness" misleads rendering and synthesis);
-  // filtering keeps category provenance deterministic — downstream code
-  // can trust that every candidate an agent contributes carries that
-  // agent's lens — and an out-of-role finding sits outside the agent's
-  // assigned review role (§21) anyway, so it is dropped, not laundered.
+  // The runtime filters rather than re-stamps: relabelling would
+  // fabricate a claim the model never made.
   it("drops findings outside the agent's own category and keeps its own", async () => {
     const own = makeFinding("correctness");
     const leakedSecurity = makeFinding("security", { line: 43 });
@@ -311,9 +301,7 @@ describe("category integrity", () => {
 });
 
 describe("lifecycle events (spec §26)", () => {
-  // Every event of one agent run carries the review's identity plus
-  // the agent name, so an operator can correlate it with the rest of
-  // the review's events in CloudWatch.
+  // Every event carries the review's identity plus the agent name.
   const correlation = {
     repository: "octo-org/example-service",
     pullRequestNumber: 42,
@@ -336,7 +324,7 @@ describe("lifecycle events (spec §26)", () => {
   });
 
   it("emits agent.completed with duration, aggregated token usage, and finding count", async () => {
-    // A two-turn run: usage must be SUMMED across both model calls.
+    // A two-turn run: usage must be summed across both model calls.
     const { agent, entries } = makeAgent([
       message([toolUseBlock("toolu_1", "get_diff", {})], "tool_use", {
         inputTokens: 100,
@@ -471,8 +459,8 @@ describe("lifecycle events (spec §26)", () => {
 
 describe("prompt caching", () => {
   it("marks the system prompt as a cache breakpoint on every turn", async () => {
-    // Render order is tools -> system -> messages, so the marker on the
-    // last system block caches the tool schemas too.
+    // Render order is tools then system, so the marker on the last
+    // system block caches the tool schemas too.
     const { agent, create } = makeAgent([
       message([toolUseBlock("toolu_1", "get_diff", {})], "tool_use"),
       message([textBlock(finalJson)], "end_turn"),
@@ -505,8 +493,7 @@ describe("prompt caching", () => {
   });
 
   it("sends a byte-identical prefix between turns, so the cache can hit", async () => {
-    // The property caching depends on: turn two repeats turn one's
-    // prompt unchanged and only appends.
+    // Caching depends on turn two repeating turn one's prefix unchanged.
     const { agent, requests } = makeAgent([
       message([toolUseBlock("toolu_1", "get_diff", {})], "tool_use"),
       message([textBlock(finalJson)], "end_turn"),
@@ -525,8 +512,7 @@ describe("prompt caching", () => {
   });
 
   it("reports cache writes and reads separately on agent.completed", async () => {
-    // The shape a working cache produces: turn one writes the prefix,
-    // turn two reads it back.
+    // A working cache: turn one writes the prefix, turn two reads it.
     const { agent, entries } = makeAgent([
       message([toolUseBlock("toolu_1", "get_diff", {})], "tool_use", {
         inputTokens: 12,

@@ -1,8 +1,4 @@
-/**
- * The shared shapes between the review agents (this package) and the
- * orchestrator (@pr-review/reviewer): the loaded PR context an agent
- * reviews, and the agent interface itself.
- */
+/** The shared shapes between the review agents and the orchestrator. */
 import type { ChangedFile, PullRequestDetails } from "@pr-review/github";
 
 /** Everything loaded about a PR before any agent runs. */
@@ -15,11 +11,8 @@ export interface ReviewContext {
 }
 
 /**
- * One review agent. `run` resolves with CANDIDATE findings — untrusted
- * agent output that must pass the deterministic validation chain
- * (@pr-review/reviewer's validateFindings) before anything reaches
- * GitHub — and rejects when the agent fails (invalid final output,
- * turn-cap exceeded, model API error).
+ * One review agent. `run` resolves with untrusted candidate findings
+ * that must pass validateFindings before anything reaches GitHub.
  */
 export interface ReviewAgent {
   name: string;

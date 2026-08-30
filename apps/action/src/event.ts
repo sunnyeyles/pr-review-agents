@@ -1,12 +1,7 @@
 /**
- * Reading the pull request out of the Actions event payload.
- *
- * GitHub writes the triggering webhook payload to a file and points
- * GITHUB_EVENT_PATH at it. It is the raw pull_request event minus any
- * delivery envelope: an Actions event carries no `installation.id`,
- * because the workflow token already scopes the request. The payload
- * schema below is therefore local to this app, while the trigger
- * contract it checks against is shared via @pr-review/schemas.
+ * Reads the pull request out of the Actions event payload. An Actions
+ * event carries no `installation.id` — the workflow token scopes the
+ * request — so the payload schema is local to this app.
  */
 import { isSupportedPullRequestAction } from "@pr-review/schemas";
 import type { ReviewTarget } from "@pr-review/reviewer";
@@ -33,20 +28,14 @@ const pullRequestEventSchema = z.object({
   }),
 });
 
-/**
- * The outcome of inspecting one event: either a pull request to
- * review, or a reason this event is not one. An ignored action is a
- * normal, successful no-op — most workflow triggers are not reviews.
- */
+/** Either a pull request to review, or a reason this event is not one. */
 export type EventInspection =
   | { review: true; target: ReviewTarget; isFork: boolean }
   | { review: false; reason: string };
 
 /**
- * Parses a raw Actions event payload into a review target. Throws only
- * on a payload that claims to be a supported pull_request event but
- * does not match the schema — a malformed event is a bug worth failing
- * the workflow over, whereas an unrelated event is simply ignored.
+ * Throws only on a payload claiming to be a supported pull_request event
+ * that does not match the schema; an unrelated event is ignored.
  */
 export function inspectEvent(
   payload: unknown,
@@ -82,10 +71,8 @@ export function inspectEvent(
       pullRequestNumber: parsed.data.pull_request.number,
       headSha: parsed.data.pull_request.head.sha,
     },
-    // Recorded for logging only. Whether the check run can actually be
-    // published is decided by the token GitHub handed this workflow,
-    // not by where the branch lives, so the publisher reacts to the
-    // real permission error rather than predicting it from this flag.
+    // Logging only: the publisher reacts to the real permission error
+    // rather than predicting it from this flag.
     isFork: headRepo !== undefined && headRepo !== `${owner}/${repo}`,
   };
 }
