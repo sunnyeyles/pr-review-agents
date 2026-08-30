@@ -1,12 +1,4 @@
-/**
- * The seeding decision logic, with no Langfuse project involved.
- *
- * Every property asserted here is one a live run cannot cheaply prove:
- * that a re-run writes nothing, that a prompt failing the contract
- * guard is never published, and that one broken prompt does not cost
- * the other three. The writer is a stub, so the whole file is offline
- * and runs with the fast suite.
- */
+/** The seeding decision logic against a stub writer; no Langfuse project involved. */
 import { createCapturingLogger } from "@pr-review/logging";
 import { describe, expect, it, vi } from "vitest";
 
@@ -38,9 +30,8 @@ interface StubWriter {
 }
 
 /**
- * Builds the write seam from a name → current-state table. A
- * LabelledPrompt is what Langfuse already holds, `undefined` means the
- * prompt does not exist there, and an Error rejects the read.
+ * Builds the write seam from a name → current-state table: a
+ * LabelledPrompt is held, `undefined` is absent, an Error rejects the read.
  */
 function makeWriter(
   existing: Record<string, LabelledPrompt | Error | undefined> = {},
@@ -108,9 +99,7 @@ describe("seedManagedPrompts", () => {
       architecture: "unchanged",
       synthesis: "unchanged",
     });
-    // The whole point of the comparison: re-running the seeder must
-    // not pile permanent versions onto a project that is already
-    // current.
+    // Re-running must not pile permanent versions onto a current project.
     expect(published).toEqual([]);
     expect(writer.publish).not.toHaveBeenCalled();
   });
@@ -163,8 +152,7 @@ describe("seedManagedPrompts", () => {
 
   it("refuses to publish a prompt the runtime guard would reject", async () => {
     const prompts = validPrompts();
-    // Loses its category stamp, so every finding it produced would be
-    // discarded downstream — a prompt that fails silently.
+    // Loses its category stamp, so its findings would be discarded downstream.
     prompts.correctness = validRemotePrompt("security", "WRONG CATEGORY");
     const { writer, published } = makeWriter();
     const { logger, entries } = createCapturingLogger();
@@ -263,9 +251,7 @@ describe("seedManagedPrompts", () => {
 
     await seedManagedPrompts(writer, { prompts, logger });
 
-    // Prompts are large and are about to be public in Langfuse anyway,
-    // but a log line carrying one makes every review log unreadable —
-    // the same rule the fetch path is held to.
+    // A log line carrying a whole prompt makes every review log unreadable.
     const serialised = JSON.stringify(entries);
     for (const prompt of Object.values(prompts)) {
       expect(serialised).not.toContain(prompt);

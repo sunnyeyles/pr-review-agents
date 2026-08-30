@@ -1,13 +1,7 @@
 /**
- * @pr-review/ai
- *
- * The Anthropic side of the review system: the SDK client seam (model
- * configured via ANTHROPIC_MODEL, key injected by the caller), the six
- * read-only repository-scoped agent tools, the shared agent runtime
- * (one agentic loop), and the three review lenses — Correctness,
- * Security, Architecture — built on it. Agents only ever PROPOSE
- * findings; publishing belongs to the deterministic pipeline in
- * @pr-review/reviewer.
+ * The Anthropic side of the review system: the client seam, the six
+ * read-only tools, the shared agent runtime, and the three lenses.
+ * Agents only propose findings; publishing lives in @pr-review/reviewer.
  */
 export {
   createAnthropicClient,

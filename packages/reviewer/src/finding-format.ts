@@ -1,9 +1,6 @@
 /**
- * How a finding reads once it leaves the pipeline.
- *
- * Two surfaces render the same findings — the check run and the pull
- * request review — and they must describe a finding identically, so
- * the prose lives here rather than in either renderer.
+ * How a finding reads once it leaves the pipeline. Shared so the check
+ * run and the review describe a finding identically.
  */
 import type { ReviewFinding } from "@pr-review/schemas";
 
@@ -42,19 +39,12 @@ export function summarise(finding: ReviewFinding): string {
   return lines.join("\n");
 }
 
-/**
- * The lens name in prose. Agent names are the finding categories; an
- * unrecognised name falls through verbatim.
- */
+/** The lens name in prose; an unrecognised name falls through verbatim. */
 export function lensLabel(agent: string): string {
   return (categoryLabels as Record<string, string | undefined>)[agent] ?? agent;
 }
 
-/**
- * Which lenses did not complete. Names only — failure error strings
- * are internal detail and never reach GitHub (they are logged as
- * agent.failed instead).
- */
+/** Which lenses did not complete. Names only; error strings never reach GitHub. */
 export function failureNotes(
   agentFailures: readonly AgentFailure[],
 ): string[] {

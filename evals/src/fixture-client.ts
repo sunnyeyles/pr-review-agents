@@ -1,15 +1,7 @@
 /**
- * The fixture-backed GitHub client.
- *
- * The review agents reach for repository context through the six
- * read-only tools (@pr-review/ai's tools.ts), and those tools call a
- * GithubInstallationClient. Evaluations must give the model that real
- * tool surface — an agent that cannot read a neighbouring file reviews
- * a different pull request than the one a user would get — so the
- * fixture repository is served through the same interface instead of
- * the network. Nothing here talks to GitHub, and both write methods on
- * the interface throw: an evaluation that somehow reached the publish
- * path is a bug, not a passing run.
+ * Serves a fixture repository through the real GithubInstallationClient
+ * interface, so the agents get their real tool surface. Nothing talks to
+ * GitHub, and both write methods throw.
  */
 import type {
   ChangedFile,
@@ -95,9 +87,8 @@ export function createFixtureClient(fixture: LoadedFixture): FixtureClient {
           `fixture ${fixture.name} serves ${owner}/${repo}, not ${request.owner}/${request.repo}`,
         );
       }
-      // Reads are pinned to a SHA by the tool scope: the head SHA is
-      // the proposed state, the base SHA the state before the pull
-      // request — where a file the pull request adds does not exist.
+      // Reads are pinned to a SHA: head is the proposed state, base the
+      // state before the pull request, where an added file is absent.
       const atHead = request.ref === fixture.pullRequest.headSha;
       const tree = atHead ? fixture.headFiles : fixture.baseFiles;
       record("getFileContents", `${request.path} @ ${atHead ? "head" : "base"}`);
@@ -118,9 +109,8 @@ export function createFixtureClient(fixture: LoadedFixture): FixtureClient {
         );
       }
       record("searchCode", request.query);
-      // GitHub's code search is far cleverer than this, but the
-      // property that matters for a review is the same: a query finds
-      // the files in this repository that mention the terms.
+      // Cruder than GitHub's code search, but the property that matters
+      // holds: a query finds the files mentioning the terms.
       const terms = request.query
         .toLowerCase()
         .split(/\s+/)

@@ -1,9 +1,6 @@
 /**
- * Shared fixtures and scripted fakes for the agent tests
- * (agent-runtime.test.ts, agents.test.ts). Tests only: this module is
- * not exported from the package and is never imported by production
- * code. No real network anywhere — the Anthropic client and the GitHub
- * installation client are structural fakes.
+ * Shared fixtures and scripted fakes for the agent tests. Not exported
+ * from the package; the Anthropic and GitHub clients are structural fakes.
  */
 import type Anthropic from "@anthropic-ai/sdk";
 import type {
@@ -82,10 +79,7 @@ export function toolUseBlock(
   return { type: "tool_use", id, name, input, caller: { type: "direct" } };
 }
 
-/**
- * A scripted response's usage block. Cache counters default to absent,
- * the shape a response with no caching returns.
- */
+/** Cache counters default to absent, as an uncached response returns them. */
 export interface ScriptedUsage {
   inputTokens: number;
   outputTokens: number;
@@ -125,10 +119,7 @@ export function message(
   };
 }
 
-/**
- * The system prompt text of one recorded request — the runtime sends
- * `system` as a block array so it can carry the caching breakpoint.
- */
+/** The runtime sends `system` as a block array so it can carry the cache breakpoint. */
 export function systemPromptOf(
   params: Anthropic.Messages.MessageCreateParamsNonStreaming | undefined,
 ): string {
@@ -140,8 +131,7 @@ export function systemPromptOf(
 }
 
 /**
- * A scripted fake Anthropic client that replays queued responses.
- * `requests` holds a deep copy of each request as sent: the loop
+ * Replays queued responses. `requests` holds deep copies: the agent loop
  * mutates one `messages` array in place, so live args would alias.
  */
 export function makeAnthropic(responses: Anthropic.Messages.Message[]) {
@@ -172,14 +162,7 @@ export function makeGithub() {
   } satisfies GithubInstallationClient;
 }
 
-/**
- * A remote prompt that satisfies the lens contract guard.
- *
- * The guard's rules live in reviewPromptContractProblems, and a
- * fixture that restates them drifts the moment the guard tightens —
- * which is why every suite that needs a "valid remote prompt" builds
- * it from here rather than writing its own three-line approximation.
- */
+/** A remote prompt that satisfies reviewPromptContractProblems. */
 export function validRemotePrompt(category: string, marker: string): string {
   return [
     marker,
@@ -191,10 +174,7 @@ export function validRemotePrompt(category: string, marker: string): string {
   ].join("\n");
 }
 
-/**
- * A remote synthesis prompt. The synthesiser reads findings rather
- * than a repository, so it carries only the shared hardening.
- */
+/** The synthesiser reads findings, not a repository, so only shared hardening applies. */
 export function validRemoteSynthesisPrompt(marker: string): string {
   return [
     marker,

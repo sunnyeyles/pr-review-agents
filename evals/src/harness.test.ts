@@ -1,17 +1,8 @@
 /**
- * The evaluation harness's own tests.
- *
- * The evaluations themselves cannot run in CI on every push — they
- * call the model — but everything AROUND the model can, and must:
- * a fixture whose generated patch is off by a line, or an expectation
- * that would pass on any finding at all, produces confident nonsense.
- *
- * So these tests drive the SAME pipeline the evaluations drive
- * (reviewPullRequest -> the LangGraph agent fan-out -> the Synthesiser
- * -> the deterministic validation chain), with the model boundary
- * filled by the scripted fakes from @pr-review/ai's agent test
- * support. Findings are planted where a good reviewer would put them,
- * and where a bad one would.
+ * The evaluation harness's own tests: the same pipeline the evaluations
+ * drive, with the model boundary filled by scripted fakes so it can run
+ * in CI. Findings are planted where a good reviewer would put them, and
+ * where a bad one would.
  */
 import {
   createReviewAgent,
@@ -102,11 +93,7 @@ function findingExpectationFor(fixtureName: string): FixtureExpectation {
   return expectation;
 }
 
-/**
- * Review dependencies whose agents and Synthesiser are the REAL ones,
- * with only the Anthropic client scripted: each lens answers with the
- * findings it was given, and the Synthesiser passes its input through.
- */
+/** Real agents and Synthesiser, with only the Anthropic client scripted. */
 function scriptedDeps(
   byCategory: Partial<Record<FindingCategory, ReviewFinding[]>>,
 ): FixtureReviewDeps {
@@ -230,9 +217,8 @@ describe("generated diffs", () => {
     const contents = headFile(fixture, "src/data/customers.ts");
     const changed = changedFile(fixture, "src/data/customers.ts");
 
-    // The deterministic validation chain only accepts a finding whose
-    // line is an added line, so the generated patch has to place the
-    // new function exactly where it is in the head file.
+    // Validation only accepts findings on added lines, so the generated
+    // patch must place the new function where the head file has it.
     const planted = makeFinding("security", {
       file: "src/data/customers.ts",
       line: lineOf(contents, "where id = $1"),
@@ -247,8 +233,7 @@ describe("generated diffs", () => {
   });
 
   it("emits one hunk per changed region rather than one giant hunk", () => {
-    // Two edits far apart in the same file: the import and the route
-    // registration, with untouched lines between them.
+    // Two edits far apart in the same file, with untouched lines between.
     const changed = changedFile(
       loadFixture("security-tenant-scope"),
       "src/routes/index.ts",
@@ -320,8 +305,6 @@ describe("the full pipeline against a fixture", () => {
       }),
     );
 
-    // The real graph ran: three agent nodes, the join, synthesis, and
-    // the deterministic validation chain.
     expect(review.result.agentFailures).toEqual([]);
     expect(review.result.synthesisOutcome).toBe("completed");
     expect(review.rendered.conclusion).toBe("neutral");
@@ -340,8 +323,7 @@ describe("the full pipeline against a fixture", () => {
     const review = await runFixtureReview(
       fixture,
       scriptedDeps({
-        // A real finding, on a real added line, in a real changed file
-        // — but not on the planted bug. The expectation must reject it.
+        // A real finding on a real added line, but not the planted bug.
         correctness: [
           makeFinding("correctness", {
             file: "src/routes/index.ts",
@@ -387,8 +369,7 @@ describe("the full pipeline against a fixture", () => {
       ).toBe(true);
     }
 
-    // One plausible-sounding false positive is a failure, and the
-    // failure detail says so.
+    // One plausible-sounding false positive is a failure.
     const contents = headFile(fixture, "src/http/pagination.ts");
     const noisy = await runFixtureReview(
       fixture,

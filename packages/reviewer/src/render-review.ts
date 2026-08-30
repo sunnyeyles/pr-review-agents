@@ -1,18 +1,8 @@
 /**
- * Renders validated findings into a pull request review: a body, and
- * one inline comment per line-anchored finding. Pure — the caller owns
- * the GitHub API call.
- *
- * Why a review as well as a check run: a check annotation cannot be
- * replied to or resolved. A review comment is a thread, so a finding
- * becomes something a reader answers and ticks off rather than a
- * notice they scroll past.
- *
- * Anchoring is already settled upstream. validateFindings drops any
- * finding whose line is not an added line of the diff, which is
- * exactly GitHub's condition for accepting an inline comment — so
- * every surviving line-anchored finding is a valid anchor, and the
- * ones without a line are file-level and carried in the body.
+ * Renders validated findings into a review body plus one inline comment
+ * per line-anchored finding; the caller owns the API call. Anchoring is
+ * settled upstream: validateFindings already drops findings that are not
+ * on an added line, which is GitHub's own condition for a comment.
  */
 import type { ReviewComment } from "@pr-review/github";
 import type { ReviewFinding } from "@pr-review/schemas";
@@ -40,12 +30,7 @@ function commentBody(finding: ReviewFinding): string {
   return lines.join("\n");
 }
 
-/**
- * Builds the review payload, or undefined when there is nothing worth
- * posting — no findings means the check run's "No issues found" is the
- * whole story, and an empty review would be noise on every clean pull
- * request.
- */
+/** undefined when there is nothing worth posting; a clean PR gets no review. */
 export function renderReview(
   findings: readonly ReviewFinding[],
   agentFailures: readonly AgentFailure[] = [],

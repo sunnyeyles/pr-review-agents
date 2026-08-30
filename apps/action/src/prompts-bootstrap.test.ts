@@ -1,12 +1,7 @@
 /**
- * The prompt-resolution contract, checked across the package boundary.
- *
- * @pr-review/ai owns the fetch and @pr-review/reviewer owns the
- * synthesis prompt, so neither package can test the pair on its own —
- * only a consumer of both can, and the action is that consumer. These
- * tests re-enact the bootstrap against the public barrels rather than
- * booting the entrypoint, so they pin the wiring contract without a
- * runner or an event payload.
+ * The prompt-resolution contract across the package boundary: the fetch
+ * and the synthesis prompt live in different packages, so only a
+ * consumer of both can test the pair.
  */
 import {
   loadManagedPrompts,
@@ -56,9 +51,8 @@ const failingClient: LangfusePromptClient = {
 
 describe("resolving the synthesis prompt across packages", () => {
   it("accepts the in-code synthesis prompt through the contract guard", async () => {
-    // The guard must not reject the very prompt this repo ships. If it
-    // did, pasting the shipped text into Langfuse unchanged would be
-    // silently ignored — a confusing first experience of the feature.
+    // If the guard rejected the shipped prompt, pasting it into
+    // Langfuse unchanged would be silently ignored.
     const { sources, prompts } = await loadManagedPrompts(
       clientReturning(SYNTHESIS_SYSTEM_PROMPT),
       {

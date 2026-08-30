@@ -1,15 +1,6 @@
 /**
- * The one place the evaluations read model credentials.
- *
- * Evaluations measure review quality, which means they call the real
- * Anthropic API and spend real tokens. The key is never stored, never
- * defaulted, and never logged: it arrives in the environment, exactly
- * as it does for the action itself (where it is a repository secret
- * passed as an action input).
- *
- * Missing credentials fail fast, before any fixture is loaded and
- * before any client is built, so the failure is one clear message
- * rather than three timed-out agent runs.
+ * The one place the evaluations read model credentials. The key is never
+ * stored, defaulted, or logged, and missing credentials fail fast.
  */
 
 /** Environment variable holding the Anthropic API key. */
@@ -19,22 +10,13 @@ export const API_KEY_ENV = "ANTHROPIC_API_KEY";
 export const MODEL_ENV = "ANTHROPIC_MODEL";
 
 /**
- * Environment variable narrowing which review agents the evaluations
- * run — the same `all`-or-comma-separated-subset spelling as the
- * action's `agents` input, parsed by the same resolveReviewLenses.
- *
- * This is a manual override for iterating on ONE lens cheaply, not a
- * supported configuration: fixture expectations that assert findings
- * in a category whose agent no longer runs will fail, and should.
+ * Narrows which review agents the evaluations run, spelled like the
+ * action's `agents` input. Expectations for a lens that no longer runs
+ * will fail, and should.
  */
 export const AGENTS_ENV = "REVIEW_AGENTS";
 
-/**
- * The model evaluated when MODEL_ENV is unset. It mirrors the default
- * of the action's `model` input (apps/action/action.yml), so a bare
- * `pnpm eval` measures what a user gets out of the box; set MODEL_ENV
- * to evaluate any other model.
- */
+/** Mirrors the default of the action's `model` input. */
 export const DEFAULT_MODEL = "claude-sonnet-5";
 
 /** Model credentials for one evaluation run. */
@@ -61,10 +43,7 @@ export const MISSING_API_KEY_MESSAGE = [
   "The fast unit suite (pnpm test) never calls a model and needs no key.",
 ].join("\n");
 
-/**
- * Reads model credentials from the environment, or throws with
- * MISSING_API_KEY_MESSAGE when the key is absent.
- */
+/** Throws MISSING_API_KEY_MESSAGE when the key is absent. */
 export function requireModelAccess(
   env: Record<string, string | undefined>,
 ): ModelAccess {

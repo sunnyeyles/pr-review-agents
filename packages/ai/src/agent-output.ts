@@ -1,25 +1,14 @@
 /**
- * The Zod-validated contract for an agent's final message: a single
- * JSON object holding a findings array of the shared candidate
- * shape. Anything else is an agent failure — never a crash, and never
- * something that reaches the GitHub-writing pipeline.
+ * The Zod-validated contract for an agent's final message. Anything else
+ * is an agent failure, never a crash.
  */
 import type Anthropic from "@anthropic-ai/sdk";
 import { reviewFindingSchema, type ReviewFinding } from "@pr-review/schemas";
 import { z } from "zod";
 
 /**
- * The concatenated text of one message's content blocks — the bytes an
- * agent's or the Synthesiser's final answer actually arrives in.
- *
- * Shared because both callers of the Anthropic seam need it and must
- * read a message the same way: a response mixes text with tool_use
- * blocks, and a second implementation that joined them differently (or
- * forgot a block type) would change what {@link extractAgentOutput}
- * is handed without either caller looking wrong on its own.
- *
- * Typed structurally rather than against ContentBlock so a caller can
- * pass a response's `content` without narrowing it first.
+ * The concatenated text of one message's content blocks. Typed
+ * structurally so a caller can pass `content` without narrowing it.
  */
 export function messageText(content: readonly unknown[]): string {
   return content
@@ -44,10 +33,8 @@ export type AgentOutputResult =
   | { ok: false; error: string };
 
 /**
- * Extracts and validates the findings JSON from an agent's final
- * message text. Tolerates prose and markdown fences around the object
- * (everything outside the outermost braces is ignored) but the JSON
- * itself must parse and match agentOutputSchema exactly.
+ * Everything outside the outermost braces is ignored, but the JSON
+ * itself must match agentOutputSchema exactly.
  */
 export function extractAgentOutput(text: string): AgentOutputResult {
   const start = text.indexOf("{");

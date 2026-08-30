@@ -23,11 +23,7 @@ const SECURITY_FALLBACK = buildReviewSystemPrompt(securityLens);
 const ARCHITECTURE_FALLBACK = buildReviewSystemPrompt(architectureLens);
 const synthesisFallback = "SYNTHESIS FALLBACK PROMPT";
 
-/**
- * Builds the retrieval seam from a name → outcome table. A string
- * resolves, an Error rejects, and an unlisted name is a test bug rather
- * than a silent pass.
- */
+/** A string resolves, an Error rejects, and an unlisted name is a test bug. */
 function makeClient(
   responses: Record<string, string | Error>,
 ): LangfusePromptClient {
@@ -57,8 +53,7 @@ function allValid(): Record<string, string> {
 
 describe("MANAGED_PROMPT_KEYS", () => {
   it("uses the stable remote prompt names", () => {
-    // These four strings are a contract with the Langfuse project:
-    // renaming one here silently orphans the prompt over there.
+    // Renaming one of these silently orphans the prompt in Langfuse.
     expect(MANAGED_PROMPT_KEYS).toEqual({
       correctness: "correctness_system",
       security: "security_system",
@@ -166,8 +161,7 @@ describe("loadManagedPrompts", () => {
   });
 
   it("treats empty remote content as a fallback case", async () => {
-    // The real client throws on empty content, so the seam never yields
-    // an empty string; this pins that the empty check lives there.
+    // Pins that the empty-content check lives in the client, not here.
     const client: LangfusePromptClient = {
       getTextPrompt: vi.fn(async (name: string) => {
         if (name === "correctness_system") {
@@ -246,9 +240,8 @@ describe("loadManagedPrompts", () => {
 
 describe("the prompt contract guard", () => {
   it("rejects a lens prompt that dropped its category", async () => {
-    // The runtime discards findings whose category is not the lens's
-    // own, so this prompt would report "no findings" on every review
-    // instead of failing — the exact silent failure the guard exists for.
+    // Without its category, every finding is discarded downstream and
+    // the review reports nothing instead of failing.
     const client = makeClient({
       ...allValid(),
       security_system: [
@@ -298,8 +291,7 @@ describe("the prompt contract guard", () => {
   });
 
   it("accepts every in-code prompt it guards", () => {
-    // The guard must never reject the prompts this system ships with,
-    // or the fallback path would be rejecting its own fallback.
+    // Otherwise the fallback path would be rejecting its own fallback.
     const client = makeClient({
       correctness_system: CORRECTNESS_FALLBACK,
       security_system: SECURITY_FALLBACK,

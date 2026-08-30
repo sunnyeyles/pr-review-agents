@@ -1,26 +1,7 @@
 /**
- * The shared review-agent runtime — the loop all three lenses run.
- * A ReviewLens supplies the role, focus, and category; everything else
- * here is identical for every agent.
- *
- * One run:
- *
- *   opening message (PR + files + diff)
- *     -> call model
- *     -> tool_use blocks? dispatch the six read-only tools, loop again
- *     -> no tool_use? that message is the final JSON
- *     -> parse, then keep only findings in this lens's category
- *
- * The loop is a plain `for` capped at maxTurns. Token usage lives in a
- * local outside the try so a mid-loop API error still reports the
- * tokens it spent on the agent.failed line.
- *
- * Category integrity: cross-category findings are DROPPED, never
- * re-stamped. Re-stamping would fabricate a claim the model never made;
- * dropping keeps category provenance deterministic downstream.
- *
- * Failure: bad final output, an exceeded turn cap, or an API error all
- * reject. Nothing here writes to GitHub.
+ * The shared review-agent runtime — the tool loop all three lenses run.
+ * A ReviewLens supplies the role, focus, and category; the rest is
+ * identical for every agent.
  */
 import type Anthropic from "@anthropic-ai/sdk";
 import { startObservation } from "@langfuse/tracing";
@@ -64,11 +45,7 @@ const MAX_DIFF_CHARS = 80_000;
 /** The opening message lists at most this many changed files. */
 const MAX_LISTED_FILES = 300;
 
-/**
- * One review lens: what makes an agent the Correctness, Security, or
- * Architecture reviewer. Everything else — loop, tools, hardening,
- * output contract — is identical across lenses by construction.
- */
+/** What makes an agent the Correctness, Security, or Architecture reviewer. */
 export interface ReviewLens {
   /** The agent's name AND the one finding category it owns. */
   category: FindingCategory;
@@ -80,12 +57,7 @@ export interface ReviewLens {
   contextGuidance?: string;
 }
 
-/**
- * Composes a lens's system prompt. The "# Security rules" block is the
- * prompt-injection hardening and the "# Output" block is the
- * findings contract — both shared verbatim across every lens, with
- * only the role/category substituted.
- */
+/** Composes a lens's system prompt; only role and category vary between lenses. */
 export function buildReviewSystemPrompt(lens: ReviewLens): string {
   const contextGuidance =
     lens.contextGuidance === undefined ? "" : `\n${lens.contextGuidance}`;
@@ -172,11 +144,7 @@ const anthropicToolDefinitions: Anthropic.Messages.Tool[] = reviewTools.map(
   }),
 );
 
-/**
- * Per-lens system prompts resolved once at startup (see
- * @pr-review/ai's prompts module). A lens with no entry uses the
- * in-code prompt from buildReviewSystemPrompt.
- */
+/** A lens with no entry uses the in-code prompt from buildReviewSystemPrompt. */
 export type ReviewSystemPrompts = Partial<Record<FindingCategory, string>>;
 
 /** What every review agent needs, regardless of lens. */
@@ -186,18 +154,9 @@ export interface ReviewAgentDeps {
   model: string;
   github: GithubInstallationClient;
   maxTurns?: number | undefined;
-  /**
-   * Structured lifecycle logger: the runtime emits
-   * agent.started / agent.completed / agent.failed here, carrying the
-   * review's correlation fields plus per-run duration and aggregated
-   * token usage. Defaults to the console logger (single-line JSON for
-   * CloudWatch); tests inject a capturing logger.
-   */
+  /** Receives agent.started / agent.completed / agent.failed. */
   logger?: StructuredLogger | undefined;
-  /**
-   * Pre-resolved system prompts. Missing lenses fall back to the
-   * in-code prompt, so an empty map behaves exactly like none.
-   */
+  /** Pre-resolved system prompts; missing lenses fall back to the in-code prompt. */
   systemPrompts?: ReviewSystemPrompts | undefined;
 }
 
@@ -239,8 +198,7 @@ export function createReviewAgent(
         baseSha: context.pullRequest.baseSha,
       };
 
-      // Every event of this run carries these fields; completed/failed
-      // add duration and the usage aggregated across all model calls.
+      // Every event of this run carries these fields.
       const eventFields = {
         repository: `${context.owner}/${context.repo}`,
         pullRequestNumber: context.pullRequest.number,
@@ -248,9 +206,7 @@ export function createReviewAgent(
         agent: lens.category,
       };
       logger.info("agent.started", eventFields);
-      // Children are attached to this observation explicitly rather
-      // than through ambient context, so the loop below keeps its
-      // shape. With no tracing configured every call here is a no-op.
+      // With no tracing configured every observation call is a no-op.
       const agentObservation = startObservation(
         `review-agent-${lens.category}`,
         {
@@ -320,8 +276,7 @@ export function createReviewAgent(
             toolUse.name,
             toolUse.input,
           );
-          // A failed tool is reported to the model rather than thrown,
-          // so the span records it without ending the run.
+          // A failed tool is reported to the model rather than thrown.
           toolObservation
             .update(
               outcome.ok
@@ -356,9 +311,7 @@ export function createReviewAgent(
       );
 
       try {
-        // The cap bounds MODEL CALLS, not tool round-trips: a response
-        // with no tool uses always ends the run on the call it arrived
-        // on, so the cap can never burn a call the agent cannot answer.
+        // The cap bounds model calls, not tool round-trips.
         for (let turn = 1; ; turn += 1) {
           const response = await callModel();
           const toolUses = toolUseBlocks(response.content);
@@ -383,7 +336,7 @@ export function createReviewAgent(
               `(stop_reason: ${apiStopReason ?? "unknown"}): ${output.error}`,
           );
         }
-        // Category integrity — see the module doc comment.
+        // Cross-category findings are dropped, never re-stamped.
         const findings = output.findings.filter(
           (finding) => finding.category === lens.category,
         );

@@ -29,8 +29,7 @@ const context: ReviewContext = {
     headRef: "feature/rate-limit",
     headSha: "6dcb09b5b57875f334f61aebed695e2e4193db5e",
   },
-  // The single source of truth for the changed-file list: the agents
-  // and the validation node both read it from here.
+  // The agents and the validation node both read the changed-file list here.
   changedFiles,
   diff: "",
 };
@@ -128,20 +127,13 @@ describe("runReviewPipeline: agent fan-out and partial failure (spec §20)", () 
       context,
     );
 
-    // Give LangGraph's internal scheduling (channel setup, task
-    // dispatch — a few microtask hops before any node body runs) a
-    // chance to reach every agent node, WITHOUT resolving any of them.
-    // A sequential implementation (awaiting one agent before starting
-    // the next) would still be stuck on the first agent here, since
-    // nothing has been resolved yet — only a true fan-out reaches all
-    // three.
+    // Let LangGraph's scheduling reach every agent node without
+    // resolving any: a sequential runner would still be on the first.
     for (let tick = 0; tick < 50 && starts.length < 3; tick += 1) {
       await new Promise((resolve) => setTimeout(resolve, 0));
     }
-    // LangGraph schedules the fan-out concurrently but does not promise
-    // to invoke same-superstep nodes in registration order, so assert
-    // set membership here; the RESULT order is still deterministic (see
-    // the assertion below), because `join` re-sorts by agent index.
+    // Same-superstep invocation order is not promised, so assert set
+    // membership; `join` re-sorts, so the result order is deterministic.
     expect([...starts].sort()).toEqual(["architecture", "correctness", "security"]);
 
     for (const resolve of resolvers) {
@@ -261,8 +253,7 @@ describe("runReviewPipeline: synthesis (spec §16)", () => {
 
     expect(result.synthesisOutcome).toBe("failed");
     expect(result.synthesisError).toBe("anthropic unavailable");
-    // Fallback candidates still flow through the exact same deterministic
-    // validation chain the synthesised ones would.
+    // Fallback candidates still flow through the same validation chain.
     expect(result.findings).toEqual([raw]);
   });
 });
@@ -287,9 +278,8 @@ describe("runReviewPipeline: deterministic validation (spec §17)", () => {
   });
 
   it("validates against the context's changed-file list, the only list there is", async () => {
-    // A context whose changed files are DIFFERENT from the module-level
-    // `changedFiles` fixture: validation must follow this list, because
-    // it is the same one the agents were handed.
+    // Changed files differ from the module-level fixture: validation
+    // must follow the list the agents were handed.
     const otherFile: ChangedFile = {
       filename: "src/rate-limit.ts",
       status: "added",
@@ -300,7 +290,7 @@ describe("runReviewPipeline: deterministic validation (spec §17)", () => {
     const otherContext: ReviewContext = { ...context, changedFiles: [otherFile] };
 
     const inThisPr = makeFinding({ file: "src/rate-limit.ts", line: 2 });
-    // In the module-level fixture, but NOT in the context the agents saw.
+    // In the module-level fixture, but not in the context the agents saw.
     const notInThisPr = makeFinding({ file: "src/sessions.ts", line: 42 });
 
     const seenByAgent: (readonly ChangedFile[])[] = [];
@@ -315,8 +305,6 @@ describe("runReviewPipeline: deterministic validation (spec §17)", () => {
       otherContext,
     );
 
-    // The agents reviewed exactly the list validation filtered against —
-    // `runReviewPipeline` takes no second copy that could disagree.
     expect(seenByAgent).toEqual([[otherFile]]);
     expect(result.candidates).toEqual([inThisPr, notInThisPr]);
     expect(result.findings).toEqual([inThisPr]);

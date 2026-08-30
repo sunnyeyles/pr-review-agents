@@ -1,22 +1,7 @@
 /**
- * Driving the REAL review for one fixture.
- *
- * This is deliberately the whole pipeline, not a convenient slice of
- * it: reviewPullRequest loads the pull request through the (fixture-
- * backed) GitHub client, runReviewPipeline fans the selected agents out
- * as concurrent graph nodes, joins their candidates with the partial-
- * failure rule, refines them through the Synthesiser, and runs the
- * deterministic validation chain; renderCheckRun then turns the
- * survivors into the check run a user would see. Everything an
- * evaluation asserts on is what a real pull request would have got.
- *
- * The wiring in `modelBackedDeps` is the same wiring the action
- * entrypoint uses (apps/action/src/index.ts) — same agent factory,
- * same shared Anthropic client and model for the agents and the
- * Synthesiser. Only two things differ, and both are the point of an
- * evaluation rather than a shortcut around it: the GitHub client
- * serves a fixture repository, and the publish step captures the
- * rendered check run instead of sending it to GitHub.
+ * Drives the real review pipeline for one fixture. Only two things
+ * differ from production: the GitHub client serves a fixture
+ * repository, and the publish step captures the rendered check run.
  */
 import {
   createAnthropicClient,
@@ -44,27 +29,15 @@ import { createFixtureClient, type FixtureCall } from "./fixture-client.js";
 import type { LoadedFixture } from "./fixture.js";
 import type { ModelAccess } from "./model-access.js";
 
-/**
- * The model-facing half of a review, injected so the evaluations can
- * run against the real API while the harness's own tests run the same
- * pipeline against scripted agents.
- */
+/** The model-facing half of a review; the harness's own tests inject scripted agents. */
 export interface FixtureReviewDeps {
-  /**
-   * Builds the review agents over the fixture-backed GitHub client and
-   * the review's logger, so every lifecycle event of one fixture — the
-   * agents' included — lands in the same place.
-   */
+  /** Built over the review's own logger, so every event of one fixture lands together. */
   createAgents: (
     github: GithubInstallationClient,
     logger: StructuredLogger,
   ) => readonly ReviewAgent[];
   synthesiser: Synthesiser;
-  /**
-   * Receives every lifecycle event as it happens, in addition to the
-   * capturing logger the report is built from. The evaluations pass
-   * the console logger so a long run shows progress.
-   */
+  /** Receives events live, alongside the capturing logger the report is built from. */
   logger?: StructuredLogger | undefined;
 }
 
@@ -77,19 +50,14 @@ export interface FixtureReview {
   rendered: RenderedCheckRun;
   /** Every repository read the agents made through their tools. */
   calls: readonly FixtureCall[];
-  /** The lifecycle events the review emitted (spec §26). */
+  /** The lifecycle events the review emitted. */
   events: readonly CapturedLogEvent[];
   durationMs: number;
 }
 
 /**
- * The production wiring: real Anthropic client, real agents, real
- * Synthesiser.
- *
- * `lenses` narrows the agent set exactly as the action's `agents`
- * input does. It defaults to every lens, so a bare `pnpm eval`
- * measures the review a user actually gets; narrowing it evaluates one
- * lens at roughly its own share of the cost.
+ * The production wiring. `lenses` narrows the agent set exactly as the
+ * action's `agents` input does, and defaults to every lens.
  */
 export function modelBackedDeps(
   access: ModelAccess,
@@ -152,8 +120,7 @@ export async function runFixtureReview(
           deps.synthesiser,
           context,
         ),
-      // The only step an evaluation replaces: the review is judged
-      // here rather than published to GitHub.
+      // The only step an evaluation replaces.
       publishReview: async (_target, checkRun) => {
         rendered = checkRun;
       },

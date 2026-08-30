@@ -1,18 +1,7 @@
 /**
- * What each fixture must produce, and how a result is judged against
- * it.
- *
- * An expectation is deliberately narrow about WHAT was found and
- * generous about HOW it was said. The model chooses its own wording,
- * severity, and confidence, so matching on prose would measure
- * phrasing rather than review quality; what an expectation pins down
- * is the category and the location — a correctness finding on the line
- * carrying the planted bug is a real catch, and a correctness finding
- * elsewhere in the pull request is not.
- *
- * Locations are anchored to source markers rather than line numbers so
- * that editing a fixture cannot silently invalidate an expectation:
- * a marker that no longer matches exactly one line fails loudly.
+ * What each fixture must produce. An expectation pins down the category
+ * and location, never the wording. Locations anchor to source markers,
+ * so a marker that stops matching exactly one line fails loudly.
  */
 import type { FindingCategory, ReviewFinding } from "@pr-review/schemas";
 
@@ -20,10 +9,8 @@ import type { LoadedFixture } from "./fixture.js";
 import type { FixtureReview } from "./run-fixture-review.js";
 
 /**
- * A region of one changed file a finding may point at: from the line
- * containing `startMarker` to the line containing `endMarker` (or the
- * end of the file). A finding with no line at all counts as pointing
- * at the whole file.
+ * A region of one changed file, from `startMarker` to `endMarker` or the
+ * end of the file. A finding with no line counts as pointing at the file.
  */
 export interface FindingAnchor {
   file: string;
@@ -101,8 +88,7 @@ function inAnchor(finding: ReviewFinding, anchor: ResolvedAnchor): boolean {
   if (finding.file !== anchor.file) {
     return false;
   }
-  // A file-level finding names the file and nothing narrower, which
-  // still points at the planted problem in a file that has one.
+  // A file-level finding still points at the planted problem.
   return (
     finding.line === undefined ||
     (finding.line >= anchor.from && finding.line <= anchor.to)
