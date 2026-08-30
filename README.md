@@ -1,9 +1,9 @@
 # pr-review-agents
 
 Reviews pull requests with three independent AI agents — **Correctness**,
-**Security**, and **Architecture** — and publishes the result as an
-`AI PR Review` check run with inline annotations. Any subset of the three can
-be selected per run.
+**Security**, and **Architecture** — and publishes the result as inline pull
+request review comments, alongside an `AI PR Review` check run carrying the
+full summary. Any subset of the three can be selected per run.
 
 The agents never touch GitHub. They propose structured findings; deterministic
 application code decides what actually gets published.
@@ -24,7 +24,7 @@ on:
 
 permissions:
   contents: read
-  pull-requests: read
+  pull-requests: write
   checks: write        # omit and reviews still land, in the job summary
 
 jobs:

@@ -13,9 +13,14 @@
  */
 import type { ReviewContext } from "@pr-review/ai";
 import type { GithubInstallationClient } from "@pr-review/github";
-import { createConsoleLogger, type StructuredLogger } from "@pr-review/logging";
+import {
+  createConsoleLogger,
+  errorMessage,
+  type StructuredLogger,
+} from "@pr-review/logging";
 
 import { renderCheckRun, type RenderedCheckRun } from "./render-check-run.js";
+import { renderReview, type RenderedReview } from "./render-review.js";
 import type { ReviewPipelineResult } from "./review-graph.js";
 
 /** The pull request one review runs against. */
@@ -37,6 +42,17 @@ export type PublishReview = (
   rendered: RenderedCheckRun,
 ) => Promise<void>;
 
+/**
+ * Delivers the inline review comments, reporting whether they landed.
+ * A false return is not an error: the findings are still published on
+ * the check run, which keeps its annotations precisely because the
+ * comments did not appear.
+ */
+export type PublishReviewComments = (
+  target: ReviewTarget,
+  rendered: RenderedReview,
+) => Promise<boolean>;
+
 export interface ReviewPullRequestDeps {
   /** Authenticated read-only GitHub client for this repository. */
   client: GithubInstallationClient;
@@ -55,6 +71,8 @@ export interface ReviewPullRequestDeps {
   ) => Promise<ReviewPipelineResult>;
   /** Defaults to publishing a check run through `client`. */
   publishReview?: PublishReview | undefined;
+  /** Defaults to publishing a review through `client`. */
+  publishReviewComments?: PublishReviewComments | undefined;
   /**
    * Structured lifecycle logger (spec §26). Every event carries
    * repository, PR number, and head SHA, so an operator can answer
@@ -86,6 +104,40 @@ export function createCheckRunPublisher(
       conclusion: rendered.conclusion,
       output: rendered.output,
     });
+  };
+}
+
+/**
+ * The default delivery for inline comments: one advisory review on the
+ * head SHA.
+ *
+ * A failure here is swallowed rather than thrown. Publishing comments
+ * needs `pull-requests: write`, which a fork pull request's token does
+ * not carry, and a review that cannot be commented on must still be
+ * published as a check run rather than lost.
+ */
+export function createReviewCommentPublisher(
+  client: GithubInstallationClient,
+  logger: StructuredLogger,
+): PublishReviewComments {
+  return async (target, rendered) => {
+    try {
+      await client.createReview({
+        owner: target.owner,
+        repo: target.repo,
+        pullRequestNumber: target.pullRequestNumber,
+        commitSha: target.headSha,
+        body: rendered.body,
+        comments: rendered.comments,
+      });
+      return true;
+    } catch (error) {
+      logger.error("review.comments.failed", {
+        ...reviewCorrelation(target),
+        reason: errorMessage(error),
+      });
+      return false;
+    }
   };
 }
 
@@ -141,6 +193,7 @@ export async function reviewPullRequest(
     client,
     runReviewPipeline,
     publishReview,
+    publishReviewComments,
     logger = createConsoleLogger(),
   }: ReviewPullRequestDeps,
 ): Promise<ReviewPipelineResult> {
@@ -181,7 +234,28 @@ export async function reviewPullRequest(
     findingCount: review.findings.length,
   });
 
-  const rendered = renderCheckRun(review.findings, review.agentFailures);
+  // Inline comments go first: whether they landed decides whether the
+  // check run repeats them as annotations against the same lines.
+  const reviewComments = renderReview(review.findings, review.agentFailures);
+  const publishComments =
+    publishReviewComments ?? createReviewCommentPublisher(client, logger);
+  const commented =
+    reviewComments === undefined
+      ? false
+      : await publishComments(target, reviewComments);
+
+  if (commented && reviewComments !== undefined) {
+    logger.info("review.comments.published", {
+      ...fields,
+      commentCount: reviewComments.comments.length,
+      carriedInBodyCount:
+        review.findings.length - reviewComments.comments.length,
+    });
+  }
+
+  const rendered = renderCheckRun(review.findings, review.agentFailures, {
+    annotate: !commented,
+  });
   const publish = publishReview ?? createCheckRunPublisher(client);
   await publish(target, rendered);
 

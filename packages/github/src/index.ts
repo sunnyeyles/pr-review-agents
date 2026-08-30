@@ -24,8 +24,11 @@ export {
   type CodeSearchMatch,
   type CodeSearchRequest,
   type CreateCheckRunInput,
+  type CreateReviewInput,
   type FileContentsRequest,
   type GithubInstallationClient,
   type PullRequestDetails,
   type PullRequestRef,
+  type PullRequestReview,
+  type ReviewComment,
 } from "./client.js";

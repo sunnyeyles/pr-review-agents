@@ -22,11 +22,14 @@ export {
 } from "./synthesiser.js";
 export { validateFindings } from "./validate-findings.js";
 export { renderCheckRun, type RenderedCheckRun } from "./render-check-run.js";
+export { renderReview, type RenderedReview } from "./render-review.js";
 export {
   createCheckRunPublisher,
+  createReviewCommentPublisher,
   reviewCorrelation,
   reviewPullRequest,
   type PublishReview,
+  type PublishReviewComments,
   type ReviewPullRequestDeps,
   type ReviewTarget,
 } from "./review-pull-request.js";

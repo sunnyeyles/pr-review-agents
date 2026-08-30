@@ -1,8 +1,9 @@
 # AI PR Review
 
 Reviews pull requests with three independent AI agents — **Correctness**,
-**Security**, and **Architecture** — and publishes the result as an
-`AI PR Review` check run with inline annotations.
+**Security**, and **Architecture** — and publishes the result as inline pull
+request review comments, alongside an `AI PR Review` check run carrying the
+full summary.
 
 The agents never write to GitHub. They are given six read-only tools and
 propose structured findings; deterministic code then decides what actually gets
@@ -20,7 +21,7 @@ on:
 
 permissions:
   contents: read
-  pull-requests: read
+  pull-requests: write
   checks: write
 
 jobs:
@@ -40,7 +41,7 @@ GitHub API, never from a working copy, and never execute the code they review.
 | Input | Required | Default | Purpose |
 | --- | --- | --- | --- |
 | `anthropic-api-key` | yes | — | Key the agents and Synthesiser authenticate with. Store it as a secret. |
-| `github-token` | no | `${{ github.token }}` | Token for the read-only tools and the check run. |
+| `github-token` | no | `${{ github.token }}` | Token for the read-only tools, the review comments, and the check run. |
 | `model` | no | `claude-sonnet-5` | Anthropic model id. |
 | `langfuse-public-key` | no | — | Langfuse public key. Set this and the secret key to manage prompts and collect traces. |
 | `langfuse-secret-key` | no | — | Langfuse secret key. Store it as a secret. |
@@ -68,7 +69,7 @@ features and logs `langfuse.disabled_incomplete_credentials`.
 | Permission | Why |
 | --- | --- |
 | `contents: read` | Read files at the head and base commits. |
-| `pull-requests: read` | Read the pull request, its changed files, and its diff. |
+| `pull-requests: write` | Read the pull request, its changed files, and its diff, and post the review comments. |
 | `checks: write` | Publish the check run and its inline annotations. |
 
 **Fork pull requests.** GitHub gives workflows triggered by fork pull requests a

@@ -44,6 +44,7 @@ function makeGithub() {
     getFileContents: vi.fn(async () => "export const sessions = [];\n"),
     searchCode: vi.fn(async () => [{ path: "src/sessions.ts", name: "sessions.ts" }]),
     createCheckRun: vi.fn(async () => ({ id: 987 })),
+    createReview: vi.fn(async () => ({ id: 654 })),
   } satisfies GithubInstallationClient;
 }
 

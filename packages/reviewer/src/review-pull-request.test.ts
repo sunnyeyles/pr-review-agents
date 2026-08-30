@@ -2,6 +2,7 @@ import { emptyTokenUsage, type ReviewContext } from "@pr-review/ai";
 import type {
   ChangedFile,
   CreateCheckRunInput,
+  CreateReviewInput,
   GithubInstallationClient,
   PullRequestDetails,
   PullRequestRef,
@@ -69,6 +70,7 @@ function makeClient() {
     getFileContents: vi.fn(async () => "export const sessions = [];\n"),
     searchCode: vi.fn(async () => []),
     createCheckRun: vi.fn(async (_input: CreateCheckRunInput) => ({ id: 987 })),
+    createReview: vi.fn(async (_input: CreateReviewInput) => ({ id: 654 })),
   } satisfies GithubInstallationClient;
 }
 
@@ -195,6 +197,7 @@ describe("reviewPullRequest", () => {
       "synthesis.started",
       "synthesis.completed",
       "findings.validated",
+      "review.comments.published",
       "review.published",
     ]);
     for (const entry of entries) {
@@ -256,6 +259,69 @@ describe("reviewPullRequest", () => {
     expect(entries.map((entry) => entry["event"])).not.toContain(
       "review.published",
     );
+  });
+});
+
+describe("reviewPullRequest inline comments", () => {
+  it("publishes a review through the client by default", async () => {
+    const { deps, client } = makeDeps(reviewResult({ candidates: [finding] }));
+
+    await reviewPullRequest(target, deps);
+
+    expect(client.createReview).toHaveBeenCalledExactlyOnceWith({
+      owner: target.owner,
+      repo: target.repo,
+      pullRequestNumber: target.pullRequestNumber,
+      commitSha: target.headSha,
+      body: expect.stringContaining("AI PR Review — 1 finding"),
+      comments: [
+        {
+          path: finding.file,
+          line: finding.line,
+          body: expect.stringContaining(finding.title),
+        },
+      ],
+    });
+  });
+
+  it("drops the check run annotations once the comments carry them", async () => {
+    const { deps, client } = makeDeps(reviewResult({ candidates: [finding] }));
+
+    await reviewPullRequest(target, deps);
+
+    expect(
+      client.createCheckRun.mock.calls[0]?.[0].output.annotations,
+    ).toBeUndefined();
+  });
+
+  it("keeps the annotations when the comments could not be published", async () => {
+    const { deps, client, entries } = makeDeps(
+      reviewResult({ candidates: [finding] }),
+    );
+    client.createReview.mockRejectedValueOnce(
+      new Error("Resource not accessible by integration"),
+    );
+
+    await reviewPullRequest(target, deps);
+
+    expect(
+      client.createCheckRun.mock.calls[0]?.[0].output.annotations,
+    ).toHaveLength(1);
+    expect(entries).toContainEqual(
+      expect.objectContaining({
+        level: "error",
+        event: "review.comments.failed",
+      }),
+    );
+  });
+
+  it("posts no review on a clean pull request", async () => {
+    const { deps, client } = makeDeps();
+
+    await reviewPullRequest(target, deps);
+
+    expect(client.createReview).not.toHaveBeenCalled();
+    expect(client.createCheckRun).toHaveBeenCalledTimes(1);
   });
 });
 

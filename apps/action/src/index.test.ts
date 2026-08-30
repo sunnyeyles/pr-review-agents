@@ -49,6 +49,7 @@ function stubGithubClient(): GithubInstallationClient {
     getFileContents: vi.fn(unexpected("getFileContents")),
     searchCode: vi.fn(unexpected("searchCode")),
     createCheckRun: vi.fn(unexpected("createCheckRun")),
+    createReview: vi.fn(unexpected("createReview")),
   };
 }
 

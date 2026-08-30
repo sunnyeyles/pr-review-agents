@@ -101,12 +101,44 @@ export interface CheckRun {
 }
 
 /**
+ * One inline comment on a pull request review. `line` is a new-side
+ * line number and must fall inside the pull request's diff — GitHub
+ * rejects the whole review, not just the offending comment, when it
+ * does not.
+ */
+export interface ReviewComment {
+  path: string;
+  line: number;
+  body: string;
+}
+
+/**
+ * Input for publishing one review. The event is not configurable:
+ * every review is posted as a COMMENT, never APPROVE or
+ * REQUEST_CHANGES, because the review is advisory and must not gate a
+ * merge.
+ */
+export interface CreateReviewInput {
+  owner: string;
+  repo: string;
+  pullRequestNumber: number;
+  /** Head SHA the comments are anchored to. */
+  commitSha: string;
+  body: string;
+  comments: ReviewComment[];
+}
+
+export interface PullRequestReview {
+  id: number;
+}
+
+/**
  * A GitHub client authenticated for one repository's installation.
- * Everything is read-only except createCheckRun, the system's single
- * write path. The read-only surface (including getFileContents and
- * searchCode, which back the review agents' tools) is always
- * repository-scoped: every method takes an explicit owner/repo and
- * never reaches beyond it.
+ * Everything is read-only except createCheckRun and createReview, the
+ * system's two write paths. The read-only surface (including
+ * getFileContents and searchCode, which back the review agents' tools)
+ * is always repository-scoped: every method takes an explicit
+ * owner/repo and never reaches beyond it.
  */
 export interface GithubInstallationClient {
   getPullRequest(ref: PullRequestRef): Promise<PullRequestDetails>;
@@ -117,4 +149,6 @@ export interface GithubInstallationClient {
   /** Searches code within the single named repository. Read-only. */
   searchCode(request: CodeSearchRequest): Promise<CodeSearchMatch[]>;
   createCheckRun(input: CreateCheckRunInput): Promise<CheckRun>;
+  /** Publishes one advisory review with inline comments. */
+  createReview(input: CreateReviewInput): Promise<PullRequestReview>;
 }

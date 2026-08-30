@@ -12,6 +12,11 @@
  *   logs — and the conclusion is "neutral" even with zero findings,
  *   because an incomplete review must not publish a clean bill of
  *   health.
+ *
+ * The summary is complete on its own. When the pull request review
+ * carries the findings inline, the caller suppresses the annotations
+ * so the same text does not appear twice against the same line, and
+ * the check run stays the durable single-page record.
  */
 import type {
   AnnotationLevel,
@@ -21,6 +26,11 @@ import type {
 } from "@pr-review/github";
 import type { ReviewFinding } from "@pr-review/schemas";
 
+import {
+  failureNotes,
+  findingCountLabel,
+  summarise,
+} from "./finding-format.js";
 import type { AgentFailure } from "./review-graph.js";
 import { compareFindingStrength } from "./validate-findings.js";
 
@@ -32,6 +42,14 @@ export interface RenderedCheckRun {
   output: CheckRunOutput;
 }
 
+export interface RenderCheckRunOptions {
+  /**
+   * Whether line-anchored findings also become inline annotations.
+   * Defaults to true; set false once the review comments carry them.
+   */
+  annotate?: boolean | undefined;
+}
+
 const annotationLevelBySeverity: Record<
   ReviewFinding["severity"],
   AnnotationLevel
@@ -40,32 +58,6 @@ const annotationLevelBySeverity: Record<
   medium: "warning",
   high: "failure",
 };
-
-const categoryLabels: Record<ReviewFinding["category"], string> = {
-  correctness: "Correctness",
-  security: "Security",
-  architecture: "Architecture",
-};
-
-function location(finding: ReviewFinding): string {
-  return finding.line === undefined
-    ? finding.file
-    : `${finding.file}:${finding.line}`;
-}
-
-function summarise(finding: ReviewFinding): string {
-  const lines = [
-    `### ${finding.severity.toUpperCase()} — ${categoryLabels[finding.category]}: ${finding.title}`,
-    "",
-    `\`${location(finding)}\``,
-    "",
-    finding.explanation,
-  ];
-  if (finding.suggestedFix !== undefined) {
-    lines.push("", `**Suggested fix:** ${finding.suggestedFix}`);
-  }
-  return lines.join("\n");
-}
 
 function annotate(finding: ReviewFinding, line: number): CheckRunAnnotation {
   const message =
@@ -83,26 +75,6 @@ function annotate(finding: ReviewFinding, line: number): CheckRunAnnotation {
 }
 
 /**
- * The lens name in prose. Agent names are the finding categories; an
- * unrecognised name falls through verbatim.
- */
-function lensLabel(agent: string): string {
-  return (categoryLabels as Record<string, string | undefined>)[agent] ?? agent;
-}
-
-/**
- * The partial-failure notes for the summary: which lenses did not
- * complete. Names only — failure error strings are internal detail and
- * never reach GitHub (they are logged as agent.failed instead).
- */
-function failureNotes(agentFailures: readonly AgentFailure[]): string[] {
-  return agentFailures.map(
-    (failure) =>
-      `> **Note:** The ${lensLabel(failure.agent)} review did not complete, so its findings are missing from this run.`,
-  );
-}
-
-/**
  * Builds the completed check-run payload for a set of validated
  * findings and the lenses that failed to produce any. Findings are
  * rendered strongest first (severity rank, then confidence);
@@ -112,6 +84,7 @@ function failureNotes(agentFailures: readonly AgentFailure[]): string[] {
 export function renderCheckRun(
   findings: readonly ReviewFinding[],
   agentFailures: readonly AgentFailure[] = [],
+  options: RenderCheckRunOptions = {},
 ): RenderedCheckRun {
   if (findings.length === 0) {
     return {
@@ -127,8 +100,7 @@ export function renderCheckRun(
   }
 
   const ordered = [...findings].sort(compareFindingStrength);
-  const count = findings.length;
-  const title = count === 1 ? "1 finding" : `${count} findings`;
+  const title = findingCountLabel(findings.length);
   const summary = [
     `**${title}**`,
     "",
@@ -136,19 +108,21 @@ export function renderCheckRun(
     ...failureNotes(agentFailures),
   ].join("\n\n");
 
-  const annotations: CheckRunAnnotation[] = [];
-  for (const finding of ordered) {
-    if (annotations.length >= MAX_ANNOTATIONS_PER_REQUEST) {
-      break;
-    }
-    if (finding.line !== undefined) {
-      annotations.push(annotate(finding, finding.line));
-    }
-  }
-
   const output: CheckRunOutput = { title, summary };
-  if (annotations.length > 0) {
-    output.annotations = annotations;
+
+  if (options.annotate ?? true) {
+    const annotations: CheckRunAnnotation[] = [];
+    for (const finding of ordered) {
+      if (annotations.length >= MAX_ANNOTATIONS_PER_REQUEST) {
+        break;
+      }
+      if (finding.line !== undefined) {
+        annotations.push(annotate(finding, finding.line));
+      }
+    }
+    if (annotations.length > 0) {
+      output.annotations = annotations;
+    }
   }
 
   return { conclusion: "neutral", output };

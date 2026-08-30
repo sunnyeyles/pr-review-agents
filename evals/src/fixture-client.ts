@@ -7,19 +7,21 @@
  * tool surface — an agent that cannot read a neighbouring file reviews
  * a different pull request than the one a user would get — so the
  * fixture repository is served through the same interface instead of
- * the network. Nothing here talks to GitHub, and the one write method
- * on the interface throws: an evaluation that somehow reached the
- * publish path is a bug, not a passing run.
+ * the network. Nothing here talks to GitHub, and both write methods on
+ * the interface throw: an evaluation that somehow reached the publish
+ * path is a bug, not a passing run.
  */
 import type {
   ChangedFile,
   CheckRun,
   CodeSearchMatch,
   CreateCheckRunInput,
+  CreateReviewInput,
   FileContentsRequest,
   GithubInstallationClient,
   PullRequestDetails,
   PullRequestRef,
+  PullRequestReview,
 } from "@pr-review/github";
 
 import type { LoadedFixture } from "./fixture.js";
@@ -137,6 +139,13 @@ export function createFixtureClient(fixture: LoadedFixture): FixtureClient {
       throw new Error(
         `the evaluation harness must never publish: createCheckRun called for ` +
           `${input.owner}/${input.repo}@${input.headSha}`,
+      );
+    },
+
+    async createReview(input: CreateReviewInput): Promise<PullRequestReview> {
+      throw new Error(
+        `the evaluation harness must never publish: createReview called for ` +
+          `${input.owner}/${input.repo}#${input.pullRequestNumber}`,
       );
     },
   };

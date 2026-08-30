@@ -1,7 +1,7 @@
 # Agent flow — what runs when
 
-One pull request event in, one check run out. This document traces that path
-in order, naming the file that owns each step.
+One pull request event in, one review out — inline comments plus a check run.
+This document traces that path in order, naming the file that owns each step.
 
 The short version: **three agents propose, one synthesiser refines, and
 deterministic code decides.** Only the last of those three ever reaches the
@@ -45,9 +45,10 @@ flowchart TD
         VAL --> ENDN(["END"])
     end
 
-    GRAPH --> RENDER["5 · renderCheckRun<br/><code>render-check-run.ts</code>"]
+    GRAPH --> RENDER["5 · renderReview + renderCheckRun<br/><code>render-review.ts</code> · <code>render-check-run.ts</code>"]
     RENDER --> PUB{"6 · publish"}
-    PUB -->|checks: write| CHECK["AI PR Review check run<br/>+ inline annotations"]
+    PUB -->|pull-requests: write| COMMENTS["pull request review<br/>+ inline comments"]
+    PUB -->|checks: write| CHECK["AI PR Review check run<br/>full summary"]
     PUB -->|403 / 404 on a fork| SUM["workflow job summary<br/><code>summary.ts</code>"]
 
     style GRAPH fill:transparent
@@ -302,6 +303,7 @@ those may masquerade as a delivered review.
 | `packages/reviewer/src/synthesiser.ts` | The single refining model call |
 | `packages/reviewer/src/validate-findings.ts` | The trust boundary |
 | `packages/reviewer/src/render-check-run.ts` | Findings → check run payload |
+| `packages/reviewer/src/render-review.ts` | Findings → review body + inline comments |
 | `packages/ai/src/agents.ts` | The three lenses, lens selection |
 | `packages/ai/src/agent-runtime.ts` | The shared agentic loop |
 | `packages/ai/src/tools.ts` | The six read-only tools |
