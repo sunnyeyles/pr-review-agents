@@ -6,8 +6,8 @@ import {
   createReviewAgent,
   type ReviewAgentDeps,
   type ReviewLens,
-} from "./agent-runtime.js";
-import type { ReviewAgent } from "./review-types.js";
+} from "./runtime.js";
+import type { ReviewAgent } from "../review-types.js";
 
 /** The Correctness lens. */
 export const correctnessLens: ReviewLens = {
@@ -66,21 +66,29 @@ export const reviewLenses = [
 export const ALL_LENSES = "all";
 
 /**
- * Resolves the `agents` input — comma-separated lens categories, or
- * `all`. Always in `reviewLenses` order, since agent order decides the
- * order findings reach the synthesiser. An unknown name throws.
+ * Resolves the `agents` input — comma-separated lens categories, with
+ * `all` selecting every lens wherever it appears. Always in
+ * `reviewLenses` order, since agent order decides the order findings
+ * reach the synthesiser. An unknown name throws.
  */
 export function resolveReviewLenses(selection: string): ReviewLens[] {
   const trimmed = selection.trim();
-  if (trimmed === "" || trimmed.toLowerCase() === ALL_LENSES) {
+  if (trimmed === "") {
     return [...reviewLenses];
   }
 
   const known = new Set<string>(reviewLenses.map((lens) => lens.category));
   const requested = new Set<string>();
+  // Every name is checked before `all` is honoured, so a typo alongside
+  // it still fails rather than hiding inside a full review.
+  let selectsAll = false;
   for (const part of trimmed.split(",")) {
     const name = part.trim().toLowerCase();
     if (name === "") {
+      continue;
+    }
+    if (name === ALL_LENSES) {
+      selectsAll = true;
       continue;
     }
     if (!known.has(name)) {
@@ -92,6 +100,9 @@ export function resolveReviewLenses(selection: string): ReviewLens[] {
     requested.add(name);
   }
 
+  if (selectsAll) {
+    return [...reviewLenses];
+  }
   if (requested.size === 0) {
     throw new Error(
       `No review agents selected. Valid values are ${[...known].join(", ")}, ` +

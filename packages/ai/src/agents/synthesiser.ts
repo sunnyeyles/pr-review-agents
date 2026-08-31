@@ -4,15 +4,10 @@
  * still untrusted and still passes through that chain.
  */
 import { startObservation } from "@langfuse/tracing";
-import {
-  addTokenUsage,
-  emptyTokenUsage,
-  extractAgentOutput,
-  messageText,
-  traceModelCall,
-  type AnthropicLike,
-  type TokenUsage,
-} from "@pr-review/ai";
+import { extractAgentOutput, messageText } from "./output.js";
+import type { AnthropicLike } from "../anthropic.js";
+import { traceModelCall } from "../model-tracing.js";
+import { addTokenUsage, emptyTokenUsage, type TokenUsage } from "../usage.js";
 import { errorMessage } from "@pr-review/logging";
 import { wellFormedFindings, type ReviewFinding } from "@pr-review/schemas";
 

@@ -6,9 +6,11 @@
 import {
   createAnthropicClient,
   createReviewAgents,
+  createSynthesiser,
   reviewLenses,
   type ReviewAgent,
   type ReviewLens,
+  type Synthesiser,
 } from "@pr-review/ai";
 import type { GithubInstallationClient } from "@pr-review/github";
 import {
@@ -17,12 +19,10 @@ import {
   type StructuredLogger,
 } from "@pr-review/logging";
 import {
-  createSynthesiser,
   reviewPullRequest,
   runReviewPipeline,
   type RenderedCheckRun,
   type ReviewPipelineResult,
-  type Synthesiser,
 } from "@pr-review/reviewer";
 
 import { createFixtureClient, type FixtureCall } from "./fixture-client.js";

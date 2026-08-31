@@ -2,12 +2,17 @@
  * The review pipeline as one LangGraph StateGraph: agents run
  * concurrently, then join -> synthesise -> validate in sequence.
  */
-import { emptyTokenUsage, type ReviewAgent, type ReviewContext, type TokenUsage } from "@pr-review/ai";
+import {
+  emptyTokenUsage,
+  type ReviewAgent,
+  type ReviewContext,
+  type Synthesiser,
+  type TokenUsage,
+} from "@pr-review/ai";
 import { errorMessage, errorName } from "@pr-review/logging";
 import type { ReviewFinding } from "@pr-review/schemas";
 import { Annotation, END, START, StateGraph } from "@langchain/langgraph";
 
-import type { Synthesiser } from "./synthesiser.js";
 import { validateFindings } from "./validate-findings.js";
 
 /** One agent that did not produce candidates, and why. */

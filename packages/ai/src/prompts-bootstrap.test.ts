@@ -1,20 +1,17 @@
 /**
- * The prompt-resolution contract across the package boundary: the fetch
- * and the synthesis prompt live in different packages, so only a
- * consumer of both can test the pair.
+ * The synthesis prompt end to end: fetched or fallen back to, through
+ * the contract guard, and on into the model call that uses it.
  */
-import {
-  loadManagedPrompts,
-  type AnthropicLike,
-  type LangfusePromptClient,
-} from "@pr-review/ai";
-import { validRemoteSynthesisPrompt } from "../../../packages/ai/src/agent-test-support.js";
 import { createCapturingLogger } from "@pr-review/logging";
+import { describe, expect, it, vi } from "vitest";
+
+import type { AnthropicLike } from "./anthropic.js";
+import { validRemoteSynthesisPrompt } from "./agent-test-support.js";
 import {
   SYNTHESIS_SYSTEM_PROMPT,
   createSynthesiser,
-} from "@pr-review/reviewer";
-import { describe, expect, it, vi } from "vitest";
+} from "./agents/synthesiser.js";
+import { loadManagedPrompts, type LangfusePromptClient } from "./prompts.js";
 
 /** The message shape the Anthropic seam resolves to. */
 type CreateResult = Awaited<ReturnType<AnthropicLike["messages"]["create"]>>;
@@ -49,14 +46,13 @@ const failingClient: LangfusePromptClient = {
   getTextPrompt: () => Promise.reject(new Error("langfuse unavailable")),
 };
 
-describe("resolving the synthesis prompt across packages", () => {
+describe("resolving the synthesis prompt", () => {
   it("accepts the in-code synthesis prompt through the contract guard", async () => {
     // If the guard rejected the shipped prompt, pasting it into
     // Langfuse unchanged would be silently ignored.
     const { sources, prompts } = await loadManagedPrompts(
       clientReturning(SYNTHESIS_SYSTEM_PROMPT),
       {
-        synthesisFallback: SYNTHESIS_SYSTEM_PROMPT,
         logger: createCapturingLogger().logger,
       },
     );
@@ -70,7 +66,6 @@ describe("resolving the synthesis prompt across packages", () => {
     const { prompts, sources } = await loadManagedPrompts(
       clientReturning(remote),
       {
-        synthesisFallback: SYNTHESIS_SYSTEM_PROMPT,
         logger: createCapturingLogger().logger,
       },
     );
@@ -101,7 +96,6 @@ describe("resolving the synthesis prompt across packages", () => {
 
   it("hands the in-code prompt to the synthesiser when the fetch fails", async () => {
     const { prompts, sources } = await loadManagedPrompts(failingClient, {
-      synthesisFallback: SYNTHESIS_SYSTEM_PROMPT,
       logger: createCapturingLogger().logger,
     });
 

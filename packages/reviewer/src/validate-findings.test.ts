@@ -295,9 +295,9 @@ describe("validateFindings", () => {
     ]);
   });
 
-  it("applies the cap before duplicate removal, as documented", () => {
+  it("removes duplicates before capping, so the cap is not spent on them", () => {
     // 11 valid findings; the strongest two are duplicates of each other.
-    // Cap first (11 -> 10, dropping the weakest), then dedupe (10 -> 9).
+    // Dedupe first (11 -> 10), then cap (10 -> 10) — a full review.
     const duplicateA = finding({
       severity: "high",
       title: "Duplicate anchor",
@@ -335,11 +335,12 @@ describe("validateFindings", () => {
       changedFiles,
     );
 
-    expect(survivors).toHaveLength(9);
+    expect(survivors).toHaveLength(MAX_FINDINGS);
     expect(survivors[0]).toEqual(duplicateA);
     expect(survivors.map((f) => f.title)).not.toContain(
       "Same anchor, different words entirely",
     );
-    expect(survivors.map((f) => f.title)).not.toContain("Distinct finding 8");
+    // The slot the duplicate used to waste now carries a real finding.
+    expect(survivors.map((f) => f.title)).toContain("Distinct finding 8");
   });
 });

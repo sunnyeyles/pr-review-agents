@@ -1,10 +1,14 @@
-import { emptyTokenUsage, type ReviewAgent, type ReviewContext } from "@pr-review/ai";
+import {
+  emptyTokenUsage,
+  type ReviewAgent,
+  type ReviewContext,
+  type Synthesiser,
+} from "@pr-review/ai";
 import type { ChangedFile } from "@pr-review/github";
 import type { ReviewFinding } from "@pr-review/schemas";
 import { describe, expect, it } from "vitest";
 
 import { buildReviewGraph, runReviewPipeline } from "./review-graph.js";
-import type { Synthesiser } from "./synthesiser.js";
 
 const changedFiles: ChangedFile[] = [
   {

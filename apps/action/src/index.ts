@@ -11,6 +11,7 @@ import {
   createAnthropicClient,
   createLangfusePromptClient,
   createReviewAgents,
+  createSynthesiser,
   loadManagedPrompts,
   resolveReviewLenses,
   reviewLenses,
@@ -32,9 +33,7 @@ import {
   type StructuredLogger,
 } from "@pr-review/logging";
 import {
-  SYNTHESIS_SYSTEM_PROMPT,
   createCheckRunPublisher,
-  createSynthesiser,
   runReviewPipeline,
 } from "@pr-review/reviewer";
 
@@ -156,7 +155,6 @@ async function resolveManagedPrompts(
       baseUrl: inputs.baseUrl,
     });
     const { prompts } = await loadManagedPrompts(client, {
-      synthesisFallback: SYNTHESIS_SYSTEM_PROMPT,
       label: inputs.promptLabel,
       logger: environment.logger,
     });

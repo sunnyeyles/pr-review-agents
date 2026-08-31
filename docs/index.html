@@ -707,7 +707,7 @@ html { scroll-behavior: smooth; }
       </div>
 
       <figure class="code">
-        <div class="code-head"><span class="p">apps/action/src/index.ts</span><span class="ln">line 227</span></div>
+        <div class="code-head"><span class="p">apps/action/src/index.ts</span><span class="ln">line 187</span></div>
 <pre><span class="c-com">// Resolved before any client is built: an unrecognised agent name</span>
 <span class="c-com">// is a typo in the workflow file, and must cost nothing to find.</span>
 <span class="c-key">const</span> lenses = resolveReviewLenses(getInput(env, <span class="c-str">"agents"</span>));</pre>
@@ -802,7 +802,7 @@ html { scroll-behavior: smooth; }
       </div>
 
       <figure class="code">
-        <div class="code-head"><span class="p">packages/reviewer/src/review-pull-request.ts</span><span class="ln">line 154</span></div>
+        <div class="code-head"><span class="p">packages/reviewer/src/review-pull-request.ts</span><span class="ln">line 205</span></div>
 <pre><span class="c-key">const</span> [pullRequest, changedFiles, diff] = <span class="c-key">await</span> Promise.all([
   client.getPullRequest(ref),
   client.listChangedFiles(ref),
@@ -837,7 +837,7 @@ html { scroll-behavior: smooth; }
       </div>
 
       <figure class="code">
-        <div class="code-head"><span class="p">packages/reviewer/src/review-graph.ts</span><span class="ln">line 197 · buildReviewGraph</span></div>
+        <div class="code-head"><span class="p">packages/reviewer/src/review-graph.ts</span><span class="ln">line 196 · buildReviewGraph</span></div>
 <pre><span class="c-key">const</span> agentNodeNames = agents.map((agent, index) =&gt; {
   <span class="c-key">const</span> nodeName = <span class="c-str">`agent__${agent.name}`</span>;
   graph.addNode(nodeName, agentNode(index, agent));
@@ -871,7 +871,7 @@ html { scroll-behavior: smooth; }
       </div>
 
       <figure class="code">
-        <div class="code-head"><span class="p">packages/ai/src/agent-runtime.ts</span><span class="ln">line 365</span></div>
+        <div class="code-head"><span class="p">packages/ai/src/agents/runtime.ts</span><span class="ln">line 315</span></div>
 <pre><span class="c-key">for</span> (<span class="c-key">let</span> turn = <span class="c-num">1</span>; ; turn += <span class="c-num">1</span>) {
   <span class="c-key">const</span> response = <span class="c-key">await</span> callModel();
   <span class="c-key">const</span> toolUses = toolUseBlocks(response.content);
@@ -945,7 +945,7 @@ html { scroll-behavior: smooth; }
         </p>
       </div>
       <figure class="code">
-        <div class="code-head"><span class="p">packages/reviewer/src/review-graph.ts</span><span class="ln">line 126 · makeJoinNode</span></div>
+        <div class="code-head"><span class="p">packages/reviewer/src/review-graph.ts</span><span class="ln">line 118 · makeJoinNode</span></div>
 <pre><span class="c-key">if</span> (agentFailures.length === agentCount) {
   <span class="c-key">throw</span> <span class="c-key">new</span> Error(<span class="c-str">`every review agent failed — ${details}`</span>);
 }</pre>
@@ -956,7 +956,7 @@ html { scroll-behavior: smooth; }
 
       <h3>4c · <code>synthesise</code></h3>
       <div class="paths">
-        <span class="chip">packages/reviewer/src/<b>synthesiser.ts</b></span>
+        <span class="chip">packages/ai/src/agents/<b>synthesiser.ts</b></span>
       </div>
       <div class="prose">
         <p>
@@ -999,16 +999,15 @@ html { scroll-behavior: smooth; }
         <li><b>The file exists</b> among the PR's changed files</li>
         <li><b>The line is an added line</b> in that file's diff, when a line is given</li>
         <li><b>Confidence ≥ 0.7</b> — <code>CONFIDENCE_THRESHOLD</code></li>
-        <li><b>Cap at 10</b> — <code>MAX_FINDINGS</code>, keeping the strongest</li>
         <li><b>Duplicate removal</b> — the strongest of each group survives</li>
+        <li><b>Cap at 10</b> — <code>MAX_FINDINGS</code>, keeping the strongest</li>
       </ol>
       <div class="prose" style="margin-top:1.3rem">
         <p>
           "Strongest" is fully deterministic: severity rank, then confidence
-          descending, then input order. Note the ordering consequence — the cap
-          runs <em>before</em> dedup, so a review can publish fewer than ten
-          findings even when more valid candidates existed. That is the spec's
-          order, kept deliberately.
+          descending, then input order. Dedup runs <em>before</em> the cap, so
+          duplicates — which three lenses reviewing one diff produce routinely
+          — cannot consume cap slots and leave the review short.
         </p>
       </div>
       <div class="note">
@@ -1160,12 +1159,12 @@ review.started<br>
             <tr><td><code>apps/action/src/langfuse.ts</code></td><td>Span export for one run</td></tr>
             <tr><td><code>packages/reviewer/src/review-pull-request.ts</code></td><td>One review, end to end</td></tr>
             <tr><td><code>packages/reviewer/src/review-graph.ts</code></td><td>The StateGraph</td></tr>
-            <tr><td><code>packages/reviewer/src/synthesiser.ts</code></td><td>The single refining model call</td></tr>
             <tr><td><code>packages/reviewer/src/validate-findings.ts</code></td><td>The trust boundary</td></tr>
             <tr><td><code>packages/reviewer/src/render-check-run.ts</code></td><td>Findings → check run payload</td></tr>
-            <tr><td><code>packages/ai/src/agents.ts</code></td><td>The three lenses, lens selection</td></tr>
-            <tr><td><code>packages/ai/src/agent-runtime.ts</code></td><td>The shared agentic loop</td></tr>
-            <tr><td><code>packages/ai/src/tools.ts</code></td><td>The six read-only tools</td></tr>
+            <tr><td><code>packages/ai/src/agents/lenses.ts</code></td><td>The three lenses, lens selection</td></tr>
+            <tr><td><code>packages/ai/src/agents/synthesiser.ts</code></td><td>The single refining model call</td></tr>
+            <tr><td><code>packages/ai/src/agents/runtime.ts</code></td><td>The shared agentic loop</td></tr>
+            <tr><td><code>packages/ai/src/agents/tools.ts</code></td><td>The six read-only tools</td></tr>
             <tr><td><code>packages/ai/src/prompts.ts</code></td><td>Managed prompts and their fallback</td></tr>
             <tr><td><code>packages/schemas/src/review-finding.ts</code></td><td>The finding contract</td></tr>
           </tbody>

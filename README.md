@@ -88,8 +88,8 @@ Agents ──► raw candidates (unknown[])
    │  2. file exists in the PR            │
    │  3. line is an ADDED line in the diff│
    │  4. confidence >= 0.70               │
-   │  5. cap at 10, strongest first       │
-   │  6. duplicate removal                │
+   │  5. duplicate removal                │
+   │  6. cap at 10, strongest first       │
    └──────────────────────────────────────┘
               │
               ▼
@@ -119,8 +119,9 @@ Reinforcing rules:
 apps/
   action/     Event parsing → review pipeline → check run (or job summary)
 packages/
-  ai/         Anthropic seam, agent runtime loop, lenses, read-only tools
-  reviewer/   Review graph, synthesiser, validation chain, check-run rendering
+  ai/         Anthropic seam, prompts, and agents/: runtime loop, the three
+              lenses, the read-only tools, the synthesiser
+  reviewer/   Review graph, validation chain, check-run rendering
   github/     GitHub client (workflow-token auth) + Octokit calls
   schemas/    Zod schemas: ReviewFinding, the review trigger contract
   logging/    Structured single-line JSON logger
@@ -135,7 +136,7 @@ LangGraph runs the review pipeline
 → `synthesise` → `validate`. Every agent node has `START` as its only
 dependency, so they run in the same superstep. Inside a node, one agent's
 tool-calling loop is a plain turn loop over the Messages API
-(`packages/ai/src/agent-runtime.ts`), capped at 12 model calls.
+(`packages/ai/src/agents/runtime.ts`), capped at 12 model calls.
 
 ### Partial failure
 
@@ -180,7 +181,7 @@ round trip carrying the whole conversation.
 
 Prompt caching reprices that traffic rather than reducing it: roughly 0.1x for
 a cache read against 1.25x for the write that put it there. Each agent marks
-two breakpoints (`packages/ai/src/agent-runtime.ts`) — an explicit one on the
+two breakpoints (`packages/ai/src/agents/runtime.ts`) — an explicit one on the
 system prompt, which also covers the tool schemas, and the automatic one, which
 follows the growing conversation tail.
 
