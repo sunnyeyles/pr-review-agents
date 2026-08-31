@@ -8,10 +8,13 @@ import {
   type CodeSearchMatch,
   type CodeSearchRequest,
   type CreateCheckRunInput,
+  type CreateReviewInput,
+  type ExistingReviewComment,
   type FileContentsRequest,
   type GithubInstallationClient,
   type PullRequestDetails,
   type PullRequestRef,
+  type PullRequestReview,
 } from "./client.js";
 
 /**
@@ -33,6 +36,27 @@ export interface OctokitLike {
         pull_number: number;
         per_page: number;
         page: number;
+      }): Promise<{ data: unknown }>;
+      listReviewComments(params: {
+        owner: string;
+        repo: string;
+        pull_number: number;
+        per_page: number;
+        page: number;
+      }): Promise<{ data: unknown }>;
+      createReview(params: {
+        owner: string;
+        repo: string;
+        pull_number: number;
+        commit_id: string;
+        body: string;
+        event: "COMMENT";
+        comments: {
+          path: string;
+          line: number;
+          side: "RIGHT";
+          body: string;
+        }[];
       }): Promise<{ data: unknown }>;
     };
     repos: {
@@ -91,6 +115,10 @@ const changedFilesSchema = z.array(
 );
 
 const checkRunResponseSchema = z.object({ id: z.number() });
+
+const reviewResponseSchema = z.object({ id: z.number() });
+
+const reviewCommentsSchema = z.array(z.object({ body: z.string() }));
 
 /** A repos.getContent response for a single (non-directory) entry. */
 const fileContentsSchema = z.object({
@@ -227,6 +255,44 @@ export function createInstallationClient(
         output,
       });
       return checkRunResponseSchema.parse(response.data);
+    },
+
+    async listReviewComments(
+      ref: PullRequestRef,
+    ): Promise<ExistingReviewComment[]> {
+      const comments: ExistingReviewComment[] = [];
+      for (let page = 1; ; page += 1) {
+        const response = await octokit.rest.pulls.listReviewComments({
+          owner: ref.owner,
+          repo: ref.repo,
+          pull_number: ref.pullRequestNumber,
+          per_page: FILES_PER_PAGE,
+          page,
+        });
+        const pageComments = reviewCommentsSchema.parse(response.data);
+        comments.push(...pageComments);
+        if (pageComments.length < FILES_PER_PAGE) {
+          return comments;
+        }
+      }
+    },
+
+    async createReview(input: CreateReviewInput): Promise<PullRequestReview> {
+      const response = await octokit.rest.pulls.createReview({
+        owner: input.owner,
+        repo: input.repo,
+        pull_number: input.pullRequestNumber,
+        commit_id: input.commitSha,
+        body: input.body,
+        event: "COMMENT",
+        comments: input.comments.map((comment) => ({
+          path: comment.path,
+          line: comment.line,
+          side: "RIGHT",
+          body: comment.body,
+        })),
+      });
+      return reviewResponseSchema.parse(response.data);
     },
   };
 }

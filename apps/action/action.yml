@@ -17,9 +17,10 @@ inputs:
     required: true
   github-token:
     description: >-
-      Token used for the six read-only repository tools and for publishing the
-      check run. The default workflow token is enough when the job grants
-      contents: read, pull-requests: read, and checks: write.
+      Token used for the six read-only repository tools, for the review
+      comments, and for publishing the check run. The default workflow token
+      is enough when the job grants contents: read, pull-requests: write, and
+      checks: write.
     required: false
     default: ${{ github.token }}
   model:

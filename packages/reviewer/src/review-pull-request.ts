@@ -4,10 +4,25 @@
  * than in each delivery-path wrapper.
  */
 import type { ReviewContext } from "@pr-review/ai";
-import type { GithubInstallationClient } from "@pr-review/github";
-import { createConsoleLogger, type StructuredLogger } from "@pr-review/logging";
+import {
+  httpStatus,
+  isPermissionError,
+  type ExistingReviewComment,
+  type GithubInstallationClient,
+  type PullRequestRef,
+} from "@pr-review/github";
+import {
+  createConsoleLogger,
+  errorMessage,
+  type StructuredLogger,
+} from "@pr-review/logging";
 
 import { renderCheckRun, type RenderedCheckRun } from "./render-check-run.js";
+import {
+  postedFindingKeys,
+  renderReview,
+  type RenderedReview,
+} from "./render-review.js";
 import type { ReviewPipelineResult } from "./review-graph.js";
 
 /** The pull request one review runs against. */
@@ -24,6 +39,17 @@ export type PublishReview = (
   rendered: RenderedCheckRun,
 ) => Promise<void>;
 
+/**
+ * Delivers the inline review comments, reporting whether they landed.
+ * A false return is not an error: the findings are still published on
+ * the check run, which keeps its annotations precisely because the
+ * comments did not appear.
+ */
+export type PublishReviewComments = (
+  target: ReviewTarget,
+  rendered: RenderedReview,
+) => Promise<boolean>;
+
 export interface ReviewPullRequestDeps {
   /** Authenticated read-only GitHub client for this repository. */
   client: GithubInstallationClient;
@@ -34,6 +60,8 @@ export interface ReviewPullRequestDeps {
   ) => Promise<ReviewPipelineResult>;
   /** Defaults to publishing a check run through `client`. */
   publishReview?: PublishReview | undefined;
+  /** Defaults to publishing a review through `client`. */
+  publishReviewComments?: PublishReviewComments | undefined;
   /** Every event carries repository, PR number, and head SHA. */
   logger?: StructuredLogger | undefined;
 }
@@ -62,6 +90,63 @@ export function createCheckRunPublisher(
       output: rendered.output,
     });
   };
+}
+
+/**
+ * The default delivery for inline comments: one advisory review on the
+ * head SHA. A failure is swallowed — publishing comments needs
+ * `pull-requests: write`, which a fork's token lacks, and the check run
+ * must still be published.
+ */
+export function createReviewCommentPublisher(
+  client: GithubInstallationClient,
+  logger: StructuredLogger,
+): PublishReviewComments {
+  return async (target, rendered) => {
+    try {
+      await client.createReview({
+        owner: target.owner,
+        repo: target.repo,
+        pullRequestNumber: target.pullRequestNumber,
+        commitSha: target.headSha,
+        body: rendered.body,
+        comments: rendered.comments,
+      });
+      return true;
+    } catch (error) {
+      // Only a permission error degrades: a fork's token cannot post
+      // comments. Anything else is rethrown, so a real bug here fails
+      // the run instead of silently falling back forever.
+      if (!isPermissionError(error)) {
+        throw error;
+      }
+      logger.info("review.comments.degraded", {
+        ...reviewCorrelation(target),
+        reason: "workflow token cannot post review comments",
+        status: httpStatus(error),
+      });
+      return false;
+    }
+  };
+}
+
+/** The comments already on the pull request; none if they cannot be read. */
+async function listPostedComments(
+  client: GithubInstallationClient,
+  ref: PullRequestRef,
+  target: ReviewTarget,
+  logger: StructuredLogger,
+): Promise<ExistingReviewComment[]> {
+  try {
+    return await client.listReviewComments(ref);
+  } catch (error) {
+    logger.error("review.comments.list_failed", {
+      ...reviewCorrelation(target),
+      reason: errorMessage(error),
+      fallback: "publishing every finding, which may repeat an earlier one",
+    });
+    return [];
+  }
 }
 
 /** Logs the synthesis outcome: skipped, completed, or failed. */
@@ -107,6 +192,7 @@ export async function reviewPullRequest(
     client,
     runReviewPipeline,
     publishReview,
+    publishReviewComments,
     logger = createConsoleLogger(),
   }: ReviewPullRequestDeps,
 ): Promise<ReviewPipelineResult> {
@@ -143,7 +229,32 @@ export async function reviewPullRequest(
     findingCount: review.findings.length,
   });
 
-  const rendered = renderCheckRun(review.findings, review.agentFailures);
+  // Inline comments go first: whether they landed decides whether the
+  // check run repeats them as annotations against the same lines.
+  const reviewComments = renderReview(
+    review.findings,
+    review.agentFailures,
+    postedFindingKeys(await listPostedComments(client, ref, target, logger)),
+  );
+  const publishComments =
+    publishReviewComments ?? createReviewCommentPublisher(client, logger);
+  const commented =
+    reviewComments === undefined
+      ? false
+      : await publishComments(target, reviewComments);
+
+  if (commented && reviewComments !== undefined) {
+    logger.info("review.comments.published", {
+      ...fields,
+      commentCount: reviewComments.comments.length,
+      carriedInBodyCount:
+        review.findings.length - reviewComments.comments.length,
+    });
+  }
+
+  const rendered = renderCheckRun(review.findings, review.agentFailures, {
+    annotate: !commented,
+  });
   const publish = publishReview ?? createCheckRunPublisher(client);
   await publish(target, rendered);
 

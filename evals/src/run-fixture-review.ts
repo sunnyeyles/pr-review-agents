@@ -120,10 +120,13 @@ export async function runFixtureReview(
           deps.synthesiser,
           context,
         ),
-      // The only step an evaluation replaces.
+      // The steps an evaluation replaces.
       publishReview: async (_target, checkRun) => {
         rendered = checkRun;
       },
+      // Nothing is sent, and false keeps the annotations on the check
+      // run an evaluation judges.
+      publishReviewComments: async () => false,
       logger,
     },
   );

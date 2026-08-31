@@ -2,6 +2,7 @@ import { emptyTokenUsage, type ReviewContext } from "@pr-review/ai";
 import type {
   ChangedFile,
   CreateCheckRunInput,
+  CreateReviewInput,
   GithubInstallationClient,
   PullRequestDetails,
   PullRequestRef,
@@ -80,7 +81,9 @@ function makeHandler(review: ReviewPipelineResult = reviewResult()) {
     getDiff: vi.fn(async (_ref: PullRequestRef) => "diff --git a/x b/x\n"),
     getFileContents: vi.fn(async () => "export const sessions = [];\n"),
     searchCode: vi.fn(async () => []),
+    listReviewComments: vi.fn(async () => []),
     createCheckRun: vi.fn(async (_input: CreateCheckRunInput) => ({ id: 987 })),
+    createReview: vi.fn(async (_input: CreateReviewInput) => ({ id: 654 })),
   } satisfies GithubInstallationClient;
   const runReviewPipeline = vi.fn(
     async (_client: GithubInstallationClient, _context: ReviewContext) => review,

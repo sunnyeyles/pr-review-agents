@@ -1,17 +1,20 @@
 /**
  * Serves a fixture repository through the real GithubInstallationClient
  * interface, so the agents get their real tool surface. Nothing talks to
- * GitHub, and the one write method throws.
+ * GitHub, and both write methods throw.
  */
 import type {
   ChangedFile,
   CheckRun,
   CodeSearchMatch,
   CreateCheckRunInput,
+  CreateReviewInput,
+  ExistingReviewComment,
   FileContentsRequest,
   GithubInstallationClient,
   PullRequestDetails,
   PullRequestRef,
+  PullRequestReview,
 } from "@pr-review/github";
 
 import type { LoadedFixture } from "./fixture.js";
@@ -123,10 +126,24 @@ export function createFixtureClient(fixture: LoadedFixture): FixtureClient {
       return matches.slice(0, MAX_SEARCH_MATCHES);
     },
 
+    async listReviewComments(ref): Promise<ExistingReviewComment[]> {
+      checkRef(ref);
+      // A fixture pull request carries no prior review, so every
+      // finding is new every time.
+      return [];
+    },
+
     async createCheckRun(input: CreateCheckRunInput): Promise<CheckRun> {
       throw new Error(
         `the evaluation harness must never publish: createCheckRun called for ` +
           `${input.owner}/${input.repo}@${input.headSha}`,
+      );
+    },
+
+    async createReview(input: CreateReviewInput): Promise<PullRequestReview> {
+      throw new Error(
+        `the evaluation harness must never publish: createReview called for ` +
+          `${input.owner}/${input.repo}#${input.pullRequestNumber}`,
       );
     },
   };

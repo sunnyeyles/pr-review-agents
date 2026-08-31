@@ -45,7 +45,9 @@ function stubGithubClient(): GithubInstallationClient {
     getDiff: vi.fn(unexpected("getDiff")),
     getFileContents: vi.fn(unexpected("getFileContents")),
     searchCode: vi.fn(unexpected("searchCode")),
+    listReviewComments: vi.fn(unexpected("listReviewComments")),
     createCheckRun: vi.fn(unexpected("createCheckRun")),
+    createReview: vi.fn(unexpected("createReview")),
   };
 }
 

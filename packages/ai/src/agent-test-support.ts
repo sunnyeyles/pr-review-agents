@@ -157,7 +157,9 @@ export function makeGithub() {
     getDiff: vi.fn(async () => context.diff),
     getFileContents: vi.fn(async () => "export const sessions = [];\n"),
     searchCode: vi.fn(async () => [{ path: "src/sessions.ts", name: "sessions.ts" }]),
+    listReviewComments: vi.fn(async () => []),
     createCheckRun: vi.fn(async () => ({ id: 987 })),
+    createReview: vi.fn(async () => ({ id: 654 })),
   } satisfies GithubInstallationClient;
 }
 

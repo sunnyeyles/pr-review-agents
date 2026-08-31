@@ -95,8 +95,39 @@ export interface CheckRun {
 }
 
 /**
+ * One inline comment on a review. `line` is a new-side line number that
+ * must fall inside the diff; GitHub rejects the whole review otherwise.
+ */
+export interface ReviewComment {
+  path: string;
+  line: number;
+  body: string;
+}
+
+/** Every review is posted as a COMMENT, never APPROVE or REQUEST_CHANGES. */
+export interface CreateReviewInput {
+  owner: string;
+  repo: string;
+  pullRequestNumber: number;
+  /** Head SHA the comments are anchored to. */
+  commitSha: string;
+  body: string;
+  comments: ReviewComment[];
+}
+
+export interface PullRequestReview {
+  id: number;
+}
+
+/** An inline comment already on the pull request, from any author. */
+export interface ExistingReviewComment {
+  body: string;
+}
+
+/**
  * A GitHub client for one repository's installation. Read-only except
- * createCheckRun, and every method is explicitly repository-scoped.
+ * createCheckRun and createReview, and every method is explicitly
+ * repository-scoped.
  */
 export interface GithubInstallationClient {
   getPullRequest(ref: PullRequestRef): Promise<PullRequestDetails>;
@@ -106,5 +137,9 @@ export interface GithubInstallationClient {
   getFileContents(request: FileContentsRequest): Promise<string>;
   /** Searches code within the single named repository. Read-only. */
   searchCode(request: CodeSearchRequest): Promise<CodeSearchMatch[]>;
+  /** Every inline review comment already on the pull request. */
+  listReviewComments(ref: PullRequestRef): Promise<ExistingReviewComment[]>;
   createCheckRun(input: CreateCheckRunInput): Promise<CheckRun>;
+  /** Publishes one advisory review with inline comments. */
+  createReview(input: CreateReviewInput): Promise<PullRequestReview>;
 }
