@@ -1,12 +1,13 @@
 import { createCapturingLogger } from "@pr-review/logging";
 import { describe, expect, it, vi } from "vitest";
 
-import { buildReviewSystemPrompt } from "./agent-runtime.js";
+import { buildReviewSystemPrompt } from "./agents/runtime.js";
 import {
   architectureLens,
   correctnessLens,
   securityLens,
-} from "./agents.js";
+} from "./agents/lenses.js";
+import { SYNTHESIS_SYSTEM_PROMPT } from "./agents/synthesiser.js";
 import {
   validRemotePrompt,
   validRemoteSynthesisPrompt,
@@ -21,7 +22,7 @@ import {
 const CORRECTNESS_FALLBACK = buildReviewSystemPrompt(correctnessLens);
 const SECURITY_FALLBACK = buildReviewSystemPrompt(securityLens);
 const ARCHITECTURE_FALLBACK = buildReviewSystemPrompt(architectureLens);
-const synthesisFallback = "SYNTHESIS FALLBACK PROMPT";
+const SYNTHESIS_FALLBACK = SYNTHESIS_SYSTEM_PROMPT;
 
 /** A string resolves, an Error rejects, and an unlisted name is a test bug. */
 function makeClient(
@@ -70,7 +71,6 @@ describe("loadManagedPrompts", () => {
     const { logger, entries } = createCapturingLogger();
 
     const { prompts, sources } = await loadManagedPrompts(client, {
-      synthesisFallback,
       logger,
     });
 
@@ -106,14 +106,13 @@ describe("loadManagedPrompts", () => {
     const { logger, entries } = createCapturingLogger();
 
     const { prompts, sources } = await loadManagedPrompts(client, {
-      synthesisFallback,
       logger,
     });
 
     expect(prompts.correctness).toBe(responses["correctness_system"]);
     expect(prompts.security).toBe(SECURITY_FALLBACK);
     expect(prompts.architecture).toBe(responses["architecture_system"]);
-    expect(prompts.synthesis).toBe(synthesisFallback);
+    expect(prompts.synthesis).toBe(SYNTHESIS_FALLBACK);
     expect(sources).toEqual({
       correctness: "langfuse",
       security: "fallback",
@@ -140,7 +139,6 @@ describe("loadManagedPrompts", () => {
     const { logger, entries } = createCapturingLogger();
 
     const { prompts, sources } = await loadManagedPrompts(client, {
-      synthesisFallback,
       logger,
     });
 
@@ -148,7 +146,7 @@ describe("loadManagedPrompts", () => {
       correctness: CORRECTNESS_FALLBACK,
       security: SECURITY_FALLBACK,
       architecture: ARCHITECTURE_FALLBACK,
-      synthesis: synthesisFallback,
+      synthesis: SYNTHESIS_FALLBACK,
     });
     expect(Object.values(sources).every((s) => s === "fallback")).toBe(true);
     expect(entries).toContainEqual(
@@ -172,7 +170,6 @@ describe("loadManagedPrompts", () => {
     };
 
     const { sources } = await loadManagedPrompts(client, {
-      synthesisFallback,
       logger: createCapturingLogger().logger,
     });
 
@@ -184,7 +181,6 @@ describe("loadManagedPrompts", () => {
     const client = makeClient(allValid());
 
     await loadManagedPrompts(client, {
-      synthesisFallback,
       logger: createCapturingLogger().logger,
       label: "staging",
     });
@@ -198,7 +194,6 @@ describe("loadManagedPrompts", () => {
     const client = makeClient(allValid());
 
     await loadManagedPrompts(client, {
-      synthesisFallback,
       logger: createCapturingLogger().logger,
     });
 
@@ -220,7 +215,6 @@ describe("loadManagedPrompts", () => {
     const { logger, entries } = createCapturingLogger();
 
     const { prompts, sources } = await loadManagedPrompts(client, {
-      synthesisFallback,
       logger,
       timeoutMs: 10,
     });
@@ -253,7 +247,6 @@ describe("the prompt contract guard", () => {
     const { logger, entries } = createCapturingLogger();
 
     const { prompts, sources } = await loadManagedPrompts(client, {
-      synthesisFallback,
       logger,
     });
 
@@ -277,7 +270,6 @@ describe("the prompt contract guard", () => {
     const { logger, entries } = createCapturingLogger();
 
     const { sources } = await loadManagedPrompts(client, {
-      synthesisFallback,
       logger,
     });
 
@@ -296,11 +288,10 @@ describe("the prompt contract guard", () => {
       correctness_system: CORRECTNESS_FALLBACK,
       security_system: SECURITY_FALLBACK,
       architecture_system: ARCHITECTURE_FALLBACK,
-      synthesis_system: synthesisFallback,
+      synthesis_system: SYNTHESIS_FALLBACK,
     });
 
     return loadManagedPrompts(client, {
-      synthesisFallback,
       logger: createCapturingLogger().logger,
     }).then(({ sources }) => {
       expect(sources.correctness).toBe("langfuse");

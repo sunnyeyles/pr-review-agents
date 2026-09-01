@@ -6,12 +6,13 @@
  */
 import {
   createReviewAgent,
+  createSynthesiser,
   reviewLenses,
   type ReviewAgent,
 } from "@pr-review/ai";
 import type { ChangedFile, GithubInstallationClient } from "@pr-review/github";
 import { createCapturingLogger } from "@pr-review/logging";
-import { createSynthesiser, validateFindings } from "@pr-review/reviewer";
+import { validateFindings } from "@pr-review/reviewer";
 import type { FindingCategory, ReviewFinding } from "@pr-review/schemas";
 import { describe, expect, it } from "vitest";
 

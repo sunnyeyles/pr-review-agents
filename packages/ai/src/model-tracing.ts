@@ -50,9 +50,14 @@ export async function traceModelCall(
         stopReason: response.stop_reason,
         contentBlockCount: response.content.length,
       },
+      // Four counters, not two: with caching `input_tokens` is only the
+      // uncached remainder, and Langfuse prices the cache keys separately.
       usageDetails: {
         input: response.usage.input_tokens,
         output: response.usage.output_tokens,
+        cache_read_input_tokens: response.usage.cache_read_input_tokens ?? 0,
+        cache_creation_input_tokens:
+          response.usage.cache_creation_input_tokens ?? 0,
       },
     });
     return response;

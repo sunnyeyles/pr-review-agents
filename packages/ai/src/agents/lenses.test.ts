@@ -11,8 +11,8 @@ import {
   buildReviewSystemPrompt,
   createReviewAgent,
   type ReviewAgentDeps,
-} from "./agent-runtime.js";
-import { reviewPromptContractProblems } from "./prompts.js";
+} from "./runtime.js";
+import { reviewPromptContractProblems } from "../prompts.js";
 import {
   context,
   finalFindingsJson,
@@ -21,7 +21,7 @@ import {
   message,
   systemPromptOf,
   textBlock,
-} from "./agent-test-support.js";
+} from "../agent-test-support.js";
 import {
   ALL_LENSES,
   architectureLens,
@@ -30,7 +30,7 @@ import {
   resolveReviewLenses,
   reviewLenses,
   securityLens,
-} from "./agents.js";
+} from "./lenses.js";
 
 const SECURITY_SYSTEM_PROMPT = buildReviewSystemPrompt(securityLens);
 const ARCHITECTURE_SYSTEM_PROMPT = buildReviewSystemPrompt(architectureLens);
@@ -138,6 +138,18 @@ describe("resolveReviewLenses", () => {
       "correctness",
       "security",
     ]);
+  });
+
+  it("selects every lens when all appears alongside a name", () => {
+    // The error used to name "all" in its own list of valid values.
+    expect(resolveReviewLenses("all,security")).toEqual([...reviewLenses]);
+    expect(resolveReviewLenses("security,all")).toEqual([...reviewLenses]);
+  });
+
+  it("still rejects a typo sitting next to all", () => {
+    expect(() => resolveReviewLenses("all,secuirty")).toThrow(
+      /Unknown review agent: secuirty/,
+    );
   });
 
   it("rejects an unknown name instead of silently dropping it", () => {

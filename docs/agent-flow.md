@@ -79,7 +79,7 @@ discover:
 const lenses = resolveReviewLenses(getInput(env, "agents"));
 ```
 
-`resolveReviewLenses` (`packages/ai/src/agents.ts:90`) throws on an unknown
+`resolveReviewLenses` (`packages/ai/src/agents/lenses.ts:74`) throws on an unknown
 name rather than dropping it — a silently ignored `agents: secuirty` would run
 a review that reports nothing and looks exactly like a clean bill of health.
 
@@ -96,7 +96,7 @@ prompt fetch so the fetch's own spans are captured.
 
 ### 2 · Is this even a review?
 
-`apps/action/src/event.ts` → `inspectEvent` (line 51)
+`apps/action/src/event.ts` → `inspectEvent` (line 40)
 
 Two outcomes, and the distinction matters:
 
@@ -108,7 +108,7 @@ Two outcomes, and the distinction matters:
 
 ### 3 · Load the pull request
 
-`packages/reviewer/src/review-pull-request.ts` → `reviewPullRequest` (line 139)
+`packages/reviewer/src/review-pull-request.ts` → `reviewPullRequest` (line 189)
 
 Three GitHub reads, concurrently — this is the only place the PR context is
 built:
@@ -128,7 +128,7 @@ check findings against a different file list than the one the agents reviewed.
 
 ### 4 · The graph
 
-`packages/reviewer/src/review-graph.ts` → `buildReviewGraph` (line 197)
+`packages/reviewer/src/review-graph.ts` → `buildReviewGraph` (line 196)
 
 Agent nodes are added dynamically, one per selected lens, each wired straight
 from `START` so they run concurrently:
@@ -155,14 +155,14 @@ return graph
 
 #### 4a · Each agent node
 
-`packages/ai/src/agent-runtime.ts` → `createReviewAgent` (line 231)
+`packages/ai/src/agents/runtime.ts` → `createReviewAgent` (line 180)
 
 All three lenses share one runtime. A `ReviewLens` supplies only the role,
 focus text, and category; the loop, the six tools, the injection hardening,
 and the output contract are identical by construction.
 
 ```ts
-// packages/ai/src/agent-runtime.ts:365
+// packages/ai/src/agents/runtime.ts:315
 for (let turn = 1; ; turn += 1) {
   const response = await callModel();
   const toolUses = toolUseBlocks(response.content);
@@ -186,7 +186,7 @@ After parsing, the runtime **filters** findings to the lens's own category.
 Cross-category leaks are dropped, never re-stamped — re-stamping would
 fabricate a claim the model never made.
 
-**The six tools** (`packages/ai/src/tools.ts:148`) are the only tools any agent
+**The six tools** (`packages/ai/src/agents/tools.ts:143`) are the only tools any agent
 ever gets. There is no write, comment, approve, merge, or execute tool
 anywhere in the package:
 
@@ -200,13 +200,13 @@ anywhere in the package:
 | `search_repository` | Code search, scoped to this repo |
 
 Every input is Zod-validated before it touches the GitHub client, and
-`dispatchReviewTool` (line 277) **never throws** — failures come back as
+`dispatchReviewTool` (line 230) **never throws** — failures come back as
 `{ ok: false }` and are handed to the model as an error `tool_result` so the
 loop keeps going.
 
 #### 4b · `join` — fan-in
 
-`makeJoinNode` (line 126). LangGraph only runs it once every incoming edge's
+`makeJoinNode` (line 118). LangGraph only runs it once every incoming edge's
 source has completed. It re-sorts outcomes by the agent's **input position**,
 never completion order, so the result is deterministic. Then:
 
@@ -220,8 +220,8 @@ One failed agent does not fail the review. All of them does.
 
 #### 4c · `synthesise`
 
-`makeSynthesiseNode` (line 159) → `createSynthesiser`
-(`packages/reviewer/src/synthesiser.ts:113`)
+`makeSynthesiseNode` (line 146) → `createSynthesiser`
+(`packages/ai/src/agents/synthesiser.ts:81`)
 
 **One** model call. No tools, no loop. It dedupes, merges overlaps, drops
 speculation, corrects severity, and orders results most important first.
@@ -239,30 +239,29 @@ either way, because it flows through the same validation chain.
 
 #### 4d · `validate` — the trust boundary
 
-`packages/reviewer/src/validate-findings.ts:74`
+`packages/reviewer/src/validate-findings.ts:58`
 
 Six deterministic steps, in this order:
 
 1. **Schema validity** — Zod (`reviewFindingSchema`)
 2. **File exists** among the PR's changed files
 3. **Line is an added line** in that file's diff, when a line is given
-4. **Confidence ≥ 0.7** (`CONFIDENCE_THRESHOLD`, line 30)
-5. **Cap at 10** (`MAX_FINDINGS`, line 33), keeping the strongest
-6. **Duplicate removal** — the strongest of each group survives
+4. **Confidence ≥ 0.7** (`CONFIDENCE_THRESHOLD`, line 13)
+5. **Duplicate removal** — the strongest of each group survives
+6. **Cap at 10** (`MAX_FINDINGS`, line 16), keeping the strongest
 
 "Strongest" is fully deterministic: severity rank, then confidence descending,
 then input order.
 
-Note the ordering consequence: the cap runs *before* dedup, so a review can
-publish fewer than 10 findings even when more valid candidates existed. That
-is the spec's order, kept deliberately.
+Dedup runs *before* the cap, so duplicates — which three lenses reviewing one
+diff produce routinely — cannot consume cap slots and leave the review short.
 
 This is where a fabricated file path, an invented line number, or a padded
 confidence score dies — regardless of how confident the model sounded.
 
 ### 5 · Render
 
-`packages/reviewer/src/render-check-run.ts:112` — pure, no I/O.
+`packages/reviewer/src/render-check-run.ts:65` — pure, no I/O.
 
 | Situation | Conclusion |
 | --- | --- |
@@ -275,7 +274,7 @@ per request).
 
 ### 6 · Publish
 
-`apps/action/src/summary.ts:112` → `createFallbackPublisher`
+`apps/action/src/summary.ts:59` → `createFallbackPublisher`
 
 Try the check run first. On a **403 or 404**, fall back to the workflow job
 summary and exit cleanly — that is the fork case, where GitHub hands the
@@ -300,13 +299,13 @@ those may masquerade as a delivered review.
 | `apps/action/src/langfuse.ts` | Span export for one run |
 | `packages/reviewer/src/review-pull-request.ts` | One review, end to end |
 | `packages/reviewer/src/review-graph.ts` | The StateGraph |
-| `packages/reviewer/src/synthesiser.ts` | The single refining model call |
 | `packages/reviewer/src/validate-findings.ts` | The trust boundary |
 | `packages/reviewer/src/render-check-run.ts` | Findings → check run payload |
 | `packages/reviewer/src/render-review.ts` | Findings → review body + inline comments |
-| `packages/ai/src/agents.ts` | The three lenses, lens selection |
-| `packages/ai/src/agent-runtime.ts` | The shared agentic loop |
-| `packages/ai/src/tools.ts` | The six read-only tools |
+| `packages/ai/src/agents/lenses.ts` | The three lenses, lens selection |
+| `packages/ai/src/agents/synthesiser.ts` | The single refining model call |
+| `packages/ai/src/agents/runtime.ts` | The shared agentic loop |
+| `packages/ai/src/agents/tools.ts` | The six read-only tools |
 | `packages/ai/src/prompts.ts` | Managed prompts + fallback |
 | `packages/schemas/src/review-finding.ts` | The finding contract |
 

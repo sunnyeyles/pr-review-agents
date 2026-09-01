@@ -31,6 +31,8 @@ function fakeParent() {
 const response = message([textBlock("done")], "end_turn", {
   inputTokens: 11,
   outputTokens: 7,
+  cacheCreationInputTokens: 500,
+  cacheReadInputTokens: 9000,
 });
 
 describe("traceModelCall", () => {
@@ -55,7 +57,7 @@ describe("traceModelCall", () => {
     ]);
   });
 
-  it("records the stop reason, block count, and token usage", async () => {
+  it("records the stop reason, block count, and all four token counters", async () => {
     const { parent, updates, endCount } = fakeParent();
 
     const result = await traceModelCall(
@@ -68,10 +70,36 @@ describe("traceModelCall", () => {
     expect(updates).toEqual([
       {
         output: { stopReason: "end_turn", contentBlockCount: 1 },
-        usageDetails: { input: 11, output: 7 },
+        usageDetails: {
+          input: 11,
+          output: 7,
+          cache_read_input_tokens: 9000,
+          cache_creation_input_tokens: 500,
+        },
       },
     ]);
     expect(endCount()).toBe(1);
+  });
+
+  it("reports zero rather than null when a call touched no cache", async () => {
+    const { parent, updates } = fakeParent();
+    const uncached = message([textBlock("done")], "end_turn", {
+      inputTokens: 11,
+      outputTokens: 7,
+    });
+
+    await traceModelCall(
+      parent,
+      { model: "m", input: {}, maxTokens: 1 },
+      () => Promise.resolve(uncached),
+    );
+
+    expect(updates[0]?.["usageDetails"]).toEqual({
+      input: 11,
+      output: 7,
+      cache_read_input_tokens: 0,
+      cache_creation_input_tokens: 0,
+    });
   });
 
   it("records a failure at ERROR and still ends the observation", async () => {

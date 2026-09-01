@@ -1,7 +1,7 @@
 /**
- * The Anthropic side of the review system: the client seam, the six
- * read-only tools, the shared agent runtime, and the three lenses.
- * Agents only propose findings; publishing lives in @pr-review/reviewer.
+ * The Anthropic side of the review system: the client seam, prompt
+ * management, and the model-calling units under `agents/`. Agents only
+ * propose findings; publishing lives in @pr-review/reviewer.
  */
 export {
   createAnthropicClient,
@@ -12,7 +12,7 @@ export {
   extractAgentOutput,
   messageText,
   type AgentOutputResult,
-} from "./agent-output.js";
+} from "./agents/output.js";
 export type { ReviewAgent, ReviewContext } from "./review-types.js";
 export { addTokenUsage, emptyTokenUsage, type TokenUsage } from "./usage.js";
 export {
@@ -21,7 +21,7 @@ export {
   type ReviewAgentDeps,
   type ReviewLens,
   type ReviewSystemPrompts,
-} from "./agent-runtime.js";
+} from "./agents/runtime.js";
 export {
   ALL_LENSES,
   architectureLens,
@@ -30,7 +30,15 @@ export {
   resolveReviewLenses,
   reviewLenses,
   securityLens,
-} from "./agents.js";
+} from "./agents/lenses.js";
+export {
+  SYNTHESIS_SYSTEM_PROMPT,
+  SynthesisError,
+  createSynthesiser,
+  type SynthesisResult,
+  type Synthesiser,
+  type SynthesiserDeps,
+} from "./agents/synthesiser.js";
 export {
   DEFAULT_LANGFUSE_BASE_URL,
   DEFAULT_PROMPT_LABEL,

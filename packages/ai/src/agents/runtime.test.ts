@@ -11,7 +11,7 @@ import {
   buildReviewSystemPrompt,
   createReviewAgent,
   type ReviewSystemPrompts,
-} from "./agent-runtime.js";
+} from "./runtime.js";
 import {
   context,
   finalFindingsJson,
@@ -24,8 +24,8 @@ import {
   systemPromptOf,
   textBlock,
   toolUseBlock,
-} from "./agent-test-support.js";
-import { correctnessLens } from "./agents.js";
+} from "../agent-test-support.js";
+import { correctnessLens } from "./lenses.js";
 
 const finding = {
   file: "src/sessions.ts",

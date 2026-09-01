@@ -5,10 +5,10 @@
  */
 import {
   inCodePrompts,
+  SYNTHESIS_SYSTEM_PROMPT,
   type LangfusePromptWriter,
 } from "@pr-review/ai";
 import { createCapturingLogger } from "@pr-review/logging";
-import { SYNTHESIS_SYSTEM_PROMPT } from "@pr-review/reviewer";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -140,7 +140,7 @@ describe("main", () => {
 
     await main([], environment);
 
-    const expected = inCodePrompts(SYNTHESIS_SYSTEM_PROMPT);
+    const expected = inCodePrompts();
     const byName = new Map(published.map((e) => [e.name, e.text]));
     expect(byName.get("correctness_system")).toBe(expected.correctness);
     expect(byName.get("security_system")).toBe(expected.security);

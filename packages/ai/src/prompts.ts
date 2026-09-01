@@ -10,12 +10,13 @@ import {
   type StructuredLogger,
 } from "@pr-review/logging";
 
-import { buildReviewSystemPrompt } from "./agent-runtime.js";
+import { buildReviewSystemPrompt } from "./agents/runtime.js";
 import {
   architectureLens,
   correctnessLens,
   securityLens,
-} from "./agents.js";
+} from "./agents/lenses.js";
+import { SYNTHESIS_SYSTEM_PROMPT } from "./agents/synthesiser.js";
 
 /** Stable Langfuse prompt names for the four managed system prompts. */
 export const MANAGED_PROMPT_KEYS = {
@@ -177,12 +178,12 @@ export function promptContractProblems(
  * The four prompts as this build defines them: both the loader's
  * fallback and the seeder's baseline, so the two can never disagree.
  */
-export function inCodePrompts(synthesisFallback: string): ManagedPrompts {
+export function inCodePrompts(): ManagedPrompts {
   return {
     correctness: buildReviewSystemPrompt(correctnessLens),
     security: buildReviewSystemPrompt(securityLens),
     architecture: buildReviewSystemPrompt(architectureLens),
-    synthesis: synthesisFallback,
+    synthesis: SYNTHESIS_SYSTEM_PROMPT,
   };
 }
 
@@ -192,8 +193,6 @@ export interface LoadManagedPromptsOptions {
   logger?: StructuredLogger | undefined;
   /** Per-prompt deadline. Defaults to DEFAULT_PROMPT_TIMEOUT_MS. */
   timeoutMs?: number | undefined;
-  /** Injected, not imported: it lives in @pr-review/reviewer, which depends on this package. */
-  synthesisFallback: string;
 }
 
 /** Rejects once `ms` has passed, so one slow fetch cannot stall the run. */
@@ -218,7 +217,7 @@ export async function loadManagedPrompts(
   const timeoutMs = options.timeoutMs ?? DEFAULT_PROMPT_TIMEOUT_MS;
 
   // Start from the in-code prompts so a fetch is only ever an upgrade.
-  const prompts: ManagedPrompts = inCodePrompts(options.synthesisFallback);
+  const prompts: ManagedPrompts = inCodePrompts();
   const sources: Record<ManagedPromptId, PromptSource> = {
     correctness: "fallback",
     security: "fallback",

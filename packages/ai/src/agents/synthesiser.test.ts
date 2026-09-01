@@ -1,5 +1,4 @@
-import type { AnthropicLike } from "@pr-review/ai";
-import type { ChangedFile } from "@pr-review/github";
+import type { AnthropicLike } from "../anthropic.js";
 import type { ReviewFinding } from "@pr-review/schemas";
 import { describe, expect, it } from "vitest";
 
@@ -9,7 +8,6 @@ import {
   buildSynthesisMessage,
   createSynthesiser,
 } from "./synthesiser.js";
-import { validateFindings } from "./validate-findings.js";
 
 const model = "claude-test-model";
 
@@ -288,30 +286,6 @@ describe("createSynthesiser", () => {
     await expect(
       synthesiser.synthesise([correctnessDuplicate]),
     ).rejects.toThrowError("anthropic unavailable");
-  });
-
-  it("is not the final authority: a synthesised finding pointing at a non-PR file is dropped by validateFindings", async () => {
-    const fabricated = makeFinding({
-      file: "src/not-part-of-this-pr.ts",
-      line: 7,
-    });
-    const { anthropic } = makeAnthropic([findingsJson([fabricated])]);
-    const synthesiser = createSynthesiser({ anthropic, model });
-    const changedFiles: ChangedFile[] = [
-      {
-        filename: "src/sessions.ts",
-        status: "modified",
-        additions: 1,
-        deletions: 0,
-        patch: "@@ -41,1 +41,2 @@\n context line 41\n+added line 42",
-      },
-    ];
-
-    const { findings } = await synthesiser.synthesise([correctnessDuplicate]);
-    const validated = validateFindings(findings, changedFiles);
-
-    expect(findings).toEqual([fabricated]);
-    expect(validated).toEqual([]);
   });
 });
 

@@ -14,12 +14,12 @@ import {
 } from "@pr-review/logging";
 import type { FindingCategory } from "@pr-review/schemas";
 
-import { extractAgentOutput, messageText } from "./agent-output.js";
-import type { AnthropicLike } from "./anthropic.js";
-import { traceModelCall } from "./model-tracing.js";
-import type { ReviewAgent, ReviewContext } from "./review-types.js";
+import { extractAgentOutput, messageText } from "./output.js";
+import type { AnthropicLike } from "../anthropic.js";
+import { traceModelCall } from "../model-tracing.js";
+import type { ReviewAgent, ReviewContext } from "../review-types.js";
 import { dispatchReviewTool, reviewTools, type ReviewToolScope } from "./tools.js";
-import { addTokenUsage, emptyTokenUsage } from "./usage.js";
+import { addTokenUsage, emptyTokenUsage } from "../usage.js";
 
 /** An agent-level failure (bad final output, turn cap, ...). */
 export class AgentRunError extends Error {

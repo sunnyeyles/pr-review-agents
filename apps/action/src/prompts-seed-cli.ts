@@ -1,7 +1,6 @@
 /**
- * The `pnpm seed-prompts` entry point. Lives here because this is the
- * one project that can see all four prompts. Nothing in src/index.ts
- * imports it, so it stays out of the shipped action bundle.
+ * The `pnpm seed-prompts` entry point. Nothing in src/index.ts imports
+ * it, so it stays out of the shipped action bundle.
  */
 import {
   DEFAULT_LANGFUSE_BASE_URL,
@@ -18,7 +17,6 @@ import {
   errorMessage,
   type StructuredLogger,
 } from "@pr-review/logging";
-import { SYNTHESIS_SYSTEM_PROMPT } from "@pr-review/reviewer";
 
 /** Environment variables the seeder authenticates with. */
 export const PUBLIC_KEY_ENV = "LANGFUSE_PUBLIC_KEY";
@@ -146,7 +144,7 @@ export async function main(
   );
 
   const report = await seedManagedPrompts(environment.createWriter(config), {
-    prompts: inCodePrompts(SYNTHESIS_SYSTEM_PROMPT),
+    prompts: inCodePrompts(),
     label: args.label,
     dryRun: args.dryRun,
     logger,
