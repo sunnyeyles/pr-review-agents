@@ -12,6 +12,7 @@ import {
 import { errorMessage, errorName } from "@pr-review/logging";
 import type { ReviewFinding } from "@pr-review/schemas";
 import { Annotation, END, START, StateGraph } from "@langchain/langgraph";
+import { startActiveObservation, type LangfuseChain } from "@langfuse/tracing";
 
 import { validateFindings } from "./validate-findings.js";
 
@@ -248,32 +249,73 @@ export interface ReviewPipelineResult {
   synthesisDurationMs?: number;
   /** The final, deterministically validated findings. */
   findings: ReviewFinding[];
+  /**
+   * The Langfuse trace every agent and synthesis span of this run nests
+   * under. Unset when no tracer is registered, so nothing can score it.
+   */
+  traceId?: string;
 }
 
-/** Throws when every agent failed; a synthesis failure never throws. */
-export async function runReviewPipeline(
+/** A recording span's trace id; the no-op tracer yields an all-zero one. */
+function exportedTraceId(span: LangfuseChain): string | undefined {
+  if (!span.otelSpan.isRecording() || /^0+$/.test(span.traceId)) {
+    return undefined;
+  }
+  return span.traceId;
+}
+
+/**
+ * Throws when every agent failed; a synthesis failure never throws.
+ * The whole run is one root span, so the agents' and synthesiser's own
+ * observations share a trace, and human feedback on a finding can be
+ * scored against the run that produced it.
+ */
+export function runReviewPipeline(
   agents: readonly ReviewAgent[],
   synthesiser: Synthesiser,
   context: ReviewContext,
 ): Promise<ReviewPipelineResult> {
-  const graph = buildReviewGraph(agents, synthesiser);
-  const { joined, synthesis, findings } = await graph.invoke({ context });
+  return startActiveObservation(
+    "review-pull-request",
+    async (span) => {
+      span.update({
+        input: {
+          repository: `${context.owner}/${context.repo}`,
+          pullRequestNumber: context.pullRequest.number,
+          headSha: context.pullRequest.headSha,
+          agents: agents.map((agent) => agent.name),
+        },
+      });
 
-  return {
-    candidates: joined.candidates,
-    agentFailures: joined.agentFailures,
-    synthesisedCandidateCount: synthesis.candidates.length,
-    synthesisOutcome: synthesis.outcome,
-    synthesisUsage: synthesis.usage,
-    ...(synthesis.outcome === "failed"
-      ? {
-          synthesisError: synthesis.error,
-          synthesisErrorName: synthesis.errorName,
-        }
-      : {}),
-    ...(synthesis.outcome === "skipped"
-      ? {}
-      : { synthesisDurationMs: synthesis.durationMs }),
-    findings,
-  };
+      const graph = buildReviewGraph(agents, synthesiser);
+      const { joined, synthesis, findings } = await graph.invoke({ context });
+      span.update({
+        output: {
+          findingCount: findings.length,
+          synthesisOutcome: synthesis.outcome,
+        },
+      });
+
+      const traceId = exportedTraceId(span);
+      return {
+        candidates: joined.candidates,
+        agentFailures: joined.agentFailures,
+        synthesisedCandidateCount: synthesis.candidates.length,
+        synthesisOutcome: synthesis.outcome,
+        synthesisUsage: synthesis.usage,
+        ...(synthesis.outcome === "failed"
+          ? {
+              synthesisError: synthesis.error,
+              synthesisErrorName: synthesis.errorName,
+            }
+          : {}),
+        ...(synthesis.outcome === "skipped"
+          ? {}
+          : { synthesisDurationMs: synthesis.durationMs }),
+        findings,
+        ...(traceId === undefined ? {} : { traceId }),
+      };
+    },
+    { asType: "chain" },
+  );
 }

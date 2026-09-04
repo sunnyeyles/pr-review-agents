@@ -76,3 +76,9 @@ export {
   type GenerationParent,
   type ModelCallTrace,
 } from "./model-tracing.js";
+export {
+  FEEDBACK_SCORE_NAME,
+  createLangfuseScoreSink,
+  type FeedbackScore,
+  type FeedbackScoreSink,
+} from "./feedback-scores.js";

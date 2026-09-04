@@ -40,6 +40,52 @@ export function findingMarker(finding: ReviewFinding): string {
 
 const MARKER = /<!-- pr-review-finding: (.*?) -->/;
 
+/** What the feedback collector needs to score a comment's reactions. */
+export interface FeedbackMeta {
+  /** The review run's Langfuse trace; absent when the run was not traced. */
+  traceId?: string | undefined;
+  /** The agent whose finding this is. */
+  category: string;
+}
+
+/** A Langfuse trace id is 32 lowercase hex characters. */
+const TRACE_ID = /^[0-9a-f]{32}$/;
+
+/** The agent name is a kebab-case slug, so `key=value` pairs need no quoting. */
+export function feedbackMarker(meta: FeedbackMeta): string {
+  const pairs = [`category=${meta.category}`];
+  if (meta.traceId !== undefined) {
+    pairs.push(`trace=${meta.traceId}`);
+  }
+  return `<!-- pr-review-meta: ${pairs.join(" ")} -->`;
+}
+
+const META_MARKER = /<!-- pr-review-meta: (.*?) -->/;
+
+/** undefined for a comment this system did not post, or one from before the marker existed. */
+export function parseFeedbackMarker(body: string): FeedbackMeta | undefined {
+  const match = META_MARKER.exec(body);
+  if (match?.[1] === undefined) {
+    return undefined;
+  }
+  const fields = new Map<string, string>();
+  for (const pair of match[1].split(/\s+/)) {
+    const separator = pair.indexOf("=");
+    if (separator > 0) {
+      fields.set(pair.slice(0, separator), pair.slice(separator + 1));
+    }
+  }
+  const category = fields.get("category");
+  if (category === undefined || category === "") {
+    return undefined;
+  }
+  const traceId = fields.get("trace");
+  return {
+    category,
+    ...(traceId !== undefined && TRACE_ID.test(traceId) ? { traceId } : {}),
+  };
+}
+
 /** The finding keys already posted as comments on a pull request. */
 export function postedFindingKeys(
   comments: readonly { body: string }[],
@@ -55,13 +101,25 @@ export function postedFindingKeys(
 }
 
 /** One finding as the body of its own inline comment. */
-function commentBody(finding: ReviewFinding): string {
+function commentBody(
+  finding: ReviewFinding,
+  traceId: string | undefined,
+): string {
   const lines = [`**${heading(finding)}**`, "", finding.explanation];
   if (finding.suggestedFix !== undefined) {
     lines.push("", `**Suggested fix:** ${finding.suggestedFix}`);
   }
-  lines.push("", findingMarker(finding));
+  lines.push(
+    "",
+    findingMarker(finding),
+    feedbackMarker({ category: finding.category, traceId }),
+  );
   return lines.join("\n");
+}
+
+export interface RenderReviewOptions {
+  /** Stamped on every comment so a reaction to it can be scored against the run. */
+  traceId?: string | undefined;
 }
 
 /**
@@ -73,6 +131,7 @@ export function renderReview(
   findings: readonly ReviewFinding[],
   agentFailures: readonly AgentFailure[] = [],
   alreadyPosted: ReadonlySet<string> = new Set(),
+  options: RenderReviewOptions = {},
 ): RenderedReview | undefined {
   const fresh = findings.filter(
     (finding) => !alreadyPosted.has(findingKey(finding)),
@@ -93,7 +152,7 @@ export function renderReview(
     comments.push({
       path: finding.file,
       line: finding.line,
-      body: commentBody(finding),
+      body: commentBody(finding, options.traceId),
     });
   }
 

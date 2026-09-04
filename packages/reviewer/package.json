@@ -11,9 +11,13 @@
   },
   "dependencies": {
     "@langchain/langgraph": "^1.4.9",
+    "@langfuse/tracing": "^5.10.1",
     "@pr-review/ai": "workspace:*",
     "@pr-review/github": "workspace:*",
     "@pr-review/logging": "workspace:*",
     "@pr-review/schemas": "workspace:*"
+  },
+  "devDependencies": {
+    "@opentelemetry/sdk-trace-node": "^2.10.0"
   }
 }

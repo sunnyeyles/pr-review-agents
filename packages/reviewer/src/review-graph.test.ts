@@ -78,6 +78,8 @@ describe("runReviewPipeline: agent fan-out and partial failure (spec §20)", () 
     expect(result.candidates).toEqual([finding]);
     expect(result.agentFailures).toEqual([]);
     expect(result.findings).toEqual([finding]);
+    // No tracer is registered here, so there is no trace anyone could score.
+    expect(result.traceId).toBeUndefined();
   });
 
   it("combines candidates from multiple agents in agent order", async () => {

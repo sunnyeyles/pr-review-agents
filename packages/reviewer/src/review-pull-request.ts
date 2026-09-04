@@ -235,6 +235,7 @@ export async function reviewPullRequest(
     review.findings,
     review.agentFailures,
     postedFindingKeys(await listPostedComments(client, ref, target, logger)),
+    { traceId: review.traceId },
   );
   const publishComments =
     publishReviewComments ?? createReviewCommentPublisher(client, logger);
@@ -261,6 +262,7 @@ export async function reviewPullRequest(
   logger.info("review.published", {
     ...fields,
     findingCount: review.findings.length,
+    traceId: review.traceId,
   });
 
   return review;

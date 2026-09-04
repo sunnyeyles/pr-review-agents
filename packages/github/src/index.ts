@@ -7,6 +7,18 @@ export type { OctokitLike } from "./app.js";
 export { httpStatus, isPermissionError } from "./errors.js";
 export { createTokenClient, type GithubTokenConfig } from "./token.js";
 export {
+  createFeedbackClient,
+  createTokenFeedbackClient,
+  type CollaboratorPermission,
+  type CommentReaction,
+  type FeedbackClientConfig,
+  type FeedbackOctokitLike,
+  type GithubFeedbackClient,
+  type ReactedReviewComment,
+  type RecentPullRequest,
+  type RepositoryRef,
+} from "./feedback.js";
+export {
   CHECK_RUN_NAME,
   type AnnotationLevel,
   type ChangedFile,

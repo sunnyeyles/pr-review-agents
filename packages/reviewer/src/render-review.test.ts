@@ -2,10 +2,14 @@ import type { ReviewFinding } from "@pr-review/schemas";
 import { describe, expect, it } from "vitest";
 
 import {
+  feedbackMarker,
   findingMarker,
+  parseFeedbackMarker,
   postedFindingKeys,
   renderReview,
 } from "./render-review.js";
+
+const traceId = "0af7651916cd43dd8448eb211c80319c";
 
 function finding(overrides: Partial<ReviewFinding> = {}): ReviewFinding {
   return {
@@ -112,6 +116,60 @@ describe("renderReview", () => {
 
   it("ignores a comment carrying no marker", () => {
     expect(postedFindingKeys([{ body: "a human wrote this" }]).size).toBe(0);
+  });
+
+  it("stamps every comment with its category and the run's trace id", () => {
+    const rendered = renderReview(
+      [finding(), finding({ category: "security", title: "Open redirect", line: 13 })],
+      [],
+      new Set(),
+      { traceId },
+    );
+
+    const metas = rendered?.comments.map((comment) => parseFeedbackMarker(comment.body));
+    expect(metas).toEqual([
+      { category: "correctness", traceId },
+      { category: "security", traceId },
+    ]);
+    // The trace marker must not disturb the finding key the next push reads.
+    expect(
+      postedFindingKeys(rendered?.comments ?? []).has(
+        `${finding().file}|assignment instead of comparison in admin check`,
+      ),
+    ).toBe(true);
+  });
+
+  it("still names the category when the run was not traced", () => {
+    const rendered = renderReview([finding()]);
+
+    expect(parseFeedbackMarker(rendered?.comments[0]?.body ?? "")).toEqual({
+      category: "correctness",
+    });
+  });
+});
+
+describe("parseFeedbackMarker", () => {
+  it("round-trips the marker", () => {
+    expect(parseFeedbackMarker(feedbackMarker({ category: "security", traceId }))).toEqual({
+      category: "security",
+      traceId,
+    });
+  });
+
+  it("returns undefined for a comment without a marker", () => {
+    expect(parseFeedbackMarker("looks good to me")).toBeUndefined();
+  });
+
+  it("drops a trace id that is not 32 hex characters", () => {
+    expect(
+      parseFeedbackMarker("<!-- pr-review-meta: category=security trace=not-a-trace -->"),
+    ).toEqual({ category: "security" });
+  });
+
+  it("needs a category", () => {
+    expect(
+      parseFeedbackMarker(`<!-- pr-review-meta: trace=${traceId} -->`),
+    ).toBeUndefined();
   });
 
   it("notes an agent that did not complete", () => {

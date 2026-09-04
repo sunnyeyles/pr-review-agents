@@ -21,44 +21,17 @@
  * The bundle is a temporary artefact rather than dist/, because it is
  * a means of running the command once, not something anyone ships.
  */
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { bundle } from "./lib/bundle.mjs";
+import { readEnvFile } from "./lib/env-file.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const entryPoint = path.join(repoRoot, "apps/action/src/seed-prompts-cli.ts");
-
-/**
- * Reads .env.local into a plain object. It is gitignored and holds
- * local credentials — the README already points people there — but
- * nothing in the repository parsed it until now, and a dotenv
- * dependency for one file of `KEY=value` lines is not worth it.
- *
- * Quotes are stripped and `export ` prefixes tolerated, so a file that
- * can be `source`d in a shell also works here.
- */
-function readEnvFile(file) {
-  let contents;
-  try {
-    contents = readFileSync(file, "utf8");
-  } catch {
-    return {};
-  }
-
-  const values = {};
-  for (const line of contents.split("\n")) {
-    const match = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/.exec(line);
-    if (match === null) {
-      continue;
-    }
-    values[match[1]] = match[2].trim().replace(/^(['"])(.*)\1$/, "$2");
-  }
-  return values;
-}
 
 // The real environment wins over the file, so a one-off
 // LANGFUSE_BASE_URL=… on the command line behaves as expected.

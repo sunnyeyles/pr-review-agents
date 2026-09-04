@@ -9,7 +9,20 @@ export {
 } from "./review-graph.js";
 export { validateFindings } from "./validate-findings.js";
 export { renderCheckRun, type RenderedCheckRun } from "./render-check-run.js";
-export { renderReview, type RenderedReview } from "./render-review.js";
+export {
+  feedbackMarker,
+  parseFeedbackMarker,
+  renderReview,
+  type FeedbackMeta,
+  type RenderReviewOptions,
+  type RenderedReview,
+} from "./render-review.js";
+export {
+  canPush,
+  collectFeedback,
+  type CollectFeedbackOptions,
+  type CollectFeedbackReport,
+} from "./collect-feedback.js";
 export {
   createCheckRunPublisher,
   createReviewCommentPublisher,
