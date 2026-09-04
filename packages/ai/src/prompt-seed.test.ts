@@ -3,6 +3,7 @@ import { createCapturingLogger } from "@pr-review/logging";
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  repositoryLenses,
   validRemotePrompt,
   validRemoteSynthesisPrompt,
 } from "./agent-test-support.js";
@@ -12,10 +13,12 @@ import {
   type LabelledPrompt,
   type LangfusePromptWriter,
 } from "./prompt-seed.js";
-import { MANAGED_PROMPT_KEYS, type ManagedPrompts } from "./prompts.js";
+import { managedPromptKeys } from "./prompts.js";
 
-/** Four prompts that all satisfy the contract guard. */
-function validPrompts(): ManagedPrompts {
+const configuredLenses = repositoryLenses();
+
+/** One prompt per configured lens, all satisfying the contract guard. */
+function validPrompts() {
   return {
     correctness: validRemotePrompt("correctness", "SEED CORRECTNESS"),
     security: validRemotePrompt("security", "SEED SECURITY"),
@@ -60,6 +63,7 @@ describe("seedManagedPrompts", () => {
     const { writer, published } = makeWriter();
 
     const report = await seedManagedPrompts(writer, {
+      lenses: configuredLenses,
       prompts: validPrompts(),
       logger: createCapturingLogger().logger,
     });
@@ -89,6 +93,7 @@ describe("seedManagedPrompts", () => {
     });
 
     const report = await seedManagedPrompts(writer, {
+      lenses: configuredLenses,
       prompts,
       logger: createCapturingLogger().logger,
     });
@@ -114,6 +119,7 @@ describe("seedManagedPrompts", () => {
     });
 
     const report = await seedManagedPrompts(writer, {
+      lenses: configuredLenses,
       prompts,
       logger: createCapturingLogger().logger,
     });
@@ -135,6 +141,7 @@ describe("seedManagedPrompts", () => {
     });
 
     const report = await seedManagedPrompts(writer, {
+      lenses: configuredLenses,
       prompts,
       logger: createCapturingLogger().logger,
     });
@@ -157,7 +164,11 @@ describe("seedManagedPrompts", () => {
     const { writer, published } = makeWriter();
     const { logger, entries } = createCapturingLogger();
 
-    const report = await seedManagedPrompts(writer, { prompts, logger });
+    const report = await seedManagedPrompts(writer, {
+      lenses: configuredLenses,
+      prompts,
+      logger,
+    });
 
     expect(report.correctness).toBe("rejected");
     expect(published.map((entry) => entry.name)).not.toContain(
@@ -178,6 +189,7 @@ describe("seedManagedPrompts", () => {
     });
 
     const report = await seedManagedPrompts(writer, {
+      lenses: configuredLenses,
       prompts: validPrompts(),
       logger: createCapturingLogger().logger,
     });
@@ -201,6 +213,7 @@ describe("seedManagedPrompts", () => {
     });
 
     const report = await seedManagedPrompts(writer, {
+      lenses: configuredLenses,
       prompts,
       dryRun: true,
       logger: createCapturingLogger().logger,
@@ -219,12 +232,13 @@ describe("seedManagedPrompts", () => {
     const { writer, published } = makeWriter();
 
     await seedManagedPrompts(writer, {
+      lenses: configuredLenses,
       prompts: validPrompts(),
       label: "staging",
       logger: createCapturingLogger().logger,
     });
 
-    for (const name of Object.values(MANAGED_PROMPT_KEYS)) {
+    for (const name of Object.values(managedPromptKeys(configuredLenses))) {
       expect(writer.readLabelled).toHaveBeenCalledWith(name, "staging");
     }
     expect(published.every((entry) => entry.label === "staging")).toBe(true);
@@ -234,6 +248,7 @@ describe("seedManagedPrompts", () => {
     const { writer } = makeWriter();
 
     await seedManagedPrompts(writer, {
+      lenses: configuredLenses,
       prompts: validPrompts(),
       logger: createCapturingLogger().logger,
     });
@@ -249,7 +264,11 @@ describe("seedManagedPrompts", () => {
     const { logger, entries } = createCapturingLogger();
     const prompts = validPrompts();
 
-    await seedManagedPrompts(writer, { prompts, logger });
+    await seedManagedPrompts(writer, {
+      lenses: configuredLenses,
+      prompts,
+      logger,
+    });
 
     // A log line carrying a whole prompt makes every review log unreadable.
     const serialised = JSON.stringify(entries);

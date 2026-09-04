@@ -1,9 +1,18 @@
 # pr-review-agents
 
-Reviews pull requests with three independent AI agents — **Correctness**,
-**Security**, and **Architecture** — and publishes the result as inline pull
-request review comments, alongside an `AI PR Review` check run carrying the
-full summary. Any subset of the three can be selected per run.
+Reviews pull requests with the AI agents *you* define, and publishes the
+result as inline pull request review comments, alongside an `AI PR Review`
+check run carrying the full summary.
+
+There is no built-in set of agents. Each agent is one **lens** — a name, a
+role, and a focus — declared in
+[`.github/pr-review.yml`](#defining-your-own-agents). A review runs exactly
+the agents that file lists, in the order it lists them; with no such file the
+step fails rather than guessing. Any subset can be selected per run.
+
+This repository's own [`.github/pr-review.yml`](.github/pr-review.yml) defines
+three (Correctness, Security, Architecture) and is a working starting point to
+copy — but it is configuration, not a default.
 
 The agents never touch GitHub. They propose structured findings; deterministic
 application code decides what actually gets published.
@@ -119,8 +128,8 @@ Reinforcing rules:
 apps/
   action/     Event parsing → review pipeline → check run (or job summary)
 packages/
-  ai/         Anthropic seam, prompts, and agents/: runtime loop, the three
-              lenses, the read-only tools, the synthesiser
+  ai/         Anthropic seam, prompts, lens configuration, and agents/:
+              lens definition, runtime loop, read-only tools, synthesiser
   reviewer/   Review graph, validation chain, check-run rendering
   github/     GitHub client (workflow-token auth) + Octokit calls
   schemas/    Zod schemas: ReviewFinding, the review trigger contract
@@ -160,7 +169,58 @@ Set as `with:` inputs on the Action step ([`apps/action/action.yml`](apps/action
 | `anthropic-api-key` | yes | Anthropic key the agents and synthesiser authenticate with. Store as a repository or organisation secret; never inline it. |
 | `github-token` | no (default `${{ github.token }}`) | Token for the six read-only repository tools and for publishing the check run. |
 | `model` | no (default `claude-sonnet-5`) | Anthropic model id the agents and synthesiser use. |
-| `agents` | no (default `all`) | Which agents run: `all`, or a comma-separated subset of `correctness`, `security`, `architecture`. |
+| `agents` | no (default `all`) | Which of the configured agents run: `all`, or a comma-separated subset of their names. |
+| `lens-config` | no (default `.github/pr-review.yml`) | Path to the YAML file defining the agents. Required — there is no built-in set. |
+
+### Defining your own agents
+
+The agents are data. There are none in the code, and none built into the
+action: a repository declares its own in `.github/pr-review.yml` (or wherever
+`lens-config` points), and everything downstream follows — the prompt each
+agent is given, its Langfuse prompt key, the categories the synthesiser is
+told about, the categories validation accepts, and the labels findings are
+rendered under.
+
+```yaml
+lenses:
+  - category: performance
+    role: Performance reviewer
+    focus: |
+      Review the pull request ONLY for performance problems:
+      - N+1 queries and unbounded result sets
+      - work repeated inside a loop that could be hoisted
+      Do NOT report correctness bugs or style — those are out of scope for
+      you and will be discarded.
+
+  - category: security
+    role: Security reviewer
+    focus: |
+      Review ONLY for security problems, and only ones this diff proves.
+    # Optional: makes the agent retrieve repository context before claiming.
+    contextGuidance: |
+      Use get_file and search_repository to confirm a claim before making it.
+```
+
+Adding an agent is a new entry; removing one is deleting its entry; changing
+one is editing its `focus`. Nothing else needs updating, because everything
+but the lens body is derived:
+
+- `category` is the agent's name, the finding category it owns, and the only
+  category its findings may carry — findings in any other are discarded. It
+  must be a lowercase kebab-case slug; `synthesis` and `all` are reserved.
+- `role` and `focus` are dropped into the shared system prompt
+  (`packages/ai/src/agents/lens.ts`); the security hardening, the tool
+  guidance, and the JSON output contract come with it.
+- Order is significant: it is the order findings reach the synthesiser.
+
+The action reads the file from the checked-out workspace, so a workflow that
+configures agents needs an `actions/checkout` step. A missing file, a
+malformed one, or one that declares no agents fails the step before any model
+call — a review with the wrong agents, or none, looks exactly like a clean
+bill of health, so it must never happen quietly.
+
+`pnpm seed-prompts` reads the same file (`--config` to point elsewhere), so
+the prompts published to Langfuse always match the agents configured.
 
 ### What a review costs
 

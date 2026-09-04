@@ -182,14 +182,18 @@ function makeSynthesiseNode(synthesiser: Synthesiser) {
   };
 }
 
-/** The deterministic validation chain: never trust AI output. */
-function validateNode(state: ReviewGraphStateT): ReviewGraphUpdate {
-  return {
+/**
+ * The deterministic validation chain: never trust AI output. The agent
+ * names are the only categories the run can legitimately produce.
+ */
+function makeValidateNode(categories: readonly string[]) {
+  return (state: ReviewGraphStateT): ReviewGraphUpdate => ({
     findings: validateFindings(
       state.synthesis.candidates,
       state.context.changedFiles,
+      categories,
     ),
-  };
+  });
 }
 
 /** Compiles the graph above for one set of agents and one Synthesiser. */
@@ -221,7 +225,7 @@ export function buildReviewGraph(
     .addEdge(agentNodeNames, "join")
     .addNode("synthesise", makeSynthesiseNode(synthesiser))
     .addEdge("join", "synthesise")
-    .addNode("validate", validateNode)
+    .addNode("validate", makeValidateNode(agents.map((agent) => agent.name)))
     .addEdge("synthesise", "validate")
     .addEdge("validate", END)
     .compile();

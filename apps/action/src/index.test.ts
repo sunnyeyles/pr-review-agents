@@ -3,6 +3,8 @@
  * guard. GITHUB_ACTIONS is cleared before import because importing the
  * module under test evaluates the guard.
  */
+import { readFileSync } from "node:fs";
+
 import {
   validRemotePrompt,
   validRemoteSynthesisPrompt,
@@ -57,6 +59,12 @@ const validInputs = {
   "INPUT_GITHUB-TOKEN": "ghs-test-token",
 };
 
+/** The lens configuration a workspace would have checked out. */
+const lensConfigYaml = readFileSync(
+  new URL("../../../.github/pr-review.yml", import.meta.url),
+  "utf8",
+);
+
 interface Harness {
   environment: ActionEnvironment;
   entries: ReturnType<typeof createCapturingLogger>["entries"];
@@ -104,6 +112,7 @@ function harness(
     exitCodes,
     environment: {
       env,
+      readWorkspaceFile: async () => lensConfigYaml,
       readEventFile: (path) => {
         readPaths.push(path);
         return eventFile instanceof Error
@@ -153,6 +162,14 @@ function harness(
       setExitCode: (code) => exitCodes.push(code),
     },
   };
+}
+
+/**
+ * Log entries other than the lens selection every run records, which
+ * `agent selection` below covers on its own.
+ */
+function beyondSelection<T extends { event?: unknown }>(entries: T[]): T[] {
+  return entries.filter((entry) => entry.event !== "review.agents_selected");
 }
 
 /** Drains pending microtasks so the entrypoint's catch has run. */
@@ -285,7 +302,7 @@ describe("runAction", () => {
     expect(anthropicConfigs).toEqual([{ apiKey: "sk-test-key" }]);
     expect(tokenConfigs).toEqual([{ token: "ghs-test-token" }]);
     // A non-pull_request event is a clean no-op, so no client is called.
-    expect(entries).toEqual([
+    expect(beyondSelection(entries)).toEqual([
       { level: "info", event: "review.skipped", reason: "unsupported event: push" },
     ]);
   });
@@ -298,17 +315,17 @@ describe("runAction", () => {
 
     await runAction(environment);
 
-    expect(entries).toEqual([
+    expect(beyondSelection(entries)).toEqual([
       { level: "info", event: "review.skipped", reason: "unsupported event: " },
     ]);
   });
 });
 
 /**
- * Selecting which agents run. The agent list itself is built and
- * pinned in @pr-review/ai's agents.test.ts; what belongs here is the
- * wiring — that the input reaches the parser, that the default stays
- * silent, and that a bad value costs nothing.
+ * Selecting which agents run. Selection itself is pinned in
+ * @pr-review/ai's lenses.test.ts; what belongs here is the wiring —
+ * that the input reaches the parser, that the run always records which
+ * agents it chose, and that a bad value costs nothing.
  */
 describe("agent selection", () => {
   const eventEnv = {
@@ -317,14 +334,21 @@ describe("agent selection", () => {
     GITHUB_EVENT_NAME: "push",
   };
 
-  it("says nothing when the default set runs", async () => {
+  /** The `review.agents_selected` entry, which every run emits. */
+  const selection = (entries: Record<string, unknown>[]) =>
+    entries.find((entry) => entry["event"] === "review.agents_selected");
+
+  it("records the configured set when the default runs", async () => {
     const { environment, entries } = harness(eventEnv);
 
     await runAction(environment);
 
-    expect(
-      entries.some((entry) => entry.event === "review.agents_selected"),
-    ).toBe(false);
+    expect(selection(entries)).toEqual({
+      level: "info",
+      event: "review.agents_selected",
+      agents: ["correctness", "security", "architecture"],
+      configuredAgents: ["correctness", "security", "architecture"],
+    });
   });
 
   it("reports the narrowed set, in spec order", async () => {
@@ -335,12 +359,11 @@ describe("agent selection", () => {
 
     await runAction(environment);
 
-    expect(
-      entries.find((entry) => entry.event === "review.agents_selected"),
-    ).toEqual({
+    expect(selection(entries)).toEqual({
       level: "info",
       event: "review.agents_selected",
       agents: ["correctness", "architecture"],
+      configuredAgents: ["correctness", "security", "architecture"],
     });
   });
 
@@ -352,9 +375,11 @@ describe("agent selection", () => {
 
     await runAction(environment);
 
-    expect(
-      entries.some((entry) => entry.event === "review.agents_selected"),
-    ).toBe(false);
+    expect(selection(entries)?.["agents"]).toEqual([
+      "correctness",
+      "security",
+      "architecture",
+    ]);
   });
 
   it("fails on an unknown name before building any client", async () => {
@@ -396,7 +421,9 @@ describe("Langfuse wiring", () => {
     expect(tracingConfigs).toEqual([]);
     expect(flushCount()).toBe(0);
     // The default path stays silent about a feature nobody asked for.
-    expect(entries.map((entry) => entry["event"])).toEqual(["review.skipped"]);
+    expect(beyondSelection(entries).map((entry) => entry["event"])).toEqual([
+      "review.skipped",
+    ]);
   });
 
   it("fetches prompts and starts tracing when both keys are set", async () => {
@@ -594,7 +621,9 @@ describe("runEntrypoint", () => {
     await flush();
 
     expect(readPaths).toEqual(["/tmp/event.json"]);
-    expect(entries.map((entry) => entry["event"])).toEqual(["review.skipped"]);
+    expect(beyondSelection(entries).map((entry) => entry["event"])).toEqual([
+      "review.skipped",
+    ]);
     expect(exitCodes).toEqual([]);
   });
 

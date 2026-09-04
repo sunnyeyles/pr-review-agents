@@ -7,7 +7,6 @@
 import {
   createReviewAgent,
   createSynthesiser,
-  reviewLenses,
   type ReviewAgent,
 } from "@pr-review/ai";
 import type { ChangedFile, GithubInstallationClient } from "@pr-review/github";
@@ -24,6 +23,7 @@ import {
   textBlock,
 } from "../../packages/ai/src/agent-test-support.js";
 import { evalCases } from "./cases.js";
+import { repositoryLenses } from "./lenses.js";
 import {
   evaluateExpectation,
   resolveAnchor,
@@ -48,6 +48,8 @@ import {
 import { buildPatch, diffOps, toLines } from "./unified-diff.js";
 
 const MODEL = "harness-test-model";
+
+const configuredLenses = repositoryLenses();
 
 /** The line number of the first line containing `marker`. */
 function lineOf(contents: string, marker: string): number {
@@ -98,10 +100,12 @@ function findingExpectationFor(fixtureName: string): FixtureExpectation {
 function scriptedDeps(
   byCategory: Partial<Record<FindingCategory, ReviewFinding[]>>,
 ): FixtureReviewDeps {
-  const synthesised = Object.values(byCategory).flat();
+  const synthesised = Object.values(byCategory)
+    .flat()
+    .filter((finding) => finding !== undefined);
   return {
     createAgents: (github: GithubInstallationClient): ReviewAgent[] =>
-      reviewLenses.map((lens) =>
+      configuredLenses.map((lens) =>
         createReviewAgent(lens, {
           anthropic: makeAnthropic([
             message(
@@ -119,6 +123,7 @@ function scriptedDeps(
         message([textBlock(finalFindingsJson(synthesised))], "end_turn"),
       ]).anthropic,
       model: MODEL,
+      lenses: configuredLenses,
     }),
   };
 }

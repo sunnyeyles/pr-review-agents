@@ -11,6 +11,7 @@ import { createConsoleLogger } from "@pr-review/logging";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 
 import { evalCases } from "./cases.js";
+import { repositoryLenses } from "./lenses.js";
 import { evaluateExpectation } from "./expectations.js";
 import { loadFixture } from "./fixture.js";
 import { AGENTS_ENV, requireModelAccess } from "./model-access.js";
@@ -26,7 +27,7 @@ import {
 const deps = modelBackedDeps(
   requireModelAccess(process.env),
   createConsoleLogger(),
-  resolveReviewLenses(process.env[AGENTS_ENV] ?? ""),
+  resolveReviewLenses(process.env[AGENTS_ENV] ?? "", repositoryLenses()),
 );
 
 const reports: string[] = [];

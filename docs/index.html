@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="description" content="A stage-by-stage trace of the pr-review-agents pipeline: three agents propose, one synthesiser refines, deterministic code decides.">
+<meta name="description" content="A stage-by-stage trace of the pr-review-agents pipeline: your configured agents propose, one synthesiser refines, deterministic code decides.">
 <meta name="color-scheme" content="light dark">
 
 <meta property="og:type" content="website">
 <meta property="og:title" content="Propose, Refine, Decide">
-<meta property="og:description" content="How the pr-review-agents pipeline executes: three agents propose, one synthesiser refines, deterministic code decides.">
+<meta property="og:description" content="How the pr-review-agents pipeline executes: your configured agents propose, one synthesiser refines, deterministic code decides.">
 <meta name="twitter:card" content="summary_large_image">
 
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%94%8E%3C/text%3E%3C/svg%3E">
@@ -322,7 +322,7 @@ p { margin: 0; }
 .link { width: 2px; height: 22px; background: var(--rule); margin: 0 auto; }
 .link.long { height: 30px; }
 
-/* the three lens cards */
+/* the lens cards */
 .lenses { display: grid; grid-template-columns: repeat(3, 1fr); gap: .6rem; }
 .lens {
   border: 1px solid var(--rule);
@@ -615,14 +615,14 @@ html { scroll-behavior: smooth; }
         actually executes.
       </p>
       <p class="thesis">
-        Three agents <strong>propose</strong> candidate findings. One
-        synthesiser <strong>refines</strong> them. Then deterministic code
+        The agents you configure <strong>propose</strong> candidate findings.
+        One synthesiser <strong>refines</strong> them. Then deterministic code
         <strong>decides</strong> — and only that last step is ever allowed to
         reach the GitHub API.
       </p>
 
       <div class="stats">
-        <div class="stat"><span class="stat-n">3</span><span class="stat-l">Review lenses</span></div>
+        <div class="stat"><span class="stat-n">n</span><span class="stat-l">Review lenses, from config</span></div>
         <div class="stat"><span class="stat-n">6</span><span class="stat-l">Read-only tools</span></div>
         <div class="stat"><span class="stat-n">12</span><span class="stat-l">Turn cap / agent</span></div>
         <div class="stat"><span class="stat-n">6</span><span class="stat-l">Validation steps</span></div>
@@ -708,24 +708,28 @@ html { scroll-behavior: smooth; }
 
       <figure class="code">
         <div class="code-head"><span class="p">apps/action/src/index.ts</span><span class="ln">line 187</span></div>
-<pre><span class="c-com">// Resolved before any client is built: an unrecognised agent name</span>
-<span class="c-com">// is a typo in the workflow file, and must cost nothing to find.</span>
-<span class="c-key">const</span> lenses = resolveReviewLenses(getInput(env, <span class="c-str">"agents"</span>));</pre>
+<pre><span class="c-com">// Resolved before any client is built: a missing config or an</span>
+<span class="c-com">// unrecognised agent name must cost nothing to find.</span>
+<span class="c-key">const</span> configured = <span class="c-key">await</span> loadLensSet({ readFile, path });
+<span class="c-key">const</span> lenses = resolveReviewLenses(getInput(env, <span class="c-str">"agents"</span>), configured);</pre>
       </figure>
 
       <div class="note">
         <span class="eyebrow">Why it throws</span>
-        A silently dropped <code>agents: secuirty</code> would run a review that
-        reports nothing — indistinguishable from a clean bill of health. So
-        <code>resolveReviewLenses</code> rejects unknown names rather than
-        ignoring them.
+        A review with no agents, or a silently dropped
+        <code>agents: secuirty</code>, would report nothing —
+        indistinguishable from a clean bill of health. So
+        <code>loadLensSet</code> refuses a missing config instead of
+        defaulting, and <code>resolveReviewLenses</code> rejects unknown names
+        instead of ignoring them.
       </div>
 
       <div class="table-wrap">
         <table>
           <thead><tr><th>Step</th><th>Function</th><th>Fails the run?</th></tr></thead>
           <tbody>
-            <tr><td>Resolve lenses</td><td><code>resolveReviewLenses</code></td><td><span class="badge stop">Yes</span> unknown name</td></tr>
+            <tr><td>Load configured lenses</td><td><code>loadLensSet</code></td><td><span class="badge stop">Yes</span> missing or malformed config</td></tr>
+            <tr><td>Narrow to the selection</td><td><code>resolveReviewLenses</code></td><td><span class="badge stop">Yes</span> unknown name</td></tr>
             <tr><td>Anthropic client</td><td><code>createAnthropicClient</code></td><td><span class="badge stop">Yes</span> missing key</td></tr>
             <tr><td>Langfuse tracing</td><td><code>createLangfuseRuntime</code></td><td><span class="badge ok">No</span> optional</td></tr>
             <tr><td>Managed prompts</td><td><code>loadManagedPrompts</code></td><td><span class="badge ok">No</span> falls back per prompt</td></tr>
@@ -850,7 +854,7 @@ html { scroll-behavior: smooth; }
   .addEdge(agentNodeNames, <span class="c-str">"join"</span>)      <span class="c-com">// fan-in: waits for all</span>
   .addNode(<span class="c-str">"synthesise"</span>, makeSynthesiseNode(synthesiser))
   .addEdge(<span class="c-str">"join"</span>, <span class="c-str">"synthesise"</span>)
-  .addNode(<span class="c-str">"validate"</span>, validateNode)
+  .addNode(<span class="c-str">"validate"</span>, makeValidateNode(names))
   .addEdge(<span class="c-str">"synthesise"</span>, <span class="c-str">"validate"</span>)
   .addEdge(<span class="c-str">"validate"</span>, END)
   .compile();</pre>
@@ -858,15 +862,16 @@ html { scroll-behavior: smooth; }
 
       <h3>4a · Each agent node</h3>
       <div class="paths">
-        <span class="chip">packages/ai/src/<b>agent-runtime.ts</b> · createReviewAgent</span>
-        <span class="chip">packages/ai/src/<b>agents.ts</b> · the lenses</span>
+        <span class="chip">packages/ai/src/agents/<b>runtime.ts</b> · createReviewAgent</span>
+        <span class="chip">packages/ai/src/agents/<b>lens.ts</b> · what a lens is</span>
       </div>
       <div class="prose">
         <p>
-          All three lenses share one runtime. A <code>ReviewLens</code>
-          supplies only the role, the focus text, and the category — the loop,
-          the six tools, the injection hardening, and the output contract are
-          identical by construction.
+          Every lens shares one runtime. A <code>ReviewLens</code> — the
+          three fields a config entry carries — supplies the role, the focus
+          text, and the category. The loop, the six tools, the injection
+          hardening, and the output contract are identical by construction, so
+          a new agent costs a YAML entry and no code.
         </p>
       </div>
 
@@ -1006,7 +1011,7 @@ html { scroll-behavior: smooth; }
         <p>
           "Strongest" is fully deterministic: severity rank, then confidence
           descending, then input order. Dedup runs <em>before</em> the cap, so
-          duplicates — which three lenses reviewing one diff produce routinely
+          duplicates — which several lenses reviewing one diff produce routinely
           — cannot consume cap slots and leave the review short.
         </p>
       </div>
@@ -1161,7 +1166,10 @@ review.started<br>
             <tr><td><code>packages/reviewer/src/review-graph.ts</code></td><td>The StateGraph</td></tr>
             <tr><td><code>packages/reviewer/src/validate-findings.ts</code></td><td>The trust boundary</td></tr>
             <tr><td><code>packages/reviewer/src/render-check-run.ts</code></td><td>Findings → check run payload</td></tr>
-            <tr><td><code>packages/ai/src/agents/lenses.ts</code></td><td>The three lenses, lens selection</td></tr>
+            <tr><td><code>.github/pr-review.yml</code></td><td>The agents this repository reviews with</td></tr>
+            <tr><td><code>packages/ai/src/lens-config.ts</code></td><td>Reading and validating a repository's agents</td></tr>
+            <tr><td><code>packages/ai/src/agents/lens.ts</code></td><td>What a lens is, and its shared system prompt</td></tr>
+            <tr><td><code>packages/ai/src/agents/lens-set.ts</code></td><td>Narrowing a lens set, building its agents</td></tr>
             <tr><td><code>packages/ai/src/agents/synthesiser.ts</code></td><td>The single refining model call</td></tr>
             <tr><td><code>packages/ai/src/agents/runtime.ts</code></td><td>The shared agentic loop</td></tr>
             <tr><td><code>packages/ai/src/agents/tools.ts</code></td><td>The six read-only tools</td></tr>

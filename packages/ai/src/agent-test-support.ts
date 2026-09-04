@@ -2,6 +2,8 @@
  * Shared fixtures and scripted fakes for the agent tests. Not exported
  * from the package; the Anthropic and GitHub clients are structural fakes.
  */
+import { readFileSync } from "node:fs";
+
 import type Anthropic from "@anthropic-ai/sdk";
 import type {
   ChangedFile,
@@ -11,7 +13,33 @@ import type {
 import type { ReviewFinding } from "@pr-review/schemas";
 import { vi } from "vitest";
 
+import type { ReviewLens } from "./agents/lens.js";
+import { parseLensConfig } from "./lens-config.js";
 import type { ReviewContext } from "./review-types.js";
+
+const REPOSITORY_LENS_CONFIG = ".github/pr-review.yml";
+
+/**
+ * This repository's own configured lenses — the starter set the README
+ * points newcomers at. Tests use it as their fixture, which also keeps
+ * the shipped file honest: nothing else defines lenses in code.
+ */
+export function repositoryLenses(): ReviewLens[] {
+  const path = new URL(`../../../${REPOSITORY_LENS_CONFIG}`, import.meta.url);
+  return [
+    ...parseLensConfig(readFileSync(path, "utf8"), REPOSITORY_LENS_CONFIG)
+      .lenses,
+  ];
+}
+
+/** One named lens from repositoryLenses(); an unknown name is a test bug. */
+export function repositoryLens(category: string): ReviewLens {
+  const lens = repositoryLenses().find((entry) => entry.category === category);
+  if (lens === undefined) {
+    throw new Error(`${REPOSITORY_LENS_CONFIG} defines no "${category}" lens`);
+  }
+  return lens;
+}
 
 export const headSha = "6dcb09b5b57875f334f61aebed695e2e4193db5e";
 export const baseSha = "0000000000000000000000000000000000000000";

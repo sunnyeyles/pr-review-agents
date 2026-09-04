@@ -9,7 +9,12 @@ import type { AnthropicLike } from "../anthropic.js";
 import { traceModelCall } from "../model-tracing.js";
 import { addTokenUsage, emptyTokenUsage, type TokenUsage } from "../usage.js";
 import { errorMessage } from "@pr-review/logging";
-import { wellFormedFindings, type ReviewFinding } from "@pr-review/schemas";
+import {
+  categoryLabel,
+  wellFormedFindings,
+  type ReviewFinding,
+} from "@pr-review/schemas";
+import type { ReviewLens } from "./lens.js";
 
 /** A synthesis-level failure (the model broke the output contract). */
 export class SynthesisError extends Error {
@@ -22,8 +27,28 @@ export class SynthesisError extends Error {
 /** Output budget for the single synthesis call. */
 const MAX_OUTPUT_TOKENS = 8_000;
 
-/** Finding texts originate from repository content, so they get the same hardening. */
-export const SYNTHESIS_SYSTEM_PROMPT = `You are the synthesiser in an automated pull-request review system. Three review agents — Correctness, Security, and Architecture — have proposed candidate findings for one pull request. You refine their combined list into the final set worth a human reviewer's attention.
+/** "A, B, and C" — the lens names as the synthesiser prompt reads them. */
+function listLensNames(lenses: readonly ReviewLens[]): string {
+  const names = lenses.map((lens) => categoryLabel(lens.category));
+  if (names.length <= 2) {
+    return names.join(" and ");
+  }
+  return `${names.slice(0, -1).join(", ")}, and ${names[names.length - 1]}`;
+}
+
+/**
+ * Finding texts originate from repository content, so they get the same
+ * hardening. The lens names and the category contract are derived from
+ * the run's lens set, never hard-coded.
+ */
+export function buildSynthesisSystemPrompt(
+  lenses: readonly ReviewLens[],
+): string {
+  const agentCount = lenses.length;
+  const categories = lenses
+    .map((lens) => `"${lens.category}"`)
+    .join(" | ");
+  return `You are the synthesiser in an automated pull-request review system. ${agentCount} review ${agentCount === 1 ? "agent" : "agents"} — ${listLensNames(lenses)} — ${agentCount === 1 ? "has" : "have"} proposed candidate findings for one pull request. You refine their combined list into the final set worth a human reviewer's attention.
 
 # Task
 - Remove duplicates: when several findings describe the same underlying issue — even across categories or in different words — keep exactly one.
@@ -41,8 +66,9 @@ export const SYNTHESIS_SYSTEM_PROMPT = `You are the synthesiser in an automated 
 
 # Output
 Respond with ONE message whose entire content is a single JSON object of the same shape as the input:
-{"findings": [{"file": "src/example.ts", "line": 42, "category": "security", "severity": "high", "title": "...", "explanation": "...", "suggestedFix": "...", "confidence": 0.9}]}
-Each finding keeps the input contract: "category" is "correctness" | "security" | "architecture", "severity" is "low" | "medium" | "high", "confidence" is 0..1, and "line"/"suggestedFix" are optional. If nothing is worth reporting, return {"findings": []}.`;
+{"findings": [{"file": "src/example.ts", "line": 42, "category": ${categories.split(" | ")[0]}, "severity": "high", "title": "...", "explanation": "...", "suggestedFix": "...", "confidence": 0.9}]}
+Each finding keeps the input contract: "category" is ${categories}, "severity" is "low" | "medium" | "high", "confidence" is 0..1, and "line"/"suggestedFix" are optional. If nothing is worth reporting, return {"findings": []}.`;
+}
 
 /** Builds the single user message: the candidates as tagged JSON data. */
 export function buildSynthesisMessage(
@@ -61,7 +87,9 @@ export interface SynthesiserDeps {
   anthropic: AnthropicLike;
   /** Model id from configuration (ANTHROPIC_MODEL); never hard-coded. */
   model: string;
-  /** Omitted means the in-code SYNTHESIS_SYSTEM_PROMPT. */
+  /** The run's lens set, which names the categories the prompt accepts. */
+  lenses: readonly ReviewLens[];
+  /** Omitted means the prompt built from `lenses`. */
   systemPrompt?: string | undefined;
 }
 
@@ -79,7 +107,8 @@ export interface Synthesiser {
 
 /** Builds the Synthesiser over the shared Anthropic seam. */
 export function createSynthesiser(deps: SynthesiserDeps): Synthesiser {
-  const systemPrompt = deps.systemPrompt ?? SYNTHESIS_SYSTEM_PROMPT;
+  const systemPrompt =
+    deps.systemPrompt ?? buildSynthesisSystemPrompt(deps.lenses);
 
   return {
     async synthesise(candidates) {

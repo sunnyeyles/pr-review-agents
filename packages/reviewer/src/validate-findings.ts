@@ -1,8 +1,8 @@
 /**
  * The deterministic validation chain. Every candidate must survive, in
- * order: schema, changed file, added line, confidence, duplicate
- * removal, then the MAX_FINDINGS cap. Dedupe runs first so duplicates
- * cannot consume cap slots and leave the review short.
+ * order: schema, category, changed file, added line, confidence,
+ * duplicate removal, then the MAX_FINDINGS cap. Dedupe runs first so
+ * duplicates cannot consume cap slots and leave the review short.
  */
 import type { ChangedFile } from "@pr-review/github";
 import { wellFormedFindings, type ReviewFinding } from "@pr-review/schemas";
@@ -58,14 +58,24 @@ function duplicateKeys(finding: ReviewFinding): [string, string] {
 export function validateFindings(
   candidates: readonly unknown[],
   changedFiles: readonly ChangedFile[],
+  allowedCategories?: readonly string[],
 ): ReviewFinding[] {
   // 1. Schema validity.
   const wellFormed = wellFormedFindings(candidates);
 
-  // 2 + 3. File exists in the PR; line (when present) is an added line
+  // 2. Category is one the run's lenses own. The schema cannot check
+  // this: the lens set is configurable and known only at runtime.
+  const allowed =
+    allowedCategories === undefined ? undefined : new Set(allowedCategories);
+  const inCategory =
+    allowed === undefined
+      ? wellFormed
+      : wellFormed.filter((finding) => allowed.has(finding.category));
+
+  // 3 + 4. File exists in the PR; line (when present) is an added line
   // in that file's diff.
   const changedLines = buildChangedLineIndex(changedFiles);
-  const anchored = wellFormed.filter((finding) => {
+  const anchored = inCategory.filter((finding) => {
     const lines = changedLines.get(finding.file);
     if (lines === undefined) {
       return false;
@@ -73,12 +83,12 @@ export function validateFindings(
     return finding.line === undefined || lines.has(finding.line);
   });
 
-  // 4. Confidence threshold.
+  // 5. Confidence threshold.
   const confident = anchored.filter(
     (finding) => finding.confidence >= CONFIDENCE_THRESHOLD,
   );
 
-  // 5. Duplicate removal. Sorted first, so the strongest of each group
+  // 6. Duplicate removal. Sorted first, so the strongest of each group
   // is the one that survives.
   const strongestFirst = [...confident].sort(compareFindingStrength);
   const seen = new Set<string>();
@@ -94,6 +104,6 @@ export function validateFindings(
     distinct.push(finding);
   }
 
-  // 6. Cap at MAX_FINDINGS, keeping the strongest.
+  // 7. Cap at MAX_FINDINGS, keeping the strongest.
   return distinct.slice(0, MAX_FINDINGS);
 }

@@ -86,6 +86,26 @@ describe("validateFindings", () => {
     expect(validateFindings(findings, changedFiles)).toEqual(findings);
   });
 
+  it("accepts any category when it is given no allowlist", () => {
+    // The lens set is configurable, so the schema cannot judge this.
+    const custom = finding({ category: "performance" });
+
+    expect(validateFindings([custom], changedFiles)).toEqual([custom]);
+  });
+
+  it("drops a category outside the run's lenses", () => {
+    // The synthesiser must not be able to invent a category.
+    const invented = finding({ category: "performance" });
+    const kept = finding({ line: 11, category: "security" });
+
+    expect(
+      validateFindings([invented, kept], changedFiles, [
+        "correctness",
+        "security",
+      ]),
+    ).toEqual([kept]);
+  });
+
   it("drops candidates that fail schema validation", () => {
     const invalid = { ...finding(), confidence: 1.5 };
     const missingTitle: Record<string, unknown> = { ...finding() };

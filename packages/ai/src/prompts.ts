@@ -10,34 +10,40 @@ import {
   type StructuredLogger,
 } from "@pr-review/logging";
 
-import { buildReviewSystemPrompt } from "./agents/runtime.js";
 import {
-  architectureLens,
-  correctnessLens,
-  securityLens,
-} from "./agents/lenses.js";
-import { SYNTHESIS_SYSTEM_PROMPT } from "./agents/synthesiser.js";
+  SYNTHESIS_PROMPT_ID,
+  buildReviewSystemPrompt,
+  lensPromptKey,
+  type ReviewLens,
+} from "./agents/lens.js";
+import { buildSynthesisSystemPrompt } from "./agents/synthesiser.js";
 
-/** Stable Langfuse prompt names for the four managed system prompts. */
-export const MANAGED_PROMPT_KEYS = {
-  correctness: "correctness_system",
-  security: "security_system",
-  architecture: "architecture_system",
-  synthesis: "synthesis_system",
-} as const;
+/**
+ * One managed prompt's id: a lens category, or SYNTHESIS_PROMPT_ID. The
+ * set is per-run, since the lens set is configurable.
+ */
+export type ManagedPromptId = string;
 
-export type ManagedPromptId = keyof typeof MANAGED_PROMPT_KEYS;
+/** The Langfuse prompt names one lens set implies, in lens order. */
+export function managedPromptKeys(
+  lenses: readonly ReviewLens[],
+): Record<ManagedPromptId, string> {
+  const keys: Record<string, string> = {};
+  for (const lens of lenses) {
+    keys[lens.category] = lensPromptKey(lens.category);
+  }
+  keys[SYNTHESIS_PROMPT_ID] = lensPromptKey(SYNTHESIS_PROMPT_ID);
+  return keys;
+}
 
 /** Where a resolved prompt came from. */
 export type PromptSource = "langfuse" | "fallback";
 
-/** Resolved system prompts, ready to inject into agents / synthesiser. */
-export interface ManagedPrompts {
-  correctness: string;
-  security: string;
-  architecture: string;
-  synthesis: string;
-}
+/**
+ * Resolved system prompts keyed by managed-prompt id: one per lens, plus
+ * SYNTHESIS_PROMPT_ID.
+ */
+export type ManagedPrompts = Record<ManagedPromptId, string>;
 
 export interface LoadPromptsResult {
   prompts: ManagedPrompts;
@@ -169,25 +175,29 @@ export function promptContractProblems(
 ): string[] {
   // The synthesiser reads findings rather than a repository, so none of
   // the lens-specific rules apply.
-  return id === "synthesis"
+  return id === SYNTHESIS_PROMPT_ID
     ? sharedPromptProblems(text)
     : reviewPromptContractProblems(text, id);
 }
 
 /**
- * The four prompts as this build defines them: both the loader's
- * fallback and the seeder's baseline, so the two can never disagree.
+ * The prompts one lens set implies, as this build defines them: both the
+ * loader's fallback and the seeder's baseline, so the two can never
+ * disagree.
  */
-export function inCodePrompts(): ManagedPrompts {
-  return {
-    correctness: buildReviewSystemPrompt(correctnessLens),
-    security: buildReviewSystemPrompt(securityLens),
-    architecture: buildReviewSystemPrompt(architectureLens),
-    synthesis: SYNTHESIS_SYSTEM_PROMPT,
+export function inCodePrompts(lenses: readonly ReviewLens[]): ManagedPrompts {
+  const prompts: ManagedPrompts = {
+    [SYNTHESIS_PROMPT_ID]: buildSynthesisSystemPrompt(lenses),
   };
+  for (const lens of lenses) {
+    prompts[lens.category] = buildReviewSystemPrompt(lens);
+  }
+  return prompts;
 }
 
 export interface LoadManagedPromptsOptions {
+  /** The run's lens set; decides which prompts are fetched. */
+  lenses: readonly ReviewLens[];
   /** Label to fetch. Defaults to DEFAULT_PROMPT_LABEL. */
   label?: string | undefined;
   logger?: StructuredLogger | undefined;
@@ -217,18 +227,14 @@ export async function loadManagedPrompts(
   const timeoutMs = options.timeoutMs ?? DEFAULT_PROMPT_TIMEOUT_MS;
 
   // Start from the in-code prompts so a fetch is only ever an upgrade.
-  const prompts: ManagedPrompts = inCodePrompts();
-  const sources: Record<ManagedPromptId, PromptSource> = {
-    correctness: "fallback",
-    security: "fallback",
-    architecture: "fallback",
-    synthesis: "fallback",
-  };
+  const prompts: ManagedPrompts = inCodePrompts(options.lenses);
+  const entries = Object.entries(managedPromptKeys(options.lenses));
+  const sources: Record<ManagedPromptId, PromptSource> = Object.fromEntries(
+    entries.map(([id]) => [id, "fallback" as PromptSource]),
+  );
 
-  const ids = Object.keys(MANAGED_PROMPT_KEYS) as ManagedPromptId[];
   await Promise.all(
-    ids.map(async (id) => {
-      const name = MANAGED_PROMPT_KEYS[id];
+    entries.map(async ([id, name]) => {
       try {
         const text = await withDeadline(
           client.getTextPrompt(name, { label }),
@@ -254,12 +260,12 @@ export async function loadManagedPrompts(
     }),
   );
 
-  const loaded = ids.filter((id) => sources[id] === "langfuse");
-  const fellBack = ids.filter((id) => sources[id] === "fallback");
+  const loaded = entries.filter(([id]) => sources[id] === "langfuse");
+  const fellBack = entries.filter(([id]) => sources[id] === "fallback");
   logger.info("langfuse.prompts.loaded", {
     label,
-    loadedPromptKeys: loaded.map((id) => MANAGED_PROMPT_KEYS[id]),
-    fallbackPromptKeys: fellBack.map((id) => MANAGED_PROMPT_KEYS[id]),
+    loadedPromptKeys: loaded.map(([, name]) => name),
+    fallbackPromptKeys: fellBack.map(([, name]) => name),
     loadedCount: loaded.length,
     fallbackCount: fellBack.length,
   });

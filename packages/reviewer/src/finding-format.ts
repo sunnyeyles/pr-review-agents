@@ -2,15 +2,9 @@
  * How a finding reads once it leaves the pipeline. Shared so the check
  * run and the review describe a finding identically.
  */
-import type { ReviewFinding } from "@pr-review/schemas";
+import { categoryLabel, type ReviewFinding } from "@pr-review/schemas";
 
 import type { AgentFailure } from "./review-graph.js";
-
-export const categoryLabels: Record<ReviewFinding["category"], string> = {
-  correctness: "Correctness",
-  security: "Security",
-  architecture: "Architecture",
-};
 
 /** `file` alone, or `file:line` when the finding is line-anchored. */
 export function location(finding: ReviewFinding): string {
@@ -21,7 +15,7 @@ export function location(finding: ReviewFinding): string {
 
 /** The finding's heading: severity, lens, and title. */
 export function heading(finding: ReviewFinding): string {
-  return `${finding.severity.toUpperCase()} — ${categoryLabels[finding.category]}: ${finding.title}`;
+  return `${finding.severity.toUpperCase()} — ${lensLabel(finding.category)}: ${finding.title}`;
 }
 
 /** A finding as a standalone Markdown block, location included. */
@@ -39,9 +33,9 @@ export function summarise(finding: ReviewFinding): string {
   return lines.join("\n");
 }
 
-/** The lens name in prose; an unrecognised name falls through verbatim. */
+/** The lens name in prose, derived from its category slug. */
 export function lensLabel(agent: string): string {
-  return (categoryLabels as Record<string, string | undefined>)[agent] ?? agent;
+  return categoryLabel(agent);
 }
 
 /** Which lenses did not complete. Names only; error strings never reach GitHub. */

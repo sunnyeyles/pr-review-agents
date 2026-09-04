@@ -1,28 +1,30 @@
 import { createCapturingLogger } from "@pr-review/logging";
 import { describe, expect, it, vi } from "vitest";
 
-import { buildReviewSystemPrompt } from "./agents/runtime.js";
+import { buildReviewSystemPrompt } from "./agents/lens.js";
+import { buildSynthesisSystemPrompt } from "./agents/synthesiser.js";
 import {
-  architectureLens,
-  correctnessLens,
-  securityLens,
-} from "./agents/lenses.js";
-import { SYNTHESIS_SYSTEM_PROMPT } from "./agents/synthesiser.js";
-import {
+  repositoryLens,
+  repositoryLenses,
   validRemotePrompt,
   validRemoteSynthesisPrompt,
 } from "./agent-test-support.js";
 import {
   DEFAULT_PROMPT_LABEL,
-  MANAGED_PROMPT_KEYS,
   loadManagedPrompts,
+  managedPromptKeys,
   type LangfusePromptClient,
 } from "./prompts.js";
 
-const CORRECTNESS_FALLBACK = buildReviewSystemPrompt(correctnessLens);
-const SECURITY_FALLBACK = buildReviewSystemPrompt(securityLens);
-const ARCHITECTURE_FALLBACK = buildReviewSystemPrompt(architectureLens);
-const SYNTHESIS_FALLBACK = SYNTHESIS_SYSTEM_PROMPT;
+const configuredLenses = repositoryLenses();
+const CORRECTNESS_FALLBACK = buildReviewSystemPrompt(
+  repositoryLens("correctness"),
+);
+const SECURITY_FALLBACK = buildReviewSystemPrompt(repositoryLens("security"));
+const ARCHITECTURE_FALLBACK = buildReviewSystemPrompt(
+  repositoryLens("architecture"),
+);
+const SYNTHESIS_FALLBACK = buildSynthesisSystemPrompt(configuredLenses);
 
 /** A string resolves, an Error rejects, and an unlisted name is a test bug. */
 function makeClient(
@@ -52,13 +54,28 @@ function allValid(): Record<string, string> {
   };
 }
 
-describe("MANAGED_PROMPT_KEYS", () => {
-  it("uses the stable remote prompt names", () => {
+describe("managedPromptKeys", () => {
+  it("uses the stable remote prompt names for the built-in lenses", () => {
     // Renaming one of these silently orphans the prompt in Langfuse.
-    expect(MANAGED_PROMPT_KEYS).toEqual({
+    expect(managedPromptKeys(configuredLenses)).toEqual({
       correctness: "correctness_system",
       security: "security_system",
       architecture: "architecture_system",
+      synthesis: "synthesis_system",
+    });
+  });
+
+  it("derives a key for any configured lens, and always the synthesiser", () => {
+    expect(
+      managedPromptKeys([
+        {
+          category: "data-access",
+          role: "Data access reviewer",
+          focus: "Review ONLY for data-access problems.",
+        },
+      ]),
+    ).toEqual({
+      "data-access": "data_access_system",
       synthesis: "synthesis_system",
     });
   });
@@ -71,6 +88,7 @@ describe("loadManagedPrompts", () => {
     const { logger, entries } = createCapturingLogger();
 
     const { prompts, sources } = await loadManagedPrompts(client, {
+      lenses: configuredLenses,
       logger,
     });
 
@@ -106,6 +124,7 @@ describe("loadManagedPrompts", () => {
     const { logger, entries } = createCapturingLogger();
 
     const { prompts, sources } = await loadManagedPrompts(client, {
+      lenses: configuredLenses,
       logger,
     });
 
@@ -139,6 +158,7 @@ describe("loadManagedPrompts", () => {
     const { logger, entries } = createCapturingLogger();
 
     const { prompts, sources } = await loadManagedPrompts(client, {
+      lenses: configuredLenses,
       logger,
     });
 
@@ -170,6 +190,7 @@ describe("loadManagedPrompts", () => {
     };
 
     const { sources } = await loadManagedPrompts(client, {
+      lenses: configuredLenses,
       logger: createCapturingLogger().logger,
     });
 
@@ -181,6 +202,7 @@ describe("loadManagedPrompts", () => {
     const client = makeClient(allValid());
 
     await loadManagedPrompts(client, {
+      lenses: configuredLenses,
       logger: createCapturingLogger().logger,
       label: "staging",
     });
@@ -194,6 +216,7 @@ describe("loadManagedPrompts", () => {
     const client = makeClient(allValid());
 
     await loadManagedPrompts(client, {
+      lenses: configuredLenses,
       logger: createCapturingLogger().logger,
     });
 
@@ -215,6 +238,7 @@ describe("loadManagedPrompts", () => {
     const { logger, entries } = createCapturingLogger();
 
     const { prompts, sources } = await loadManagedPrompts(client, {
+      lenses: configuredLenses,
       logger,
       timeoutMs: 10,
     });
@@ -247,6 +271,7 @@ describe("the prompt contract guard", () => {
     const { logger, entries } = createCapturingLogger();
 
     const { prompts, sources } = await loadManagedPrompts(client, {
+      lenses: configuredLenses,
       logger,
     });
 
@@ -270,6 +295,7 @@ describe("the prompt contract guard", () => {
     const { logger, entries } = createCapturingLogger();
 
     const { sources } = await loadManagedPrompts(client, {
+      lenses: configuredLenses,
       logger,
     });
 
@@ -292,6 +318,7 @@ describe("the prompt contract guard", () => {
     });
 
     return loadManagedPrompts(client, {
+      lenses: configuredLenses,
       logger: createCapturingLogger().logger,
     }).then(({ sources }) => {
       expect(sources.correctness).toBe("langfuse");

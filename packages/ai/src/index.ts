@@ -19,21 +19,33 @@ export {
   AgentRunError,
   createReviewAgent,
   type ReviewAgentDeps,
-  type ReviewLens,
   type ReviewSystemPrompts,
 } from "./agents/runtime.js";
 export {
   ALL_LENSES,
-  architectureLens,
-  correctnessLens,
+  SYNTHESIS_PROMPT_ID,
+  buildReviewSystemPrompt,
+  lensPromptKey,
+  reviewLensSchema,
+  type ReviewLens,
+} from "./agents/lens.js";
+export {
   createReviewAgents,
   resolveReviewLenses,
-  reviewLenses,
-  securityLens,
-} from "./agents/lenses.js";
+} from "./agents/lens-set.js";
 export {
-  SYNTHESIS_SYSTEM_PROMPT,
+  DEFAULT_LENS_CONFIG_PATH,
+  LensConfigError,
+  loadLensSet,
+  missingConfigMessage,
+  parseLensConfig,
+  type LensConfig,
+  type LoadLensSetOptions,
+  type ReadOptionalFile,
+} from "./lens-config.js";
+export {
   SynthesisError,
+  buildSynthesisSystemPrompt,
   createSynthesiser,
   type SynthesisResult,
   type Synthesiser,
@@ -42,10 +54,10 @@ export {
 export {
   DEFAULT_LANGFUSE_BASE_URL,
   DEFAULT_PROMPT_LABEL,
-  MANAGED_PROMPT_KEYS,
   createLangfusePromptClient,
   inCodePrompts,
   loadManagedPrompts,
+  managedPromptKeys,
   promptContractProblems,
   reviewPromptContractProblems,
   type LangfusePromptClient,

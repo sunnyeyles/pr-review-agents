@@ -6,9 +6,9 @@ import type Anthropic from "@anthropic-ai/sdk";
 import { createCapturingLogger } from "@pr-review/logging";
 import { describe, expect, it } from "vitest";
 
+import { buildReviewSystemPrompt } from "./lens.js";
 import {
   AgentRunError,
-  buildReviewSystemPrompt,
   createReviewAgent,
   type ReviewSystemPrompts,
 } from "./runtime.js";
@@ -21,11 +21,13 @@ import {
   makeGithub,
   message,
   pullRequest,
+  repositoryLens,
   systemPromptOf,
   textBlock,
   toolUseBlock,
 } from "../agent-test-support.js";
-import { correctnessLens } from "./lenses.js";
+
+const correctnessLens = repositoryLens("correctness");
 
 const finding = {
   file: "src/sessions.ts",

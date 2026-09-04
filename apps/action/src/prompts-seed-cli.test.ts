@@ -3,11 +3,14 @@
  * exit codes, and that the text handed to Langfuse is byte-for-byte
  * what a review would have fallen back to.
  */
+import { readFileSync } from "node:fs";
+
 import {
+  buildSynthesisSystemPrompt,
   inCodePrompts,
-  SYNTHESIS_SYSTEM_PROMPT,
   type LangfusePromptWriter,
 } from "@pr-review/ai";
+import { repositoryLenses } from "../../../packages/ai/src/agent-test-support.js";
 import { createCapturingLogger } from "@pr-review/logging";
 import { describe, expect, it, vi } from "vitest";
 
@@ -23,6 +26,14 @@ const CREDENTIALS = {
   LANGFUSE_PUBLIC_KEY: "pk-test",
   LANGFUSE_SECRET_KEY: "sk-test",
 };
+
+const configuredLenses = repositoryLenses();
+const SYNTHESIS_SYSTEM_PROMPT = buildSynthesisSystemPrompt(configuredLenses);
+/** The seeder reads the same config the action does. */
+const configYaml = readFileSync(
+  new URL("../../../.github/pr-review.yml", import.meta.url),
+  "utf8",
+);
 
 interface Harness {
   environment: Parameters<typeof main>[1] & {};
@@ -42,6 +53,7 @@ function harness(
     lines,
     environment: {
       env,
+      readConfigFile: async () => configYaml,
       createWriter: vi.fn(() => ({
         readLabelled: vi.fn(async () => undefined),
         publish: vi.fn(async ({ name, text, label }) => {
@@ -57,8 +69,12 @@ function harness(
 }
 
 describe("parseSeedArgs", () => {
-  it("defaults to the production label and a real run", () => {
-    expect(parseSeedArgs([])).toEqual({ label: "production", dryRun: false });
+  it("defaults to the production label, a real run, and the default config", () => {
+    expect(parseSeedArgs([])).toEqual({
+      label: "production",
+      dryRun: false,
+      config: ".github/pr-review.yml",
+    });
   });
 
   it("accepts --label in both spellings", () => {
@@ -66,10 +82,16 @@ describe("parseSeedArgs", () => {
     expect(parseSeedArgs(["--label=staging"]).label).toBe("staging");
   });
 
+  it("accepts --config in both spellings", () => {
+    expect(parseSeedArgs(["--config", "lenses.yml"]).config).toBe("lenses.yml");
+    expect(parseSeedArgs(["--config=lenses.yml"]).config).toBe("lenses.yml");
+  });
+
   it("accepts --dry-run alongside a label", () => {
     expect(parseSeedArgs(["--label", "staging", "--dry-run"])).toEqual({
       label: "staging",
       dryRun: true,
+      config: ".github/pr-review.yml",
     });
   });
 
@@ -78,14 +100,16 @@ describe("parseSeedArgs", () => {
     expect(parseSeedArgs(["--", "--dry-run"])).toEqual({
       label: "production",
       dryRun: true,
+      config: ".github/pr-review.yml",
     });
   });
 
-  it("rejects a --label with no value", () => {
+  it("rejects a flag with no value", () => {
     expect(() => parseSeedArgs(["--label"])).toThrow(/--label needs a value/);
     expect(() => parseSeedArgs(["--label", "--dry-run"])).toThrow(
       /--label needs a value/,
     );
+    expect(() => parseSeedArgs(["--config"])).toThrow(/--config needs a value/);
   });
 
   it("rejects an unknown argument rather than ignoring it", () => {
@@ -140,7 +164,7 @@ describe("main", () => {
 
     await main([], environment);
 
-    const expected = inCodePrompts();
+    const expected = inCodePrompts(configuredLenses);
     const byName = new Map(published.map((e) => [e.name, e.text]));
     expect(byName.get("correctness_system")).toBe(expected.correctness);
     expect(byName.get("security_system")).toBe(expected.security);

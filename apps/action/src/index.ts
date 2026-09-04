@@ -3,23 +3,28 @@
  * the clients, hand off to the handler.
  */
 import { readFile } from "node:fs/promises";
+import path from "node:path";
 import process from "node:process";
 
 import {
   DEFAULT_LANGFUSE_BASE_URL,
+  DEFAULT_LENS_CONFIG_PATH,
   DEFAULT_PROMPT_LABEL,
+  SYNTHESIS_PROMPT_ID,
   createAnthropicClient,
   createLangfusePromptClient,
   createReviewAgents,
   createSynthesiser,
+  loadLensSet,
   loadManagedPrompts,
   resolveReviewLenses,
-  reviewLenses,
   type AnthropicClientConfig,
   type AnthropicLike,
   type LangfusePromptClient,
   type LangfusePromptClientConfig,
   type ManagedPrompts,
+  type ReadOptionalFile,
+  type ReviewLens,
 } from "@pr-review/ai";
 import {
   createTokenClient,
@@ -51,6 +56,8 @@ export interface ActionEnvironment {
   env: Record<string, string | undefined>;
   /** Reads the workflow event payload file as UTF-8 text. */
   readEventFile: (path: string) => Promise<string>;
+  /** Reads a workspace file, resolving undefined when it does not exist. */
+  readWorkspaceFile: ReadOptionalFile;
   createAnthropicClient: (config: AnthropicClientConfig) => AnthropicLike;
   createTokenClient: (config: GithubTokenConfig) => GithubInstallationClient;
   /** Builds the managed-prompt retrieval seam. */
@@ -62,11 +69,27 @@ export interface ActionEnvironment {
   setExitCode: (code: number) => void;
 }
 
+/** A missing file is the ordinary case for optional configuration. */
+async function readOptional(filePath: string): Promise<string | undefined> {
+  try {
+    return await readFile(filePath, "utf8");
+  } catch (error: unknown) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return undefined;
+    }
+    throw error;
+  }
+}
+
 /** The real environment: the live process, filesystem, and SDK clients. */
 export function actionEnvironment(): ActionEnvironment {
   return {
     env: process.env,
-    readEventFile: (path) => readFile(path, "utf8"),
+    readEventFile: (filePath) => readFile(filePath, "utf8"),
+    readWorkspaceFile: (filePath) =>
+      readOptional(
+        path.resolve(process.env["GITHUB_WORKSPACE"] ?? process.cwd(), filePath),
+      ),
     createAnthropicClient,
     createTokenClient,
     createPromptClient: createLangfusePromptClient,
@@ -147,6 +170,7 @@ export function resolveLangfuseInputs(
 async function resolveManagedPrompts(
   environment: ActionEnvironment,
   inputs: LangfuseInputs,
+  lenses: readonly ReviewLens[],
 ): Promise<ManagedPrompts | undefined> {
   try {
     const client = environment.createPromptClient({
@@ -155,6 +179,7 @@ async function resolveManagedPrompts(
       baseUrl: inputs.baseUrl,
     });
     const { prompts } = await loadManagedPrompts(client, {
+      lenses,
       label: inputs.promptLabel,
       logger: environment.logger,
     });
@@ -182,14 +207,19 @@ export async function runAction(
   const payload: unknown = JSON.parse(await environment.readEventFile(eventPath));
   const eventName = env["GITHUB_EVENT_NAME"] ?? "";
 
-  // Resolved before any client is built, so a typo'd agent name fails
-  // the step rather than producing a review that looks clean.
-  const lenses = resolveReviewLenses(getInput(env, "agents"));
-  if (lenses.length < reviewLenses.length) {
-    logger.info("review.agents_selected", {
-      agents: lenses.map((lens) => lens.category),
-    });
-  }
+  // Resolved before any client is built, so a missing config or a typo'd
+  // agent name fails the step rather than producing a review that looks
+  // clean. Configuration is the only source of lenses; `agents` narrows
+  // that set for one run.
+  const configured = await loadLensSet({
+    readFile: environment.readWorkspaceFile,
+    path: getInput(env, "lens-config") || DEFAULT_LENS_CONFIG_PATH,
+  });
+  const lenses = resolveReviewLenses(getInput(env, "agents"), configured);
+  logger.info("review.agents_selected", {
+    agents: lenses.map((lens) => lens.category),
+    configuredAgents: configured.map((lens) => lens.category),
+  });
 
   const anthropic: AnthropicLike = environment.createAnthropicClient({
     apiKey: requireInput(env, "anthropic-api-key"),
@@ -212,13 +242,16 @@ export async function runAction(
     const prompts =
       langfuse === undefined
         ? undefined
-        : await resolveManagedPrompts(environment, langfuse);
+        : await resolveManagedPrompts(environment, langfuse, lenses);
 
     // Repository-independent, so one instance serves the whole run.
     const synthesiser = createSynthesiser({
       anthropic,
       model,
-      ...(prompts === undefined ? {} : { systemPrompt: prompts.synthesis }),
+      lenses,
+      ...(prompts === undefined
+        ? {}
+        : { systemPrompt: prompts[SYNTHESIS_PROMPT_ID] }),
     });
     const client = environment.createTokenClient({
       token: requireInput(env, "github-token"),
@@ -233,15 +266,7 @@ export async function runAction(
               anthropic,
               model,
               github: reviewClient,
-              ...(prompts === undefined
-                ? {}
-                : {
-                    systemPrompts: {
-                      correctness: prompts.correctness,
-                      security: prompts.security,
-                      architecture: prompts.architecture,
-                    },
-                  }),
+              ...(prompts === undefined ? {} : { systemPrompts: prompts }),
             },
             lenses,
           ),

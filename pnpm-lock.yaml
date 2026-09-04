@@ -89,6 +89,9 @@ importers:
       '@pr-review/schemas':
         specifier: workspace:*
         version: link:../schemas
+      yaml:
+        specifier: ^2.9.0
+        version: 2.9.0
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -1785,7 +1788,6 @@ snapshots:
       siginfo: 2.0.0
       stackback: 0.0.2
 
-  yaml@2.9.0:
-    optional: true
+  yaml@2.9.0: {}
 
   zod@4.4.3: {}
