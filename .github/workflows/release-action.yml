@@ -1,10 +1,10 @@
 # Publishes the GitHub Action to its own public repository.
 #
-# Consumers can only reference an action from a public repo, but this
-# repository holds the source we intend to license. So the split: build here,
-# publish only the artefacts a consumer needs — action.yml, the bundled
-# dist/index.mjs, LICENSE, and usage docs — into a thin public repo. The
-# engine, the tests, and the spec stay private.
+# An action must be the root of the repository it is referenced from, and this
+# repository is a workspace. So the split: build here, publish only the
+# artefacts a consumer executes — action.yml, the bundled dist/index.mjs,
+# LICENSE, and usage docs — into a thin repo of its own, where `dist/` is
+# committed rather than gitignored.
 #
 # Required repository configuration:
 #

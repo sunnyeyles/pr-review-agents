@@ -43,7 +43,7 @@ copy, and the code under review is never executed.
 
 ## Defining your agents
 
-Each agent is one **agent**: a name, a role, and a focus. Declare them in
+Each agent is a name, a role, and a focus. Declare them in
 `.github/pr-review-agents.yml`. Nothing runs until you do — this action has no agents
 of its own, so there is no default review to inherit and no fork to maintain.
 
