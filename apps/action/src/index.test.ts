@@ -4,12 +4,18 @@
  * module under test evaluates the guard.
  */
 import {
+  baseSha,
+  finalFindingsJson,
+  headSha,
+  makeGithub,
+  message,
   repositoryLensConfigYaml,
+  textBlock,
   validRemotePrompt,
   validRemoteSynthesisPrompt,
 } from "../../../packages/ai/src/agent-test-support.js";
 import { createCapturingLogger } from "@pr-review/logging";
-import type { GithubInstallationClient } from "@pr-review/github";
+import type { FileContentsRequest, GithubInstallationClient } from "@pr-review/github";
 import { afterAll, describe, expect, it, vi } from "vitest";
 
 const originalGithubActions = vi.hoisted(() => {
@@ -21,6 +27,7 @@ const originalGithubActions = vi.hoisted(() => {
 import {
   actionEnvironment,
   getInput,
+  readAtCommit,
   requireInput,
   runAction,
   runEntrypoint,
@@ -35,31 +42,33 @@ afterAll(() => {
   }
 });
 
-/** A structural stub of the read-only PR client; nothing may call it. */
-function stubGithubClient(): GithubInstallationClient {
-  const unexpected = (method: string) => () => {
-    throw new Error(`unexpected GitHub call: ${method}`);
-  };
-  return {
-    getPullRequest: vi.fn(unexpected("getPullRequest")),
-    listChangedFiles: vi.fn(unexpected("listChangedFiles")),
-    getDiff: vi.fn(unexpected("getDiff")),
-    getFileContents: vi.fn(unexpected("getFileContents")),
-    searchCode: vi.fn(unexpected("searchCode")),
-    listReviewComments: vi.fn(unexpected("listReviewComments")),
-    createCheckRun: vi.fn(unexpected("createCheckRun")),
-    createReview: vi.fn(unexpected("createReview")),
-  };
-}
-
 const validInputs = {
   "INPUT_ANTHROPIC-API-KEY": "sk-test-key",
   INPUT_MODEL: "claude-test-model",
   "INPUT_GITHUB-TOKEN": "ghs-test-token",
 };
 
-/** The lens configuration a workspace would have checked out. */
+/** The lens configuration the repository has committed on its base branch. */
 const lensConfigYaml = repositoryLensConfigYaml();
+
+/** An HTTP failure shaped the way Octokit raises one. */
+function httpError(status: number): Error {
+  return Object.assign(new Error(`HTTP ${status}`), { status });
+}
+
+/** A pull_request event the action will actually review. */
+function pullRequestEvent(overrides: Record<string, unknown> = {}): string {
+  return JSON.stringify({
+    action: "opened",
+    repository: { name: "example-service", owner: { login: "octo-org" } },
+    pull_request: {
+      number: 42,
+      base: { sha: baseSha },
+      head: { sha: headSha, repo: { full_name: "octo-org/example-service" } },
+    },
+    ...overrides,
+  });
+}
 
 interface Harness {
   environment: ActionEnvironment;
@@ -73,17 +82,25 @@ interface Harness {
   /** How many times spans were flushed across the run. */
   flushCount: () => number;
   readPaths: string[];
+  /** Every repository file read, with the commit it was read at. */
+  fileReads: { path: string; ref: string }[];
+  /** How many times a review agent called the model. */
+  modelCalls: () => number;
   exitCodes: number[];
 }
 
-/** Absent means the Langfuse seams are wired but must never be reached. */
 interface HarnessOptions {
+  /** Absent means the Langfuse seams are wired but must never be reached. */
   prompts?: Record<string, string | Error> | undefined;
+  /** Replaces the lens configuration the base commit serves. */
+  config?: string | Error | undefined;
+  /** Fails every model call, after tracing has already started. */
+  modelError?: Error | undefined;
 }
 
 function harness(
   env: Record<string, string | undefined>,
-  eventFile: string | Error = JSON.stringify({ action: "opened" }),
+  eventFile: string | Error = pullRequestEvent(),
   options: HarnessOptions = {},
 ): Harness {
   const { logger, entries } = createCapturingLogger();
@@ -93,8 +110,22 @@ function harness(
   const promptFetches: Harness["promptFetches"] = [];
   const tracingConfigs: Harness["tracingConfigs"] = [];
   let flushCount = 0;
+  let modelCalls = 0;
   const readPaths: string[] = [];
+  const fileReads: Harness["fileReads"] = [];
   const exitCodes: number[] = [];
+
+  const configured = options.config ?? lensConfigYaml;
+  const client: GithubInstallationClient = {
+    ...makeGithub(),
+    getFileContents: vi.fn(async (request: FileContentsRequest) => {
+      fileReads.push({ path: request.path, ref: request.ref });
+      if (configured instanceof Error) {
+        throw configured;
+      }
+      return configured;
+    }),
+  };
 
   return {
     entries,
@@ -105,10 +136,11 @@ function harness(
     tracingConfigs,
     flushCount: () => flushCount,
     readPaths,
+    fileReads,
+    modelCalls: () => modelCalls,
     exitCodes,
     environment: {
       env,
-      readWorkspaceFile: async () => lensConfigYaml,
       readEventFile: (path) => {
         readPaths.push(path);
         return eventFile instanceof Error
@@ -117,11 +149,22 @@ function harness(
       },
       createAnthropicClient: (config) => {
         anthropicConfigs.push({ apiKey: config.apiKey });
-        return { messages: { create: vi.fn() } };
+        return {
+          messages: {
+            create: vi.fn(async () => {
+              modelCalls += 1;
+              if (options.modelError !== undefined) {
+                throw options.modelError;
+              }
+              // No findings, so the synthesiser is never reached.
+              return message([textBlock(finalFindingsJson([]))], "end_turn");
+            }),
+          },
+        };
       },
       createTokenClient: (config) => {
         tokenConfigs.push({ token: config.token });
-        return stubGithubClient();
+        return client;
       },
       createPromptClient: (config) => {
         promptClientConfigs.push({
@@ -160,12 +203,9 @@ function harness(
   };
 }
 
-/**
- * Log entries other than the lens selection every run records, which
- * `agent selection` below covers on its own.
- */
-function beyondSelection<T extends { event?: unknown }>(entries: T[]): T[] {
-  return entries.filter((entry) => entry.event !== "review.agents_selected");
+/** The events one run logged, in order. */
+function events(entries: Record<string, unknown>[]): unknown[] {
+  return entries.map((entry) => entry["event"]);
 }
 
 /** Drains pending microtasks so the entrypoint's catch has run. */
@@ -174,6 +214,12 @@ function flush(): Promise<void> {
     setTimeout(resolve, 0);
   });
 }
+
+const reviewEnv = {
+  ...validInputs,
+  GITHUB_EVENT_PATH: "/tmp/event.json",
+  GITHUB_EVENT_NAME: "pull_request",
+};
 
 describe("getInput", () => {
   it("uppercases the input name and preserves dashes", () => {
@@ -231,6 +277,49 @@ describe("requireInput", () => {
   });
 });
 
+describe("readAtCommit", () => {
+  const repository = { owner: "octo-org", repo: "example-service" };
+
+  it("reads the requested path at the given commit", async () => {
+    const client = { ...makeGithub(), getFileContents: vi.fn(async () => "lenses:\n") };
+    const read = readAtCommit(client, repository, baseSha);
+
+    await expect(read(".github/pr-review.yml")).resolves.toBe("lenses:\n");
+    expect(client.getFileContents).toHaveBeenCalledWith({
+      owner: "octo-org",
+      repo: "example-service",
+      path: ".github/pr-review.yml",
+      ref: baseSha,
+    });
+  });
+
+  it("resolves undefined for a file the commit does not have", async () => {
+    const client = {
+      ...makeGithub(),
+      getFileContents: vi.fn(() => Promise.reject(httpError(404))),
+    };
+
+    await expect(
+      readAtCommit(client, repository, baseSha)(".github/pr-review.yml"),
+    ).resolves.toBeUndefined();
+  });
+
+  it.each([403, 500])(
+    "propagates a %s rather than reporting the file as absent",
+    async (status) => {
+      // A token without contents:read must not read as "no agents configured".
+      const client = {
+        ...makeGithub(),
+        getFileContents: vi.fn(() => Promise.reject(httpError(status))),
+      };
+
+      await expect(
+        readAtCommit(client, repository, baseSha)(".github/pr-review.yml"),
+      ).rejects.toThrow(`HTTP ${status}`);
+    },
+  );
+});
+
 describe("runAction", () => {
   it("fails when GITHUB_EVENT_PATH is not set", async () => {
     const { environment, readPaths } = harness({ ...validInputs });
@@ -266,14 +355,11 @@ describe("runAction", () => {
   });
 
   it.each([
+    ["github-token", "INPUT_GITHUB-TOKEN"],
     ["anthropic-api-key", "INPUT_ANTHROPIC-API-KEY"],
     ["model", "INPUT_MODEL"],
-    ["github-token", "INPUT_GITHUB-TOKEN"],
   ])("fails when the %s input is missing", async (name, variable) => {
-    const env: Record<string, string | undefined> = {
-      ...validInputs,
-      GITHUB_EVENT_PATH: "/tmp/event.json",
-    };
+    const env: Record<string, string | undefined> = { ...reviewEnv };
     delete env[variable];
     const { environment } = harness(env);
     await expect(runAction(environment)).rejects.toThrow(
@@ -281,39 +367,99 @@ describe("runAction", () => {
     );
   });
 
-  it("reads the event file and builds both clients from the inputs", async () => {
+  it("reads the event file, builds both clients, and reviews", async () => {
     const { environment, readPaths, anthropicConfigs, tokenConfigs, entries } =
-      harness(
-        {
-          ...validInputs,
-          GITHUB_EVENT_PATH: "/tmp/event.json",
-          GITHUB_EVENT_NAME: "push",
-        },
-        JSON.stringify({ action: "opened" }),
-      );
+      harness(reviewEnv);
 
     await expect(runAction(environment)).resolves.toBeUndefined();
 
     expect(readPaths).toEqual(["/tmp/event.json"]);
     expect(anthropicConfigs).toEqual([{ apiKey: "sk-test-key" }]);
     expect(tokenConfigs).toEqual([{ token: "ghs-test-token" }]);
-    // A non-pull_request event is a clean no-op, so no client is called.
-    expect(beyondSelection(entries)).toEqual([
-      { level: "info", event: "review.skipped", reason: "unsupported event: push" },
-    ]);
+    expect(events(entries)).toContain("review.started");
   });
 
-  it("treats an absent GITHUB_EVENT_NAME as an unsupported event", async () => {
-    const { environment, entries } = harness({
-      ...validInputs,
-      GITHUB_EVENT_PATH: "/tmp/event.json",
+  it.each([
+    ["push", "unsupported event: push"],
+    ["", "unsupported event: "],
+  ])("skips %o without reading configuration", async (eventName, reason) => {
+    // An event nobody reviews must not fail on a repository that has no
+    // agents configured, and has no base commit to read them from.
+    const env: Record<string, string | undefined> = { ...reviewEnv };
+    if (eventName === "") {
+      delete env["GITHUB_EVENT_NAME"];
+    } else {
+      env["GITHUB_EVENT_NAME"] = eventName;
+    }
+    const { environment, entries, fileReads, tokenConfigs } = harness(env);
+
+    await expect(runAction(environment)).resolves.toBeUndefined();
+
+    expect(entries).toEqual([
+      { level: "info", event: "review.skipped", reason },
+    ]);
+    expect(fileReads).toEqual([]);
+    expect(tokenConfigs).toEqual([]);
+  });
+
+  it("skips an ignored action without reading configuration", async () => {
+    const { environment, entries, fileReads } = harness(
+      reviewEnv,
+      pullRequestEvent({ action: "labeled" }),
+    );
+
+    await runAction(environment);
+
+    expect(entries).toEqual([
+      { level: "info", event: "review.skipped", reason: "action ignored: labeled" },
+    ]);
+    expect(fileReads).toEqual([]);
+  });
+});
+
+/**
+ * Where the lens configuration comes from. It becomes the agents' system
+ * prompts, so reading it from the pull request's own head or merge ref
+ * would let the branch under review rewrite its reviewers.
+ */
+describe("lens configuration", () => {
+  it("reads it from the pull request's base commit", async () => {
+    const { environment, fileReads } = harness(reviewEnv);
+
+    await runAction(environment);
+
+    expect(fileReads).toEqual([{ path: ".github/pr-review.yml", ref: baseSha }]);
+    expect(fileReads.every((read) => read.ref !== headSha)).toBe(true);
+  });
+
+  it("honours the lens-config input", async () => {
+    const { environment, fileReads } = harness({
+      ...reviewEnv,
+      "INPUT_LENS-CONFIG": "ci/agents.yml",
     });
 
     await runAction(environment);
 
-    expect(beyondSelection(entries)).toEqual([
-      { level: "info", event: "review.skipped", reason: "unsupported event: " },
-    ]);
+    expect(fileReads).toEqual([{ path: "ci/agents.yml", ref: baseSha }]);
+  });
+
+  it("fails the step when the base commit has no configuration", async () => {
+    const { environment, anthropicConfigs } = harness(reviewEnv, pullRequestEvent(), {
+      config: httpError(404),
+    });
+
+    await expect(runAction(environment)).rejects.toThrow(
+      /No review agents are configured/,
+    );
+    expect(anthropicConfigs).toEqual([]);
+  });
+
+  it("fails the step when the configuration is malformed", async () => {
+    const { environment } = harness(reviewEnv, pullRequestEvent(), {
+      config: "lenses: []\n",
+    });
+
+    await expect(runAction(environment)).rejects.toThrow(/is invalid/);
   });
 });
 
@@ -324,18 +470,12 @@ describe("runAction", () => {
  * agents it chose, and that a bad value costs nothing.
  */
 describe("agent selection", () => {
-  const eventEnv = {
-    ...validInputs,
-    GITHUB_EVENT_PATH: "/tmp/event.json",
-    GITHUB_EVENT_NAME: "push",
-  };
-
-  /** The `review.agents_selected` entry, which every run emits. */
+  /** The `review.agents_selected` entry, which every reviewed run emits. */
   const selection = (entries: Record<string, unknown>[]) =>
     entries.find((entry) => entry["event"] === "review.agents_selected");
 
   it("records the configured set when the default runs", async () => {
-    const { environment, entries } = harness(eventEnv);
+    const { environment, entries } = harness(reviewEnv);
 
     await runAction(environment);
 
@@ -348,8 +488,8 @@ describe("agent selection", () => {
   });
 
   it("reports the narrowed set, in spec order", async () => {
-    const { environment, entries } = harness({
-      ...eventEnv,
+    const { environment, entries, modelCalls } = harness({
+      ...reviewEnv,
       INPUT_AGENTS: "architecture,correctness",
     });
 
@@ -361,11 +501,12 @@ describe("agent selection", () => {
       agents: ["correctness", "architecture"],
       configuredAgents: ["correctness", "security", "architecture"],
     });
+    expect(modelCalls()).toBe(2);
   });
 
   it("treats an explicit `all` as the default", async () => {
     const { environment, entries } = harness({
-      ...eventEnv,
+      ...reviewEnv,
       INPUT_AGENTS: "all",
     });
 
@@ -378,11 +519,11 @@ describe("agent selection", () => {
     ]);
   });
 
-  it("fails on an unknown name before building any client", async () => {
+  it("fails on an unknown name before building the model client", async () => {
     // The whole point of resolving the input first: a typo in the
     // workflow file must not cost a model call.
-    const { environment, anthropicConfigs, tokenConfigs } = harness({
-      ...eventEnv,
+    const { environment, anthropicConfigs, modelCalls } = harness({
+      ...reviewEnv,
       INPUT_AGENTS: "secuirty",
     });
 
@@ -390,7 +531,7 @@ describe("agent selection", () => {
       /Unknown review agent: secuirty/,
     );
     expect(anthropicConfigs).toEqual([]);
-    expect(tokenConfigs).toEqual([]);
+    expect(modelCalls()).toBe(0);
   });
 });
 
@@ -409,7 +550,7 @@ const langfuseInputs = {
 describe("Langfuse wiring", () => {
   it("builds no prompt client and no tracing when neither key is set", async () => {
     const { environment, promptClientConfigs, tracingConfigs, flushCount, entries } =
-      harness({ ...validInputs, GITHUB_EVENT_PATH: "/tmp/event.json" });
+      harness(reviewEnv);
 
     await runAction(environment);
 
@@ -417,9 +558,11 @@ describe("Langfuse wiring", () => {
     expect(tracingConfigs).toEqual([]);
     expect(flushCount()).toBe(0);
     // The default path stays silent about a feature nobody asked for.
-    expect(beyondSelection(entries).map((entry) => entry["event"])).toEqual([
-      "review.skipped",
-    ]);
+    expect(
+      events(entries).filter(
+        (event) => typeof event === "string" && event.startsWith("langfuse."),
+      ),
+    ).toEqual([]);
   });
 
   it("fetches prompts and starts tracing when both keys are set", async () => {
@@ -431,13 +574,8 @@ describe("Langfuse wiring", () => {
       flushCount,
       entries,
     } = harness(
-      {
-        ...validInputs,
-        ...langfuseInputs,
-        GITHUB_EVENT_PATH: "/tmp/event.json",
-        GITHUB_SHA: "abc123",
-      },
-      JSON.stringify({ action: "opened" }),
+      { ...reviewEnv, ...langfuseInputs, GITHUB_SHA: "abc123" },
+      pullRequestEvent(),
       { prompts: remotePrompts },
     );
 
@@ -474,13 +612,12 @@ describe("Langfuse wiring", () => {
   it("honours a custom host and prompt label", async () => {
     const { environment, promptClientConfigs, promptFetches } = harness(
       {
-        ...validInputs,
+        ...reviewEnv,
         ...langfuseInputs,
         "INPUT_LANGFUSE-BASE-URL": "https://langfuse.internal",
         "INPUT_LANGFUSE-PROMPT-LABEL": "staging",
-        GITHUB_EVENT_PATH: "/tmp/event.json",
       },
-      JSON.stringify({ action: "opened" }),
+      pullRequestEvent(),
       { prompts: remotePrompts },
     );
 
@@ -497,9 +634,8 @@ describe("Langfuse wiring", () => {
     "reports half-configured credentials and reviews anyway when %s is missing",
     async (variable, missingInput) => {
       const env: Record<string, string | undefined> = {
-        ...validInputs,
+        ...reviewEnv,
         ...langfuseInputs,
-        GITHUB_EVENT_PATH: "/tmp/event.json",
       };
       delete env[variable];
       const { environment, promptClientConfigs, tracingConfigs, entries } =
@@ -519,12 +655,8 @@ describe("Langfuse wiring", () => {
 
   it("never logs key material", async () => {
     const { environment, entries } = harness(
-      {
-        ...validInputs,
-        ...langfuseInputs,
-        GITHUB_EVENT_PATH: "/tmp/event.json",
-      },
-      JSON.stringify({ action: "opened" }),
+      { ...reviewEnv, ...langfuseInputs },
+      pullRequestEvent(),
       { prompts: remotePrompts },
     );
 
@@ -537,12 +669,8 @@ describe("Langfuse wiring", () => {
 
   it("falls back to the in-code prompts when every fetch fails", async () => {
     const { environment, entries } = harness(
-      {
-        ...validInputs,
-        ...langfuseInputs,
-        GITHUB_EVENT_PATH: "/tmp/event.json",
-      },
-      JSON.stringify({ action: "opened" }),
+      { ...reviewEnv, ...langfuseInputs },
+      pullRequestEvent(),
       {
         prompts: {
           correctness_system: new Error("langfuse unavailable"),
@@ -565,22 +693,13 @@ describe("Langfuse wiring", () => {
   });
 
   it("flushes spans even when the run fails after tracing started", async () => {
-    const env: Record<string, string | undefined> = {
-      ...validInputs,
-      ...langfuseInputs,
-      GITHUB_EVENT_PATH: "/tmp/event.json",
-    };
-    // Read after tracing starts, so removing it fails the run once spans exist.
-    delete env["INPUT_GITHUB-TOKEN"];
     const { environment, flushCount } = harness(
-      env,
-      JSON.stringify({ action: "opened" }),
-      { prompts: remotePrompts },
+      { ...reviewEnv, ...langfuseInputs },
+      pullRequestEvent(),
+      { prompts: remotePrompts, modelError: new Error("anthropic unavailable") },
     );
 
-    await expect(runAction(environment)).rejects.toThrow(
-      "Missing required action input: github-token",
-    );
+    await expect(runAction(environment)).rejects.toThrow();
 
     expect(flushCount()).toBe(1);
   });
@@ -605,11 +724,10 @@ describe("runEntrypoint", () => {
     },
   );
 
-  it("runs the action when GITHUB_ACTIONS is exactly \"true\"", async () => {
+  it('runs the action when GITHUB_ACTIONS is exactly "true"', async () => {
     const { environment, readPaths, entries, exitCodes } = harness({
-      ...validInputs,
+      ...reviewEnv,
       GITHUB_ACTIONS: "true",
-      GITHUB_EVENT_PATH: "/tmp/event.json",
       GITHUB_EVENT_NAME: "push",
     });
 
@@ -617,9 +735,7 @@ describe("runEntrypoint", () => {
     await flush();
 
     expect(readPaths).toEqual(["/tmp/event.json"]);
-    expect(beyondSelection(entries).map((entry) => entry["event"])).toEqual([
-      "review.skipped",
-    ]);
+    expect(events(entries)).toEqual(["review.skipped"]);
     expect(exitCodes).toEqual([]);
   });
 

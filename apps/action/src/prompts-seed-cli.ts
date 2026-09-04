@@ -97,6 +97,11 @@ export function parseSeedArgs(argv: string[]): SeedArgs {
   if (label.trim() === "") {
     throw new Error("--label needs a value, for example --label staging");
   }
+  if (config.trim() === "") {
+    throw new Error(
+      `--config needs a value, for example --config ${DEFAULT_LENS_CONFIG_PATH}`,
+    );
+  }
   return { label, dryRun, config };
 }
 

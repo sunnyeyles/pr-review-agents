@@ -39,11 +39,12 @@ inputs:
     default: all
   lens-config:
     description: >-
-      Path, relative to the checked-out workspace, to the YAML file declaring
-      this repository's review agents. No agents are built in, so this file is
-      required: a missing, malformed, or empty one fails the step rather than
-      running a review nobody configured. Requires actions/checkout to have
-      run.
+      Repository-relative path to the YAML file declaring this repository's
+      review agents. It is read from the pull request's base commit over the
+      API, never from the workspace, so a pull request cannot rewrite the
+      agents that review it. No agents are built in, so this file is required:
+      a missing, malformed, or empty one fails the step rather than running a
+      review nobody configured.
     required: false
     default: .github/pr-review.yml
   langfuse-public-key:

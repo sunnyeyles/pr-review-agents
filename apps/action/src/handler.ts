@@ -6,9 +6,8 @@ import {
   reviewPullRequest,
   type PublishReview,
   type ReviewPipelineResult,
+  type ReviewTarget,
 } from "@pr-review/reviewer";
-
-import { inspectEvent } from "./event.js";
 
 export interface ActionHandlerDeps {
   /** Token-authenticated read-only client for this repository. */
@@ -23,20 +22,15 @@ export interface ActionHandlerDeps {
   logger?: StructuredLogger | undefined;
 }
 
-/** `reviewed: false` is a normal outcome and must not fail the step. */
-export type ActionResult =
-  | { reviewed: true }
-  | { reviewed: false; reason: string };
-
 export type ActionHandler = (
-  payload: unknown,
-  eventName: string,
-) => Promise<ActionResult>;
+  target: ReviewTarget,
+  isFork: boolean,
+) => Promise<void>;
 
 /**
- * Inspects the workflow event and hands a reviewable pull request to
- * reviewPullRequest. Only the event parsing and the ignore-quietly rule
- * are specific to this delivery path.
+ * Reviews the pull request the entrypoint's event inspection produced.
+ * Whether an event is reviewable is decided before this, because the lens
+ * configuration is read from that pull request's base commit.
  */
 export function createActionHandler({
   client,
@@ -44,14 +38,7 @@ export function createActionHandler({
   publishReview,
   logger = createConsoleLogger(),
 }: ActionHandlerDeps): ActionHandler {
-  return async (payload, eventName) => {
-    const inspection = inspectEvent(payload, eventName);
-    if (!inspection.review) {
-      logger.info("review.skipped", { reason: inspection.reason });
-      return { reviewed: false, reason: inspection.reason };
-    }
-
-    const { target, isFork } = inspection;
+  return async (target, isFork) => {
     logger.info("review.started", { ...reviewCorrelation(target), isFork });
     await reviewPullRequest(target, {
       client,
@@ -59,6 +46,5 @@ export function createActionHandler({
       publishReview,
       logger,
     });
-    return { reviewed: true };
   };
 }

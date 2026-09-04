@@ -214,11 +214,15 @@ but the lens body is derived:
   guidance, and the JSON output contract come with it.
 - Order is significant: it is the order findings reach the synthesiser.
 
-The action reads the file from the checked-out workspace, so a workflow that
-configures agents needs an `actions/checkout` step. A missing file, a
-malformed one, or one that declares no agents fails the step before any model
-call — a review with the wrong agents, or none, looks exactly like a clean
-bill of health, so it must never happen quietly.
+The action reads the file from the pull request's **base** commit over the
+API, so no `actions/checkout` step is needed — and, more to the point, a pull
+request cannot edit the agents that review it. `role` and `focus` become the
+agents' system prompt, so a head-ref read would hand the branch under review
+control of its own reviewers.
+
+A missing file, a malformed one, or one that declares no agents fails the step
+before any model call — a review with the wrong agents, or none, looks exactly
+like a clean bill of health, so it must never happen quietly.
 
 `pnpm seed-prompts` reads the same file (`--config` to point elsewhere), so
 the prompts published to Langfuse always match the agents configured.

@@ -32,16 +32,14 @@ jobs:
   review:
     runs-on: ubuntu-latest
     steps:
-      # The agents are read from the workspace, so check it out first.
-      - uses: actions/checkout@v4
       - uses: sunnyeyles/pr-review-action@v1
         with:
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
 ```
 
-The checkout is only for the config file. The agents read the pull request
-through the GitHub API, never from the working copy, and never execute the
-code they review.
+No checkout step is needed. Everything — the pull request, the diff, and the
+agent configuration — is read through the GitHub API, never from a working
+copy, and the code under review is never executed.
 
 ## Defining your agents
 
@@ -95,7 +93,7 @@ of this action's repository — copy it and edit.
 | `github-token` | no | `${{ github.token }}` | Token for the read-only tools, the review comments, and the check run. |
 | `model` | no | `claude-sonnet-5` | Anthropic model id. |
 | `agents` | no | `all` | Which of the configured agents run: `all`, or a comma-separated subset of their names. |
-| `lens-config` | no | `.github/pr-review.yml` | Path to the YAML file defining this repository's agents. Absent means the built-in set. |
+| `lens-config` | no | `.github/pr-review.yml` | Path to the YAML file defining this repository's agents, read from the pull request's base commit. The file itself is required — there is no built-in set, and a missing one fails the step. |
 | `langfuse-public-key` | no | — | Langfuse public key. Set this and the secret key to manage prompts and collect traces. |
 | `langfuse-secret-key` | no | — | Langfuse secret key. Store it as a secret. |
 | `langfuse-base-url` | no | `https://cloud.langfuse.com` | Langfuse host, for self-hosted instances. |
@@ -108,7 +106,7 @@ into it, exporting nothing. That is the default and needs no account.
 
 Supply **both** keys and two things change: the system prompts are fetched
 from Langfuse at the start of the run, and the agents, their tool calls, and
-the Synthesiser export traces. One prompt is fetched per configured agent,
+the Synthesiser export traces. One prompt is fetched per selected agent,
 named after it (`correctness_system`, `security_system`, …), plus
 `synthesis_system`.
 

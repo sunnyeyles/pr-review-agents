@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { inspectEvent } from "./event.js";
 
 const headSha = "6dcb09b5b57875f334f61aebed695e2e4193db5e";
+const baseSha = "a3f1c0d9e2b4867501fedcba9876543210abcdef";
 
 function payload(overrides: Record<string, unknown> = {}) {
   return {
@@ -10,6 +11,7 @@ function payload(overrides: Record<string, unknown> = {}) {
     repository: { name: "example-service", owner: { login: "octo-org" } },
     pull_request: {
       number: 42,
+      base: { sha: baseSha },
       head: { sha: headSha, repo: { full_name: "octo-org/example-service" } },
     },
     ...overrides,
@@ -21,6 +23,7 @@ describe("inspectEvent", () => {
     expect(inspectEvent(payload(), "pull_request")).toEqual({
       review: true,
       isFork: false,
+      baseSha,
       target: {
         owner: "octo-org",
         repo: "example-service",
@@ -28,6 +31,23 @@ describe("inspectEvent", () => {
         headSha,
       },
     });
+  });
+
+  it("rejects a base SHA that is not a full commit SHA", () => {
+    // The lens configuration is read at this commit; a ref that is not a
+    // pinned SHA could resolve to the branch under review.
+    expect(() =>
+      inspectEvent(
+        payload({
+          pull_request: {
+            number: 42,
+            base: { sha: "main" },
+            head: { sha: headSha },
+          },
+        }),
+        "pull_request",
+      ),
+    ).toThrow(/failed schema validation/);
   });
 
   it.each(["opened", "synchronize", "reopened"])(
@@ -65,6 +85,7 @@ describe("inspectEvent", () => {
       payload({
         pull_request: {
           number: 42,
+          base: { sha: baseSha },
           head: { sha: headSha, repo: { full_name: "contributor/example-service" } },
         },
       }),
@@ -76,7 +97,11 @@ describe("inspectEvent", () => {
   it("still reviews when the head repository is absent", () => {
     const inspection = inspectEvent(
       payload({
-        pull_request: { number: 42, head: { sha: headSha, repo: null } },
+        pull_request: {
+          number: 42,
+          base: { sha: baseSha },
+          head: { sha: headSha, repo: null },
+        },
       }),
       "pull_request",
     );
@@ -100,7 +125,9 @@ describe("inspectEvent", () => {
   it("rejects a head SHA that is not a full commit SHA", () => {
     expect(() =>
       inspectEvent(
-        payload({ pull_request: { number: 42, head: { sha: "abc1234" } } }),
+        payload({
+          pull_request: { number: 42, base: { sha: baseSha }, head: { sha: "abc1234" } },
+        }),
         "pull_request",
       ),
     ).toThrow(/failed schema validation/);

@@ -98,6 +98,16 @@ describe("parseLensConfig", () => {
       parseLensConfig("lense:\n  - category: performance\n", PATH),
     ).toThrow(LensConfigError);
   });
+
+  it("rejects an unknown key within a lens", () => {
+    // contextGuidance is optional, so a misspelling would drop the
+    // agent's evidence requirement without a word.
+    for (const typo of ["contextguidance", "context_guidance", "guidance"]) {
+      expect(() =>
+        parseLensConfig(`${performanceYaml}    ${typo}: Read the neighbours first.\n`, PATH),
+      ).toThrow(LensConfigError);
+    }
+  });
 });
 
 describe("loadLensSet", () => {

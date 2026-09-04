@@ -111,6 +111,12 @@ describe("parseSeedArgs", () => {
     expect(() => parseSeedArgs(["--config"])).toThrow(/--config needs a value/);
   });
 
+  it("rejects the `=` spelling with an empty value", () => {
+    // Otherwise the empty path reaches the loader and the failure names no file.
+    expect(() => parseSeedArgs(["--label="])).toThrow(/--label needs a value/);
+    expect(() => parseSeedArgs(["--config="])).toThrow(/--config needs a value/);
+  });
+
   it("rejects an unknown argument rather than ignoring it", () => {
     // A mistyped --dry-run must never fall through to a real publish.
     expect(() => parseSeedArgs(["--dryrun"])).toThrow(/Unknown argument/);

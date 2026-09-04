@@ -25,16 +25,19 @@ export interface ReviewLens {
   contextGuidance?: string;
 }
 
-/** Parses one lens from untrusted configuration. */
-export const reviewLensSchema = z.object({
-  category: findingCategorySchema.refine(
-    (value) => value !== SYNTHESIS_PROMPT_ID && value !== ALL_LENSES,
-    { message: `"${SYNTHESIS_PROMPT_ID}" and "${ALL_LENSES}" are reserved` },
-  ),
-  role: z.string().min(1),
-  focus: z.string().min(1),
-  contextGuidance: z.string().min(1).optional(),
-});
+/** Parses one lens from untrusted configuration. Strict: contextGuidance
+ * is optional, so a misspelled key would otherwise be dropped in silence. */
+export const reviewLensSchema = z
+  .object({
+    category: findingCategorySchema.refine(
+      (value) => value !== SYNTHESIS_PROMPT_ID && value !== ALL_LENSES,
+      { message: `"${SYNTHESIS_PROMPT_ID}" and "${ALL_LENSES}" are reserved` },
+    ),
+    role: z.string().min(1),
+    focus: z.string().min(1),
+    contextGuidance: z.string().min(1).optional(),
+  })
+  .strict();
 
 /** The Langfuse prompt name for a lens; the synthesiser uses SYNTHESIS_PROMPT_ID. */
 export function lensPromptKey(id: string): string {

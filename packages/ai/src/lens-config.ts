@@ -83,8 +83,8 @@ function missingConfigMessage(path: string): string {
     "        - missing validation",
     "        Do NOT report style or architectural opinions.",
     "",
-    "The action reads this from the checked-out workspace, so the job needs",
-    "an actions/checkout step. See the README for a fuller starting point.",
+    "The action reads this from the pull request's base commit, so commit it",
+    "to your default branch. See the README for a fuller starting point.",
   ].join("\n");
 }
 
