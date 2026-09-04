@@ -10,38 +10,27 @@ import {
   type StructuredLogger,
 } from "@pr-review/logging";
 
-import { buildReviewSystemPrompt } from "./agents/runtime.js";
 import {
-  architectureLens,
-  correctnessLens,
-  securityLens,
-} from "./agents/lenses.js";
-import { SYNTHESIS_SYSTEM_PROMPT } from "./agents/synthesiser.js";
-
-/** Stable Langfuse prompt names for the four managed system prompts. */
-export const MANAGED_PROMPT_KEYS = {
-  correctness: "correctness_system",
-  security: "security_system",
-  architecture: "architecture_system",
-  synthesis: "synthesis_system",
-} as const;
-
-export type ManagedPromptId = keyof typeof MANAGED_PROMPT_KEYS;
+  SYNTHESIS_PROMPT_ID,
+  buildReviewSystemPrompt,
+  agentPromptKey,
+  type AgentDefinition,
+} from "./agents/definition.js";
+import { buildSynthesisSystemPrompt } from "./agents/synthesiser.js";
 
 /** Where a resolved prompt came from. */
 export type PromptSource = "langfuse" | "fallback";
 
-/** Resolved system prompts, ready to inject into agents / synthesiser. */
-export interface ManagedPrompts {
-  correctness: string;
-  security: string;
-  architecture: string;
-  synthesis: string;
-}
+/**
+ * System prompts keyed by managed-prompt id — an agent category, or
+ * SYNTHESIS_PROMPT_ID. inCodePrompts decides the set, and its keys are
+ * the only place the ids are enumerated.
+ */
+export type ManagedPrompts = Record<string, string>;
 
 export interface LoadPromptsResult {
   prompts: ManagedPrompts;
-  sources: Record<ManagedPromptId, PromptSource>;
+  sources: Record<string, PromptSource>;
 }
 
 /** Label fetched when the caller does not name one. */
@@ -67,7 +56,7 @@ export interface LangfusePromptClientConfig {
   baseUrl: string;
 }
 
-/** The SDK client shared by the prompt reader here and the writer in prompt-seed.ts. */
+/** The SDK client shared by the prompt reader here and the writer in seed-prompts.ts. */
 export function createLangfuseClient(
   config: LangfusePromptClientConfig,
 ): LangfuseClient {
@@ -132,9 +121,9 @@ function sharedPromptProblems(text: string): string[] {
 }
 
 /**
- * The invariants a review-lens system prompt must satisfy. A prompt that
+ * The invariants a review-agent system prompt must satisfy. A prompt that
  * loses its output contract fails silently — the runtime discards
- * findings whose category is not the lens's own.
+ * findings whose category is not the agent's own.
  */
 export function reviewPromptContractProblems(
   text: string,
@@ -163,31 +152,31 @@ export function reviewPromptContractProblems(
 }
 
 /** The contract for one managed prompt; gates both fetched and about-to-be-seeded text. */
-export function promptContractProblems(
-  id: ManagedPromptId,
-  text: string,
-): string[] {
+export function promptContractProblems(id: string, text: string): string[] {
   // The synthesiser reads findings rather than a repository, so none of
-  // the lens-specific rules apply.
-  return id === "synthesis"
+  // the agent-specific rules apply.
+  return id === SYNTHESIS_PROMPT_ID
     ? sharedPromptProblems(text)
     : reviewPromptContractProblems(text, id);
 }
 
 /**
- * The four prompts as this build defines them: both the loader's
- * fallback and the seeder's baseline, so the two can never disagree.
+ * The prompts one agent set implies, as this build defines them: both the
+ * loader's fallback and the seeder's baseline, so the two can never
+ * disagree.
  */
-export function inCodePrompts(): ManagedPrompts {
-  return {
-    correctness: buildReviewSystemPrompt(correctnessLens),
-    security: buildReviewSystemPrompt(securityLens),
-    architecture: buildReviewSystemPrompt(architectureLens),
-    synthesis: SYNTHESIS_SYSTEM_PROMPT,
-  };
+export function inCodePrompts(agents: readonly AgentDefinition[]): ManagedPrompts {
+  const prompts: ManagedPrompts = {};
+  for (const agent of agents) {
+    prompts[agent.category] = buildReviewSystemPrompt(agent);
+  }
+  prompts[SYNTHESIS_PROMPT_ID] = buildSynthesisSystemPrompt(agents);
+  return prompts;
 }
 
 export interface LoadManagedPromptsOptions {
+  /** The run's agent set; decides which prompts are fetched. */
+  agents: readonly AgentDefinition[];
   /** Label to fetch. Defaults to DEFAULT_PROMPT_LABEL. */
   label?: string | undefined;
   logger?: StructuredLogger | undefined;
@@ -217,18 +206,15 @@ export async function loadManagedPrompts(
   const timeoutMs = options.timeoutMs ?? DEFAULT_PROMPT_TIMEOUT_MS;
 
   // Start from the in-code prompts so a fetch is only ever an upgrade.
-  const prompts: ManagedPrompts = inCodePrompts();
-  const sources: Record<ManagedPromptId, PromptSource> = {
-    correctness: "fallback",
-    security: "fallback",
-    architecture: "fallback",
-    synthesis: "fallback",
-  };
+  const prompts: ManagedPrompts = inCodePrompts(options.agents);
+  const ids = Object.keys(prompts);
+  const sources: Record<string, PromptSource> = Object.fromEntries(
+    ids.map((id) => [id, "fallback" as PromptSource]),
+  );
 
-  const ids = Object.keys(MANAGED_PROMPT_KEYS) as ManagedPromptId[];
   await Promise.all(
     ids.map(async (id) => {
-      const name = MANAGED_PROMPT_KEYS[id];
+      const name = agentPromptKey(id);
       try {
         const text = await withDeadline(
           client.getTextPrompt(name, { label }),
@@ -258,8 +244,8 @@ export async function loadManagedPrompts(
   const fellBack = ids.filter((id) => sources[id] === "fallback");
   logger.info("langfuse.prompts.loaded", {
     label,
-    loadedPromptKeys: loaded.map((id) => MANAGED_PROMPT_KEYS[id]),
-    fallbackPromptKeys: fellBack.map((id) => MANAGED_PROMPT_KEYS[id]),
+    loadedPromptKeys: loaded.map(agentPromptKey),
+    fallbackPromptKeys: fellBack.map(agentPromptKey),
     loadedCount: loaded.length,
     fallbackCount: fellBack.length,
   });

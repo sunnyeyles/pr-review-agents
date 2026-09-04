@@ -7,22 +7,27 @@ import process from "node:process";
 
 import {
   DEFAULT_LANGFUSE_BASE_URL,
+  DEFAULT_AGENT_CONFIG_PATH,
   DEFAULT_PROMPT_LABEL,
+  SYNTHESIS_PROMPT_ID,
   createAnthropicClient,
   createLangfusePromptClient,
   createReviewAgents,
   createSynthesiser,
+  loadAgentDefinitions,
   loadManagedPrompts,
-  resolveReviewLenses,
-  reviewLenses,
+  resolveAgentDefinitions,
   type AnthropicClientConfig,
   type AnthropicLike,
   type LangfusePromptClient,
   type LangfusePromptClientConfig,
   type ManagedPrompts,
+  type ReadOptionalFile,
+  type AgentDefinition,
 } from "@pr-review/ai";
 import {
   createTokenClient,
+  httpStatus,
   type GithubInstallationClient,
   type GithubTokenConfig,
 } from "@pr-review/github";
@@ -37,6 +42,7 @@ import {
   runReviewPipeline,
 } from "@pr-review/reviewer";
 
+import { inspectEvent } from "./event.js";
 import { createActionHandler } from "./handler.js";
 import {
   createLangfuseRuntime,
@@ -66,7 +72,7 @@ export interface ActionEnvironment {
 export function actionEnvironment(): ActionEnvironment {
   return {
     env: process.env,
-    readEventFile: (path) => readFile(path, "utf8"),
+    readEventFile: (filePath) => readFile(filePath, "utf8"),
     createAnthropicClient,
     createTokenClient,
     createPromptClient: createLangfusePromptClient,
@@ -147,6 +153,7 @@ export function resolveLangfuseInputs(
 async function resolveManagedPrompts(
   environment: ActionEnvironment,
   inputs: LangfuseInputs,
+  agents: readonly AgentDefinition[],
 ): Promise<ManagedPrompts | undefined> {
   try {
     const client = environment.createPromptClient({
@@ -155,6 +162,7 @@ async function resolveManagedPrompts(
       baseUrl: inputs.baseUrl,
     });
     const { prompts } = await loadManagedPrompts(client, {
+      agents,
       label: inputs.promptLabel,
       logger: environment.logger,
     });
@@ -165,6 +173,31 @@ async function resolveManagedPrompts(
     });
     return undefined;
   }
+}
+
+/**
+ * Reads repository files at one commit. The agent configuration defines
+ * the agents' system prompts, so it is read at the pull request's base
+ * commit rather than from the workspace: a checkout of the head or merge
+ * ref would let the branch under review rewrite its own reviewers.
+ */
+export function readAtCommit(
+  client: GithubInstallationClient,
+  repository: { owner: string; repo: string },
+  ref: string,
+): ReadOptionalFile {
+  return async (filePath) => {
+    try {
+      return await client.getFileContents({ ...repository, path: filePath, ref });
+    } catch (error: unknown) {
+      // 404 is "not configured"; anything else, a missing contents:read
+      // scope included, must not read as an absent file.
+      if (httpStatus(error) === 404) {
+        return undefined;
+      }
+      throw error;
+    }
+  };
 }
 
 /** One action run. Failures propagate to runEntrypoint's catch. */
@@ -182,14 +215,31 @@ export async function runAction(
   const payload: unknown = JSON.parse(await environment.readEventFile(eventPath));
   const eventName = env["GITHUB_EVENT_NAME"] ?? "";
 
-  // Resolved before any client is built, so a typo'd agent name fails
-  // the step rather than producing a review that looks clean.
-  const lenses = resolveReviewLenses(getInput(env, "agents"));
-  if (lenses.length < reviewLenses.length) {
-    logger.info("review.agents_selected", {
-      agents: lenses.map((lens) => lens.category),
-    });
+  // An event that will not be reviewed is a clean no-op: it must not fail
+  // on configuration, and it has no base commit to read one from anyway.
+  const inspection = inspectEvent(payload, eventName);
+  if (!inspection.review) {
+    logger.info("review.skipped", { reason: inspection.reason });
+    return;
   }
+  const { target, isFork, baseSha } = inspection;
+
+  const client = environment.createTokenClient({
+    token: requireInput(env, "github-token"),
+  });
+
+  // Resolved before the model client is built, so a missing config or a
+  // typo'd agent name fails the step rather than producing a review that
+  // looks clean.
+  const configured = await loadAgentDefinitions({
+    readFile: readAtCommit(client, target, baseSha),
+    path: getInput(env, "agent-config") || DEFAULT_AGENT_CONFIG_PATH,
+  });
+  const agents = resolveAgentDefinitions(getInput(env, "agents"), configured);
+  logger.info("review.agents_selected", {
+    agents: agents.map((agent) => agent.category),
+    configuredAgents: configured.map((agent) => agent.category),
+  });
 
   const anthropic: AnthropicLike = environment.createAnthropicClient({
     apiKey: requireInput(env, "anthropic-api-key"),
@@ -212,18 +262,17 @@ export async function runAction(
     const prompts =
       langfuse === undefined
         ? undefined
-        : await resolveManagedPrompts(environment, langfuse);
+        : await resolveManagedPrompts(environment, langfuse, agents);
 
     // Repository-independent, so one instance serves the whole run.
     const synthesiser = createSynthesiser({
       anthropic,
       model,
-      ...(prompts === undefined ? {} : { systemPrompt: prompts.synthesis }),
+      agents,
+      ...(prompts === undefined
+        ? {}
+        : { systemPrompt: prompts[SYNTHESIS_PROMPT_ID] }),
     });
-    const client = environment.createTokenClient({
-      token: requireInput(env, "github-token"),
-    });
-
     const handler = createActionHandler({
       client,
       runReviewPipeline: (reviewClient, context) =>
@@ -233,17 +282,9 @@ export async function runAction(
               anthropic,
               model,
               github: reviewClient,
-              ...(prompts === undefined
-                ? {}
-                : {
-                    systemPrompts: {
-                      correctness: prompts.correctness,
-                      security: prompts.security,
-                      architecture: prompts.architecture,
-                    },
-                  }),
+              ...(prompts === undefined ? {} : { systemPrompts: prompts }),
             },
-            lenses,
+            agents,
           ),
           synthesiser,
           context,
@@ -257,7 +298,7 @@ export async function runAction(
       logger,
     });
 
-    await handler(payload, eventName);
+    await handler(target, isFork);
   } finally {
     // A flush failure never fails a review that already ran.
     if (tracing !== undefined) {

@@ -13,27 +13,34 @@ export {
   messageText,
   type AgentOutputResult,
 } from "./agents/output.js";
-export type { ReviewAgent, ReviewContext } from "./review-types.js";
+export type { ReviewAgent, ReviewContext } from "./agent-contract.js";
 export { addTokenUsage, emptyTokenUsage, type TokenUsage } from "./usage.js";
 export {
   AgentRunError,
   createReviewAgent,
   type ReviewAgentDeps,
-  type ReviewLens,
   type ReviewSystemPrompts,
 } from "./agents/runtime.js";
 export {
-  ALL_LENSES,
-  architectureLens,
-  correctnessLens,
-  createReviewAgents,
-  resolveReviewLenses,
-  reviewLenses,
-  securityLens,
-} from "./agents/lenses.js";
+  ALL_AGENTS,
+  SYNTHESIS_PROMPT_ID,
+  type AgentDefinition,
+} from "./agents/definition.js";
 export {
-  SYNTHESIS_SYSTEM_PROMPT,
+  createReviewAgents,
+  resolveAgentDefinitions,
+} from "./agents/agent-set.js";
+export {
+  DEFAULT_AGENT_CONFIG_PATH,
+  AgentConfigError,
+  loadAgentDefinitions,
+  parseAgentConfig,
+  type LoadAgentDefinitionsOptions,
+  type ReadOptionalFile,
+} from "./agents/config.js";
+export {
   SynthesisError,
+  buildSynthesisSystemPrompt,
   createSynthesiser,
   type SynthesisResult,
   type Synthesiser,
@@ -42,7 +49,6 @@ export {
 export {
   DEFAULT_LANGFUSE_BASE_URL,
   DEFAULT_PROMPT_LABEL,
-  MANAGED_PROMPT_KEYS,
   createLangfusePromptClient,
   inCodePrompts,
   loadManagedPrompts,
@@ -52,7 +58,6 @@ export {
   type LangfusePromptClientConfig,
   type LoadManagedPromptsOptions,
   type LoadPromptsResult,
-  type ManagedPromptId,
   type ManagedPrompts,
   type PromptSource,
 } from "./prompts.js";
@@ -65,7 +70,7 @@ export {
   type SeedManagedPromptsOptions,
   type SeedOutcome,
   type SeedReport,
-} from "./prompt-seed.js";
+} from "./seed-prompts.js";
 export {
   traceModelCall,
   type GenerationParent,

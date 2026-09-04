@@ -1,13 +1,25 @@
 import { z } from "zod";
 
 /**
+ * A category names one review agent, and the set of agents is
+ * configurable — so the shape is constrained here and membership is
+ * checked against the agents a given run was configured with.
+ */
+export const findingCategorySchema = z
+  .string()
+  .regex(/^[a-z][a-z0-9-]*$/, "must be a lowercase kebab-case slug")
+  .max(40);
+
+export type FindingCategory = z.infer<typeof findingCategorySchema>;
+
+/**
  * One structured review finding. `line` is a new-side line number and is
  * optional; `confidence` is the agent's self-assessed certainty in [0, 1].
  */
 export const reviewFindingSchema = z.object({
   file: z.string().min(1),
   line: z.number().int().positive().optional(),
-  category: z.enum(["correctness", "security", "architecture"]),
+  category: findingCategorySchema,
   severity: z.enum(["low", "medium", "high"]),
   title: z.string().min(1),
   explanation: z.string().min(1),
@@ -17,7 +29,11 @@ export const reviewFindingSchema = z.object({
 
 export type ReviewFinding = z.infer<typeof reviewFindingSchema>;
 
-export type FindingCategory = ReviewFinding["category"];
+/** "performance" -> "Performance", "data-access" -> "Data access". */
+export function categoryLabel(category: string): string {
+  const words = category.replace(/-/g, " ");
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
 
 /**
  * Keeps only candidates matching the finding contract. Shared by the

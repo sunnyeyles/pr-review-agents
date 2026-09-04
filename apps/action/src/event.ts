@@ -7,6 +7,9 @@ import { isSupportedPullRequestAction } from "@pr-review/schemas";
 import type { ReviewTarget } from "@pr-review/reviewer";
 import { z } from "zod";
 
+const SHA_PATTERN = /^[0-9a-f]{40}$/;
+const SHA_MESSAGE = "expected a 40-character lowercase hex commit SHA";
+
 /** The fields of a pull_request event payload the Action consumes. */
 const pullRequestEventSchema = z.object({
   action: z.string(),
@@ -16,13 +19,11 @@ const pullRequestEventSchema = z.object({
   }),
   pull_request: z.object({
     number: z.number().int().positive(),
+    base: z.object({
+      sha: z.string().regex(SHA_PATTERN, SHA_MESSAGE),
+    }),
     head: z.object({
-      sha: z
-        .string()
-        .regex(
-          /^[0-9a-f]{40}$/,
-          "expected a 40-character lowercase hex commit SHA",
-        ),
+      sha: z.string().regex(SHA_PATTERN, SHA_MESSAGE),
       repo: z.object({ full_name: z.string() }).nullable().optional(),
     }),
   }),
@@ -30,7 +31,7 @@ const pullRequestEventSchema = z.object({
 
 /** Either a pull request to review, or a reason this event is not one. */
 export type EventInspection =
-  | { review: true; target: ReviewTarget; isFork: boolean }
+  | { review: true; target: ReviewTarget; isFork: boolean; baseSha: string }
   | { review: false; reason: string };
 
 /**
@@ -71,6 +72,9 @@ export function inspectEvent(
       pullRequestNumber: parsed.data.pull_request.number,
       headSha: parsed.data.pull_request.head.sha,
     },
+    // The configuration is read at this commit: it predates the PR, so
+    // the branch under review cannot rewrite its own reviewers.
+    baseSha: parsed.data.pull_request.base.sha,
     // Logging only: the publisher reacts to the real permission error
     // rather than predicting it from this flag.
     isFork: headRepo !== undefined && headRepo !== `${owner}/${repo}`,

@@ -1,9 +1,18 @@
 # pr-review-agents
 
-Reviews pull requests with three independent AI agents — **Correctness**,
-**Security**, and **Architecture** — and publishes the result as inline pull
-request review comments, alongside an `AI PR Review` check run carrying the
-full summary. Any subset of the three can be selected per run.
+Reviews pull requests with the AI agents *you* define, and publishes the
+result as inline pull request review comments, alongside an `AI PR Review`
+check run carrying the full summary.
+
+There is no built-in set of agents. Each agent is one **agent** — a name, a
+role, and a focus — declared in
+[`.github/pr-review-agents.yml`](#defining-your-own-agents). A review runs exactly
+the agents that file lists, in the order it lists them; with no such file the
+step fails rather than guessing. Any subset can be selected per run.
+
+This repository's own [`.github/pr-review-agents.yml`](.github/pr-review-agents.yml) defines
+three (Correctness, Security, Architecture) and is a working starting point to
+copy — but it is configuration, not a default.
 
 The agents never touch GitHub. They propose structured findings; deterministic
 application code decides what actually gets published.
@@ -59,9 +68,9 @@ GitHub Action (apps/action)
    ▼
 Review pipeline (LangGraph)
    │
-   ├─ agent__correctness  ─┐
-   ├─ agent__security      ├─► join ─► synthesise ─► validate ─► END
-   └─ agent__architecture ─┘
+   ├─ agent__<agent 1>  ─┐
+   ├─ agent__<agent 2>   ├─► join ─► synthesise ─► validate ─► END
+   └─ agent__<agent n>  ─┘
                                                         │
                                                         ▼
                                 GitHub Check Run + annotations
@@ -85,11 +94,12 @@ Agents ──► raw candidates (unknown[])
    ┌──────────────────────────────────────┐
    │ validateFindings()  — no model here  │
    │  1. Zod schema                       │
-   │  2. file exists in the PR            │
-   │  3. line is an ADDED line in the diff│
-   │  4. confidence >= 0.70               │
-   │  5. duplicate removal                │
-   │  6. cap at 10, strongest first       │
+   │  2. category is one of your agents   │
+   │  3. file exists in the PR            │
+   │  4. line is an ADDED line in the diff│
+   │  5. confidence >= 0.70               │
+   │  6. duplicate removal                │
+   │  7. cap at 10, strongest first       │
    └──────────────────────────────────────┘
               │
               ▼
@@ -119,8 +129,8 @@ Reinforcing rules:
 apps/
   action/     Event parsing → review pipeline → check run (or job summary)
 packages/
-  ai/         Anthropic seam, prompts, and agents/: runtime loop, the three
-              lenses, the read-only tools, the synthesiser
+  ai/         Anthropic seam, prompts, agent configuration, and agents/:
+              agent definition, runtime loop, read-only tools, synthesiser
   reviewer/   Review graph, validation chain, check-run rendering
   github/     GitHub client (workflow-token auth) + Octokit calls
   schemas/    Zod schemas: ReviewFinding, the review trigger contract
@@ -160,7 +170,62 @@ Set as `with:` inputs on the Action step ([`apps/action/action.yml`](apps/action
 | `anthropic-api-key` | yes | Anthropic key the agents and synthesiser authenticate with. Store as a repository or organisation secret; never inline it. |
 | `github-token` | no (default `${{ github.token }}`) | Token for the six read-only repository tools and for publishing the check run. |
 | `model` | no (default `claude-sonnet-5`) | Anthropic model id the agents and synthesiser use. |
-| `agents` | no (default `all`) | Which agents run: `all`, or a comma-separated subset of `correctness`, `security`, `architecture`. |
+| `agents` | no (default `all`) | Which of the configured agents run: `all`, or a comma-separated subset of their names. |
+| `agent-config` | no (default `.github/pr-review-agents.yml`) | Path to the YAML file defining the agents. Required — there is no built-in set. |
+
+### Defining your own agents
+
+The agents are data. There are none in the code, and none built into the
+action: a repository declares its own in `.github/pr-review-agents.yml` (or wherever
+`agent-config` points), and everything downstream follows — the prompt each
+agent is given, its Langfuse prompt key, the categories the synthesiser is
+told about, the categories validation accepts, and the labels findings are
+rendered under.
+
+```yaml
+agents:
+  - category: performance
+    role: Performance reviewer
+    focus: |
+      Review the pull request ONLY for performance problems:
+      - N+1 queries and unbounded result sets
+      - work repeated inside a loop that could be hoisted
+      Do NOT report correctness bugs or style — those are out of scope for
+      you and will be discarded.
+
+  - category: security
+    role: Security reviewer
+    focus: |
+      Review ONLY for security problems, and only ones this diff proves.
+    # Optional: makes the agent retrieve repository context before claiming.
+    contextGuidance: |
+      Use get_file and search_repository to confirm a claim before making it.
+```
+
+Adding an agent is a new entry; removing one is deleting its entry; changing
+one is editing its `focus`. Nothing else needs updating, because everything
+but the agent body is derived:
+
+- `category` is the agent's name, the finding category it owns, and the only
+  category its findings may carry — findings in any other are discarded. It
+  must be a lowercase kebab-case slug; `synthesis` and `all` are reserved.
+- `role` and `focus` are dropped into the shared system prompt
+  (`packages/ai/src/agents/definition.ts`); the security hardening, the tool
+  guidance, and the JSON output contract come with it.
+- Order is significant: it is the order findings reach the synthesiser.
+
+The action reads the file from the pull request's **base** commit over the
+API, so no `actions/checkout` step is needed — and, more to the point, a pull
+request cannot edit the agents that review it. `role` and `focus` become the
+agents' system prompt, so a head-ref read would hand the branch under review
+control of its own reviewers.
+
+A missing file, a malformed one, or one that declares no agents fails the step
+before any model call — a review with the wrong agents, or none, looks exactly
+like a clean bill of health, so it must never happen quietly.
+
+`pnpm seed-prompts` reads the same file (`--config` to point elsewhere), so
+the prompts published to Langfuse always match the agents configured.
 
 ### What a review costs
 
@@ -175,7 +240,7 @@ of this repository's own PR #11, before caching, spent ~1.58M input tokens:
 | Correctness | 9 | ~594k |
 | Security | 4 | ~185k |
 
-Architecture costs the most because its lens requires retrieving surrounding
+Architecture costs the most because its agent requires retrieving surrounding
 repository context before it may make a claim, and every retrieval is another
 round trip carrying the whole conversation.
 

@@ -1,28 +1,34 @@
 import { createCapturingLogger } from "@pr-review/logging";
 import { describe, expect, it, vi } from "vitest";
 
-import { buildReviewSystemPrompt } from "./agents/runtime.js";
 import {
-  architectureLens,
-  correctnessLens,
-  securityLens,
-} from "./agents/lenses.js";
-import { SYNTHESIS_SYSTEM_PROMPT } from "./agents/synthesiser.js";
+  buildReviewSystemPrompt,
+  agentPromptKey,
+  type AgentDefinition,
+} from "./agents/definition.js";
+import { buildSynthesisSystemPrompt } from "./agents/synthesiser.js";
 import {
+  repositoryAgent,
+  repositoryAgents,
   validRemotePrompt,
   validRemoteSynthesisPrompt,
 } from "./agent-test-support.js";
 import {
   DEFAULT_PROMPT_LABEL,
-  MANAGED_PROMPT_KEYS,
+  inCodePrompts,
   loadManagedPrompts,
   type LangfusePromptClient,
 } from "./prompts.js";
 
-const CORRECTNESS_FALLBACK = buildReviewSystemPrompt(correctnessLens);
-const SECURITY_FALLBACK = buildReviewSystemPrompt(securityLens);
-const ARCHITECTURE_FALLBACK = buildReviewSystemPrompt(architectureLens);
-const SYNTHESIS_FALLBACK = SYNTHESIS_SYSTEM_PROMPT;
+const configuredAgents = repositoryAgents();
+const CORRECTNESS_FALLBACK = buildReviewSystemPrompt(
+  repositoryAgent("correctness"),
+);
+const SECURITY_FALLBACK = buildReviewSystemPrompt(repositoryAgent("security"));
+const ARCHITECTURE_FALLBACK = buildReviewSystemPrompt(
+  repositoryAgent("architecture"),
+);
+const SYNTHESIS_FALLBACK = buildSynthesisSystemPrompt(configuredAgents);
 
 /** A string resolves, an Error rejects, and an unlisted name is a test bug. */
 function makeClient(
@@ -52,13 +58,35 @@ function allValid(): Record<string, string> {
   };
 }
 
-describe("MANAGED_PROMPT_KEYS", () => {
-  it("uses the stable remote prompt names", () => {
+/** The Langfuse name each managed prompt of an agent set is fetched under. */
+function remoteNames(agents: readonly AgentDefinition[]): Record<string, string> {
+  return Object.fromEntries(
+    Object.keys(inCodePrompts(agents)).map((id) => [id, agentPromptKey(id)]),
+  );
+}
+
+describe("managed prompt names", () => {
+  it("uses the stable remote prompt names for the configured agents", () => {
     // Renaming one of these silently orphans the prompt in Langfuse.
-    expect(MANAGED_PROMPT_KEYS).toEqual({
+    expect(remoteNames(configuredAgents)).toEqual({
       correctness: "correctness_system",
       security: "security_system",
       architecture: "architecture_system",
+      synthesis: "synthesis_system",
+    });
+  });
+
+  it("derives a name for any configured agent, and always the synthesiser", () => {
+    expect(
+      remoteNames([
+        {
+          category: "data-access",
+          role: "Data access reviewer",
+          focus: "Review ONLY for data-access problems.",
+        },
+      ]),
+    ).toEqual({
+      "data-access": "data_access_system",
       synthesis: "synthesis_system",
     });
   });
@@ -71,6 +99,7 @@ describe("loadManagedPrompts", () => {
     const { logger, entries } = createCapturingLogger();
 
     const { prompts, sources } = await loadManagedPrompts(client, {
+      agents: configuredAgents,
       logger,
     });
 
@@ -106,6 +135,7 @@ describe("loadManagedPrompts", () => {
     const { logger, entries } = createCapturingLogger();
 
     const { prompts, sources } = await loadManagedPrompts(client, {
+      agents: configuredAgents,
       logger,
     });
 
@@ -139,6 +169,7 @@ describe("loadManagedPrompts", () => {
     const { logger, entries } = createCapturingLogger();
 
     const { prompts, sources } = await loadManagedPrompts(client, {
+      agents: configuredAgents,
       logger,
     });
 
@@ -170,6 +201,7 @@ describe("loadManagedPrompts", () => {
     };
 
     const { sources } = await loadManagedPrompts(client, {
+      agents: configuredAgents,
       logger: createCapturingLogger().logger,
     });
 
@@ -181,6 +213,7 @@ describe("loadManagedPrompts", () => {
     const client = makeClient(allValid());
 
     await loadManagedPrompts(client, {
+      agents: configuredAgents,
       logger: createCapturingLogger().logger,
       label: "staging",
     });
@@ -194,6 +227,7 @@ describe("loadManagedPrompts", () => {
     const client = makeClient(allValid());
 
     await loadManagedPrompts(client, {
+      agents: configuredAgents,
       logger: createCapturingLogger().logger,
     });
 
@@ -215,6 +249,7 @@ describe("loadManagedPrompts", () => {
     const { logger, entries } = createCapturingLogger();
 
     const { prompts, sources } = await loadManagedPrompts(client, {
+      agents: configuredAgents,
       logger,
       timeoutMs: 10,
     });
@@ -233,7 +268,7 @@ describe("loadManagedPrompts", () => {
 });
 
 describe("the prompt contract guard", () => {
-  it("rejects a lens prompt that dropped its category", async () => {
+  it("rejects an agent prompt that dropped its category", async () => {
     // Without its category, every finding is discarded downstream and
     // the review reports nothing instead of failing.
     const client = makeClient({
@@ -247,6 +282,7 @@ describe("the prompt contract guard", () => {
     const { logger, entries } = createCapturingLogger();
 
     const { prompts, sources } = await loadManagedPrompts(client, {
+      agents: configuredAgents,
       logger,
     });
 
@@ -270,6 +306,7 @@ describe("the prompt contract guard", () => {
     const { logger, entries } = createCapturingLogger();
 
     const { sources } = await loadManagedPrompts(client, {
+      agents: configuredAgents,
       logger,
     });
 
@@ -292,6 +329,7 @@ describe("the prompt contract guard", () => {
     });
 
     return loadManagedPrompts(client, {
+      agents: configuredAgents,
       logger: createCapturingLogger().logger,
     }).then(({ sources }) => {
       expect(sources.correctness).toBe("langfuse");

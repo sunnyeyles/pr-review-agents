@@ -9,14 +9,13 @@ import {
   type StructuredLogger,
 } from "@pr-review/logging";
 
+import { agentPromptKey } from "./agents/definition.js";
 import {
   DEFAULT_PROMPT_LABEL,
-  MANAGED_PROMPT_KEYS,
   createLangfuseClient,
   fetchTextPrompt,
   promptContractProblems,
   type LangfusePromptClientConfig,
-  type ManagedPromptId,
   type ManagedPrompts,
 } from "./prompts.js";
 
@@ -95,7 +94,7 @@ export type SeedOutcome =
   | "failed";
 
 export interface SeedManagedPromptsOptions {
-  /** The prompts to publish, normally from inCodePrompts(). */
+  /** The prompts to publish, from inCodePrompts(agents); its keys decide what is seeded. */
   prompts: ManagedPrompts;
   /** Deployment label to point at the published versions. */
   label?: string | undefined;
@@ -104,7 +103,7 @@ export interface SeedManagedPromptsOptions {
   logger?: StructuredLogger | undefined;
 }
 
-export type SeedReport = Record<ManagedPromptId, SeedOutcome>;
+export type SeedReport = Record<string, SeedOutcome>;
 
 /**
  * Publishes each managed prompt Langfuse does not already hold at this
@@ -119,11 +118,10 @@ export async function seedManagedPrompts(
   const label = options.label ?? DEFAULT_PROMPT_LABEL;
   const dryRun = options.dryRun ?? false;
 
-  const ids = Object.keys(MANAGED_PROMPT_KEYS) as ManagedPromptId[];
+  const entries = Object.entries(options.prompts);
   const outcomes = await Promise.all(
-    ids.map(async (id): Promise<SeedOutcome> => {
-      const name = MANAGED_PROMPT_KEYS[id];
-      const text = options.prompts[id];
+    entries.map(async ([id, text]): Promise<SeedOutcome> => {
+      const name = agentPromptKey(id);
 
       const problems = promptContractProblems(id, text);
       if (problems.length > 0) {
@@ -186,7 +184,7 @@ export async function seedManagedPrompts(
   );
 
   const report = Object.fromEntries(
-    ids.map((id, index) => [id, outcomes[index]]),
+    entries.map(([id], index) => [id, outcomes[index]]),
   ) as SeedReport;
 
   logger.info("langfuse.prompts.seed_completed", {

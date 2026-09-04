@@ -7,13 +7,12 @@
 import {
   createReviewAgent,
   createSynthesiser,
-  reviewLenses,
   type ReviewAgent,
 } from "@pr-review/ai";
 import type { ChangedFile, GithubInstallationClient } from "@pr-review/github";
 import { createCapturingLogger } from "@pr-review/logging";
 import { validateFindings } from "@pr-review/reviewer";
-import type { FindingCategory, ReviewFinding } from "@pr-review/schemas";
+import type { ReviewFinding } from "@pr-review/schemas";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -21,6 +20,7 @@ import {
   makeAnthropic,
   makeFinding,
   message,
+  repositoryAgents,
   textBlock,
 } from "../../packages/ai/src/agent-test-support.js";
 import { evalCases } from "./cases.js";
@@ -48,6 +48,8 @@ import {
 import { buildPatch, diffOps, toLines } from "./unified-diff.js";
 
 const MODEL = "harness-test-model";
+
+const configuredAgents = repositoryAgents();
 
 /** The line number of the first line containing `marker`. */
 function lineOf(contents: string, marker: string): number {
@@ -96,16 +98,16 @@ function findingExpectationFor(fixtureName: string): FixtureExpectation {
 
 /** Real agents and Synthesiser, with only the Anthropic client scripted. */
 function scriptedDeps(
-  byCategory: Partial<Record<FindingCategory, ReviewFinding[]>>,
+  byCategory: Record<string, ReviewFinding[]>,
 ): FixtureReviewDeps {
   const synthesised = Object.values(byCategory).flat();
   return {
     createAgents: (github: GithubInstallationClient): ReviewAgent[] =>
-      reviewLenses.map((lens) =>
-        createReviewAgent(lens, {
+      configuredAgents.map((agent) =>
+        createReviewAgent(agent, {
           anthropic: makeAnthropic([
             message(
-              [textBlock(finalFindingsJson(byCategory[lens.category] ?? []))],
+              [textBlock(finalFindingsJson(byCategory[agent.category] ?? []))],
               "end_turn",
             ),
           ]).anthropic,
@@ -119,6 +121,7 @@ function scriptedDeps(
         message([textBlock(finalFindingsJson(synthesised))], "end_turn"),
       ]).anthropic,
       model: MODEL,
+      agents: configuredAgents,
     }),
   };
 }
@@ -229,8 +232,11 @@ describe("generated diffs", () => {
       line: lineOf(contents, "and (display_name ilike $2 or email ilike $2)"),
     });
 
-    expect(validateFindings([planted], [changed])).toEqual([planted]);
-    expect(validateFindings([untouched], [changed])).toEqual([]);
+    const categories = configuredAgents.map((agent) => agent.category);
+    expect(validateFindings([planted], [changed], categories)).toEqual([
+      planted,
+    ]);
+    expect(validateFindings([untouched], [changed], categories)).toEqual([]);
   });
 
   it("emits one hunk per changed region rather than one giant hunk", () => {

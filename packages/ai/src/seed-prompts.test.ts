@@ -2,7 +2,9 @@
 import { createCapturingLogger } from "@pr-review/logging";
 import { describe, expect, it, vi } from "vitest";
 
+import { agentPromptKey } from "./agents/definition.js";
 import {
+  repositoryAgents,
   validRemotePrompt,
   validRemoteSynthesisPrompt,
 } from "./agent-test-support.js";
@@ -11,11 +13,13 @@ import {
   seedManagedPrompts,
   type LabelledPrompt,
   type LangfusePromptWriter,
-} from "./prompt-seed.js";
-import { MANAGED_PROMPT_KEYS, type ManagedPrompts } from "./prompts.js";
+} from "./seed-prompts.js";
+import { inCodePrompts } from "./prompts.js";
 
-/** Four prompts that all satisfy the contract guard. */
-function validPrompts(): ManagedPrompts {
+const configuredAgents = repositoryAgents();
+
+/** One prompt per configured agent, all satisfying the contract guard. */
+function validPrompts() {
   return {
     correctness: validRemotePrompt("correctness", "SEED CORRECTNESS"),
     security: validRemotePrompt("security", "SEED SECURITY"),
@@ -157,7 +161,10 @@ describe("seedManagedPrompts", () => {
     const { writer, published } = makeWriter();
     const { logger, entries } = createCapturingLogger();
 
-    const report = await seedManagedPrompts(writer, { prompts, logger });
+    const report = await seedManagedPrompts(writer, {
+      prompts,
+      logger,
+    });
 
     expect(report.correctness).toBe("rejected");
     expect(published.map((entry) => entry.name)).not.toContain(
@@ -224,8 +231,11 @@ describe("seedManagedPrompts", () => {
       logger: createCapturingLogger().logger,
     });
 
-    for (const name of Object.values(MANAGED_PROMPT_KEYS)) {
-      expect(writer.readLabelled).toHaveBeenCalledWith(name, "staging");
+    for (const id of Object.keys(inCodePrompts(configuredAgents))) {
+      expect(writer.readLabelled).toHaveBeenCalledWith(
+        agentPromptKey(id),
+        "staging",
+      );
     }
     expect(published.every((entry) => entry.label === "staging")).toBe(true);
   });
@@ -249,7 +259,10 @@ describe("seedManagedPrompts", () => {
     const { logger, entries } = createCapturingLogger();
     const prompts = validPrompts();
 
-    await seedManagedPrompts(writer, { prompts, logger });
+    await seedManagedPrompts(writer, {
+      prompts,
+      logger,
+    });
 
     // A log line carrying a whole prompt makes every review log unreadable.
     const serialised = JSON.stringify(entries);

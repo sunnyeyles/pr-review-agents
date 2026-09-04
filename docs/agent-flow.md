@@ -3,9 +3,14 @@
 One pull request event in, one review out — inline comments plus a check run.
 This document traces that path in order, naming the file that owns each step.
 
-The short version: **three agents propose, one synthesiser refines, and
-deterministic code decides.** Only the last of those three ever reaches the
-GitHub API.
+The short version: **agents propose, one synthesiser refines, and
+deterministic code decides.** Only the last of those three stages ever reaches
+the GitHub API.
+
+Which agents run is configuration, not structure. There is no built-in
+set: a repository declares its agents in `.github/pr-review-agents.yml`, and a run
+with no such file fails rather than guessing. Everywhere below that a count
+would be tempting, the pipeline reads the run's agent set instead.
 
 ---
 
@@ -17,8 +22,8 @@ flowchart TD
 
     subgraph BOOT["1 · Boot — apps/action"]
         ENTRY["runEntrypoint / runAction<br/><code>index.ts</code>"]
-        ENTRY --> LENS["resolveReviewLenses<br/><i>which agents run</i>"]
-        LENS --> CLIENTS["build Anthropic + GitHub clients<br/>start tracing, fetch prompts"]
+        ENTRY --> AGENT["loadAgentDefinitions → resolveAgentDefinitions<br/><i>which agents exist, then which run</i>"]
+        AGENT --> CLIENTS["build Anthropic + GitHub clients<br/>start tracing, fetch prompts"]
     end
 
     CLIENTS --> INSPECT["2 · inspectEvent<br/><code>event.ts</code>"]
@@ -34,14 +39,14 @@ flowchart TD
     subgraph GRAPH["4 · LangGraph StateGraph — review-graph.ts"]
         direction TB
         START(["START"])
-        START --> A1["agent__correctness"]
-        START --> A2["agent__security"]
-        START --> A3["agent__architecture"]
+        START --> A1["agent__&lt;agent 1&gt;"]
+        START --> A2["agent__&lt;agent 2&gt;"]
+        START --> A3["agent__&lt;agent n&gt;"]
         A1 --> JOIN["join<br/><i>fan-in, agent order</i>"]
         A2 --> JOIN
         A3 --> JOIN
         JOIN --> SYNTH["synthesise<br/><i>one model call, no tools</i>"]
-        SYNTH --> VAL["validate<br/><i>deterministic, 6 steps</i>"]
+        SYNTH --> VAL["validate<br/><i>deterministic, 7 steps</i>"]
         VAL --> ENDN(["END"])
     end
 
@@ -70,25 +75,33 @@ caller may trust.** Everything upstream of it is untrusted model output.
 `GITHUB_ACTIONS === "true"`, so importing the module in a test does no work.
 `runAction` then resolves configuration in a deliberate order.
 
-The lens selection happens *first*, before any client exists, because an
-unrecognised agent name is a typo in a workflow file and must cost nothing to
-discover:
+The agent set is resolved *first*, before any client exists, because a missing
+config file or a typo'd agent name is a mistake in the repository and must cost
+nothing to discover:
 
 ```ts
-// apps/action/src/index.ts:227
-const lenses = resolveReviewLenses(getInput(env, "agents"));
+// apps/action/src/index.ts
+const configured = await loadAgentDefinitions({ readFile, path });
+const agents = resolveAgentDefinitions(getInput(env, "agents"), configured);
 ```
 
-`resolveReviewLenses` (`packages/ai/src/agents/lenses.ts:74`) throws on an unknown
-name rather than dropping it — a silently ignored `agents: secuirty` would run
-a review that reports nothing and looks exactly like a clean bill of health.
+Two steps, two different failures. `loadAgentDefinitions`
+(`packages/ai/src/agents/config.ts`) reads the repository's agents and throws
+when there are none to read — nothing ships by default, so an absent config is
+an error, not an empty default. `resolveAgentDefinitions`
+(`packages/ai/src/agents/agent-set.ts`) then narrows that set and throws on a
+name it does not contain rather than dropping it.
+
+Both would otherwise produce a review that reports nothing and looks exactly
+like a clean bill of health.
 
 Then clients, tracing, and prompts, in that order: tracing starts before the
 prompt fetch so the fetch's own spans are captured.
 
 | Step | Function | Fails the run? |
 | --- | --- | --- |
-| Resolve lenses | `resolveReviewLenses` | Yes — unknown name |
+| Load configured agents | `loadAgentDefinitions` | Yes — missing or malformed config |
+| Narrow to the selection | `resolveAgentDefinitions` | Yes — unknown name |
 | Anthropic client | `createAnthropicClient` | Yes — missing key |
 | Langfuse tracing | `createLangfuseRuntime` | No — optional |
 | Managed prompts | `loadManagedPrompts` | No — falls back per prompt |
@@ -130,7 +143,7 @@ check findings against a different file list than the one the agents reviewed.
 
 `packages/reviewer/src/review-graph.ts` → `buildReviewGraph` (line 196)
 
-Agent nodes are added dynamically, one per selected lens, each wired straight
+Agent nodes are added dynamically, one per selected agent, each wired straight
 from `START` so they run concurrently:
 
 ```ts
@@ -147,7 +160,7 @@ return graph
   .addEdge(agentNodeNames, "join")   // fan-in: waits for every agent
   .addNode("synthesise", makeSynthesiseNode(synthesiser))
   .addEdge("join", "synthesise")
-  .addNode("validate", validateNode)
+  .addNode("validate", makeValidateNode(agents.map((a) => a.name)))
   .addEdge("synthesise", "validate")
   .addEdge("validate", END)
   .compile();
@@ -157,9 +170,10 @@ return graph
 
 `packages/ai/src/agents/runtime.ts` → `createReviewAgent` (line 180)
 
-All three lenses share one runtime. A `ReviewLens` supplies only the role,
-focus text, and category; the loop, the six tools, the injection hardening,
-and the output contract are identical by construction.
+Every agent shares one runtime. A `AgentDefinition` — which is just the three
+fields a config entry carries — supplies the role, focus text, and category;
+the loop, the six tools, the injection hardening, and the output contract are
+identical by construction, so a new agent costs a YAML entry and no code.
 
 ```ts
 // packages/ai/src/agents/runtime.ts:315
@@ -182,7 +196,7 @@ The cap (`DEFAULT_MAX_TURNS = 12`) bounds **model calls**, not tool round
 trips. A response with no tool uses always ends the run on the call it arrived
 on, so the cap can never burn a call the agent cannot answer.
 
-After parsing, the runtime **filters** findings to the lens's own category.
+After parsing, the runtime **filters** findings to the agent's own category.
 Cross-category leaks are dropped, never re-stamped — re-stamping would
 fabricate a claim the model never made.
 
@@ -241,20 +255,23 @@ either way, because it flows through the same validation chain.
 
 `packages/reviewer/src/validate-findings.ts:58`
 
-Six deterministic steps, in this order:
+Seven deterministic steps, in this order:
 
 1. **Schema validity** — Zod (`reviewFindingSchema`)
-2. **File exists** among the PR's changed files
-3. **Line is an added line** in that file's diff, when a line is given
-4. **Confidence ≥ 0.7** (`CONFIDENCE_THRESHOLD`, line 13)
-5. **Duplicate removal** — the strongest of each group survives
-6. **Cap at 10** (`MAX_FINDINGS`, line 16), keeping the strongest
+2. **Category is one of the run's agents** — the schema cannot check this,
+   since the set is known only at runtime
+3. **File exists** among the PR's changed files
+4. **Line is an added line** in that file's diff, when a line is given
+5. **Confidence ≥ 0.7** (`CONFIDENCE_THRESHOLD`)
+6. **Duplicate removal** — the strongest of each group survives
+7. **Cap at 10** (`MAX_FINDINGS`), keeping the strongest
 
 "Strongest" is fully deterministic: severity rank, then confidence descending,
 then input order.
 
-Dedup runs *before* the cap, so duplicates — which three lenses reviewing one
-diff produce routinely — cannot consume cap slots and leave the review short.
+Dedup runs *before* the cap, so duplicates — which several agents reviewing
+one diff produce routinely — cannot consume cap slots and leave the review
+short.
 
 This is where a fabricated file path, an invented line number, or a padded
 confidence score dies — regardless of how confident the model sounded.
@@ -302,7 +319,10 @@ those may masquerade as a delivered review.
 | `packages/reviewer/src/validate-findings.ts` | The trust boundary |
 | `packages/reviewer/src/render-check-run.ts` | Findings → check run payload |
 | `packages/reviewer/src/render-review.ts` | Findings → review body + inline comments |
-| `packages/ai/src/agents/lenses.ts` | The three lenses, lens selection |
+| `.github/pr-review-agents.yml` | The agents this repository reviews with |
+| `packages/ai/src/agents/config.ts` | Reading and validating a repository's agents |
+| `packages/ai/src/agents/definition.ts` | What an agent is, and its shared system prompt |
+| `packages/ai/src/agents/agent-set.ts` | Narrowing an agent set, building its agents |
 | `packages/ai/src/agents/synthesiser.ts` | The single refining model call |
 | `packages/ai/src/agents/runtime.ts` | The shared agentic loop |
 | `packages/ai/src/agents/tools.ts` | The six read-only tools |

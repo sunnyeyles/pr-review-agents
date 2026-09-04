@@ -2,6 +2,8 @@
  * Shared fixtures and scripted fakes for the agent tests. Not exported
  * from the package; the Anthropic and GitHub clients are structural fakes.
  */
+import { readFileSync } from "node:fs";
+
 import type Anthropic from "@anthropic-ai/sdk";
 import type {
   ChangedFile,
@@ -11,7 +13,43 @@ import type {
 import type { ReviewFinding } from "@pr-review/schemas";
 import { vi } from "vitest";
 
-import type { ReviewContext } from "./review-types.js";
+import type { AgentDefinition } from "./agents/definition.js";
+import { parseAgentConfig } from "./agents/config.js";
+import type { ReviewContext } from "./agent-contract.js";
+
+const REPOSITORY_AGENT_CONFIG = ".github/pr-review-agents.yml";
+
+/** The shipped config file verbatim, for tests that feed it to a fake workspace. */
+export function repositoryAgentConfigYaml(): string {
+  return readFileSync(
+    new URL(`../../../${REPOSITORY_AGENT_CONFIG}`, import.meta.url),
+    "utf8",
+  );
+}
+
+let cachedAgents: AgentDefinition[] | undefined;
+
+/**
+ * This repository's own configured agents — the starter set the README
+ * points newcomers at. Tests use it as their fixture, which also keeps
+ * the shipped file honest: nothing else defines agents in code.
+ */
+export function repositoryAgents(): AgentDefinition[] {
+  cachedAgents ??= parseAgentConfig(
+    repositoryAgentConfigYaml(),
+    REPOSITORY_AGENT_CONFIG,
+  );
+  return [...cachedAgents];
+}
+
+/** One named agent from repositoryAgents(); an unknown name is a test bug. */
+export function repositoryAgent(category: string): AgentDefinition {
+  const agent = repositoryAgents().find((entry) => entry.category === category);
+  if (agent === undefined) {
+    throw new Error(`${REPOSITORY_AGENT_CONFIG} defines no "${category}" agent`);
+  }
+  return agent;
+}
 
 export const headSha = "6dcb09b5b57875f334f61aebed695e2e4193db5e";
 export const baseSha = "0000000000000000000000000000000000000000";

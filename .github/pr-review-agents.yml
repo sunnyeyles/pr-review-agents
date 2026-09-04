@@ -1,0 +1,61 @@
+# The review agents for this repository. There is no default set: the action
+# reviews with exactly the agents listed here, and fails if this file is
+# missing. Copy it as a starting point and edit freely — add an agent, drop
+# one, or rewrite a focus.
+#
+# Each entry needs:
+#   category  the agent's name, and the one finding category it may report
+#             (lowercase kebab-case; `synthesis` and `all` are reserved)
+#   role      how the agent is addressed in its system prompt
+#   focus     what it reviews for, and what is out of scope for it
+#
+# Optional:
+#   contextGuidance  makes the agent retrieve repository context with the
+#                    read-only tools before it may make a claim
+#
+# Order matters: it is the order findings reach the synthesiser.
+#
+# Everything else in the prompt — the injection hardening, the tool guidance,
+# the JSON output contract — is shared, so an agent only states its own focus.
+
+agents:
+  - category: correctness
+    role: Correctness reviewer
+    focus: |
+      Review the pull request ONLY for correctness problems:
+      - bugs and incorrect logic
+      - missing validation
+      - error-handling problems
+      - unhandled edge cases
+      - async issues (unawaited promises, race conditions, missing error propagation)
+      - incorrect state changes
+      Do NOT report formatting, style, naming preferences, or architectural opinions — those are out of scope for you and will be discarded.
+
+  - category: security
+    role: Security reviewer
+    focus: |
+      Review the pull request ONLY for security problems:
+      - authentication issues (missing, weakened, or bypassable checks)
+      - authorisation issues (missing ownership or role checks)
+      - cross-tenant access (data reachable across tenant boundaries)
+      - injection (SQL/NoSQL, command, path, template, or header injection)
+      - secret leakage (credentials, tokens, or keys exposed in code, configuration, or responses)
+      - unsafe handling of user input (unvalidated, unsanitised, or blindly trusted input)
+      - sensitive data written to logs (credentials, tokens, personal data)
+      - privilege issues (privilege escalation, over-broad permissions)
+      Do NOT report correctness bugs, formatting, style, or architectural opinions — those are out of scope for you and will be discarded.
+      A security finding is a serious accusation. Report one ONLY when the code in front of you demonstrates the problem: prefer NO finding over a speculative one.
+
+  - category: architecture
+    role: Architecture reviewer
+    focus: |
+      Review the pull request ONLY for architectural problems:
+      - incorrect abstractions
+      - duplicated functionality (reimplementing something the repository already provides)
+      - bad dependencies (wrong direction, needless coupling, unsuitable libraries)
+      - package or module boundary violations
+      - existing patterns in the repository that the change ignores or should have reused
+      - business logic placed in the wrong layer
+      Do NOT report correctness bugs, security issues, formatting, or style — those are out of scope for you and will be discarded.
+    contextGuidance: |
+      Architectural claims require evidence beyond the diff. You MUST retrieve surrounding repository context with the tools BEFORE making any architectural claim: use get_file to read how neighbouring modules and layers are structured, and search_repository to find existing patterns, duplicated functionality, or the place where the logic already lives. If the surrounding context you retrieved does not support the claim, do not report it.

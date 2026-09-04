@@ -6,12 +6,18 @@ import { createCapturingLogger } from "@pr-review/logging";
 import { describe, expect, it, vi } from "vitest";
 
 import type { AnthropicLike } from "./anthropic.js";
-import { validRemoteSynthesisPrompt } from "./agent-test-support.js";
 import {
-  SYNTHESIS_SYSTEM_PROMPT,
+  repositoryAgents,
+  validRemoteSynthesisPrompt,
+} from "./agent-test-support.js";
+import {
+  buildSynthesisSystemPrompt,
   createSynthesiser,
 } from "./agents/synthesiser.js";
 import { loadManagedPrompts, type LangfusePromptClient } from "./prompts.js";
+
+const configuredAgents = repositoryAgents();
+const SYNTHESIS_SYSTEM_PROMPT = buildSynthesisSystemPrompt(configuredAgents);
 
 /** The message shape the Anthropic seam resolves to. */
 type CreateResult = Awaited<ReturnType<AnthropicLike["messages"]["create"]>>;
@@ -53,6 +59,7 @@ describe("resolving the synthesis prompt", () => {
     const { sources, prompts } = await loadManagedPrompts(
       clientReturning(SYNTHESIS_SYSTEM_PROMPT),
       {
+        agents: configuredAgents,
         logger: createCapturingLogger().logger,
       },
     );
@@ -66,6 +73,7 @@ describe("resolving the synthesis prompt", () => {
     const { prompts, sources } = await loadManagedPrompts(
       clientReturning(remote),
       {
+        agents: configuredAgents,
         logger: createCapturingLogger().logger,
       },
     );
@@ -75,6 +83,7 @@ describe("resolving the synthesis prompt", () => {
     const synthesiser = createSynthesiser({
       anthropic,
       model: "claude-test-model",
+      agents: configuredAgents,
       systemPrompt: prompts.synthesis,
     });
 
@@ -96,6 +105,7 @@ describe("resolving the synthesis prompt", () => {
 
   it("hands the in-code prompt to the synthesiser when the fetch fails", async () => {
     const { prompts, sources } = await loadManagedPrompts(failingClient, {
+      agents: configuredAgents,
       logger: createCapturingLogger().logger,
     });
 

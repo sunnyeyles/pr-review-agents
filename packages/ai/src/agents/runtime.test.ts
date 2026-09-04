@@ -6,9 +6,9 @@ import type Anthropic from "@anthropic-ai/sdk";
 import { createCapturingLogger } from "@pr-review/logging";
 import { describe, expect, it } from "vitest";
 
+import { buildReviewSystemPrompt } from "./definition.js";
 import {
   AgentRunError,
-  buildReviewSystemPrompt,
   createReviewAgent,
   type ReviewSystemPrompts,
 } from "./runtime.js";
@@ -21,11 +21,13 @@ import {
   makeGithub,
   message,
   pullRequest,
+  repositoryAgent,
   systemPromptOf,
   textBlock,
   toolUseBlock,
 } from "../agent-test-support.js";
-import { correctnessLens } from "./lenses.js";
+
+const correctnessAgent = repositoryAgent("correctness");
 
 const finding = {
   file: "src/sessions.ts",
@@ -46,7 +48,7 @@ function makeAgent(
   const { anthropic, create, requests } = makeAnthropic(responses);
   const github = makeGithub();
   const { logger, entries } = createCapturingLogger();
-  const agent = createReviewAgent(correctnessLens, {
+  const agent = createReviewAgent(correctnessAgent, {
     anthropic,
     model: "claude-test-model",
     github,
@@ -114,7 +116,7 @@ describe("the Correctness agent", () => {
     await agent.run(context);
 
     const system = systemPromptOf(create.mock.calls[0]?.[0]);
-    // The hardening rules plus the correctness lens's own focus.
+    // The hardening rules plus the correctness agent's own focus.
     expect(system).toMatch(/data.*not instructions|never instructions/is);
     expect(system).toMatch(/comments?.*(never|not).*instructions/is);
     expect(system).toMatch(/tool (results?|output).*(no|cannot|never).*(permission|privilege)/is);
@@ -260,7 +262,7 @@ describe("the Correctness agent", () => {
   it("propagates model API failures", async () => {
     const { anthropic } = makeAnthropic([]);
     anthropic.messages.create.mockRejectedValueOnce(new Error("529 overloaded"));
-    const agent = createReviewAgent(correctnessLens, {
+    const agent = createReviewAgent(correctnessAgent, {
       anthropic,
       model: "claude-test-model",
       github: makeGithub(),
@@ -385,7 +387,7 @@ describe("lifecycle events (spec §26)", () => {
     const { anthropic } = makeAnthropic([]);
     anthropic.messages.create.mockRejectedValueOnce(new Error("529 overloaded"));
     const { logger, entries } = createCapturingLogger();
-    const agent = createReviewAgent(correctnessLens, {
+    const agent = createReviewAgent(correctnessAgent, {
       anthropic,
       model: "claude-test-model",
       github: makeGithub(),
@@ -416,7 +418,7 @@ describe("lifecycle events (spec §26)", () => {
       .mockImplementationOnce(async () => toolTurn)
       .mockRejectedValueOnce(new Error("529 overloaded"));
     const { logger, entries } = createCapturingLogger();
-    const agent = createReviewAgent(correctnessLens, {
+    const agent = createReviewAgent(correctnessAgent, {
       anthropic,
       model: "claude-test-model",
       github: makeGithub(),
@@ -473,7 +475,7 @@ describe("prompt caching", () => {
       expect(params.system).toEqual([
         {
           type: "text",
-          text: buildReviewSystemPrompt(correctnessLens),
+          text: buildReviewSystemPrompt(correctnessAgent),
           cache_control: { type: "ephemeral" },
         },
       ]);
@@ -540,7 +542,7 @@ describe("prompt caching", () => {
 });
 
 describe("pre-resolved system prompts", () => {
-  it("uses the injected prompt for a lens that has one", async () => {
+  it("uses the injected prompt for an agent that has one", async () => {
     const injected = "INJECTED CORRECTNESS SYSTEM PROMPT";
     const { agent, create } = makeAgent(
       [message([textBlock(finalJson)], "end_turn")],
@@ -552,8 +554,8 @@ describe("pre-resolved system prompts", () => {
     expect(systemPromptOf(create.mock.calls[0]?.[0])).toBe(injected);
   });
 
-  it("falls back to the in-code prompt for a lens that has none", async () => {
-    // A map covering only other lenses must leave this one untouched.
+  it("falls back to the in-code prompt for an agent that has none", async () => {
+    // A map covering only other agents must leave this one untouched.
     const { agent, create } = makeAgent(
       [message([textBlock(finalJson)], "end_turn")],
       { systemPrompts: { security: "SOMEONE ELSE'S PROMPT" } },
@@ -562,7 +564,7 @@ describe("pre-resolved system prompts", () => {
     await agent.run(context);
 
     expect(systemPromptOf(create.mock.calls[0]?.[0])).toBe(
-      buildReviewSystemPrompt(correctnessLens),
+      buildReviewSystemPrompt(correctnessAgent),
     );
   });
 });

@@ -2,15 +2,9 @@
  * How a finding reads once it leaves the pipeline. Shared so the check
  * run and the review describe a finding identically.
  */
-import type { ReviewFinding } from "@pr-review/schemas";
+import { categoryLabel, type ReviewFinding } from "@pr-review/schemas";
 
 import type { AgentFailure } from "./review-graph.js";
-
-export const categoryLabels: Record<ReviewFinding["category"], string> = {
-  correctness: "Correctness",
-  security: "Security",
-  architecture: "Architecture",
-};
 
 /** `file` alone, or `file:line` when the finding is line-anchored. */
 export function location(finding: ReviewFinding): string {
@@ -19,9 +13,9 @@ export function location(finding: ReviewFinding): string {
     : `${finding.file}:${finding.line}`;
 }
 
-/** The finding's heading: severity, lens, and title. */
+/** The finding's heading: severity, agent, and title. */
 export function heading(finding: ReviewFinding): string {
-  return `${finding.severity.toUpperCase()} — ${categoryLabels[finding.category]}: ${finding.title}`;
+  return `${finding.severity.toUpperCase()} — ${categoryLabel(finding.category)}: ${finding.title}`;
 }
 
 /** A finding as a standalone Markdown block, location included. */
@@ -39,18 +33,13 @@ export function summarise(finding: ReviewFinding): string {
   return lines.join("\n");
 }
 
-/** The lens name in prose; an unrecognised name falls through verbatim. */
-export function lensLabel(agent: string): string {
-  return (categoryLabels as Record<string, string | undefined>)[agent] ?? agent;
-}
-
-/** Which lenses did not complete. Names only; error strings never reach GitHub. */
+/** Which agents did not complete. Names only; error strings never reach GitHub. */
 export function failureNotes(
   agentFailures: readonly AgentFailure[],
 ): string[] {
   return agentFailures.map(
     (failure) =>
-      `> **Note:** The ${lensLabel(failure.agent)} review did not complete, so its findings are missing from this run.`,
+      `> **Note:** The ${categoryLabel(failure.agent)} review did not complete, so its findings are missing from this run.`,
   );
 }
 

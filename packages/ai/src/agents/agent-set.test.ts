@@ -1,17 +1,16 @@
 /**
- * The three review lenses over the shared agent runtime. Model calls are
- * always scripted fakes.
+ * Agent selection, and this repository's configured agents over the shared
+ * agent runtime. There is no built-in agent set, so the fixtures here come
+ * from .github/pr-review-agents.yml. Model calls are scripted fakes.
  */
 import type Anthropic from "@anthropic-ai/sdk";
 import { createCapturingLogger } from "@pr-review/logging";
 import type { FindingCategory } from "@pr-review/schemas";
 import { describe, expect, it, vi } from "vitest";
 
-import {
-  buildReviewSystemPrompt,
-  createReviewAgent,
-  type ReviewAgentDeps,
-} from "./runtime.js";
+import { ALL_AGENTS, buildReviewSystemPrompt } from "./definition.js";
+import { createReviewAgents, resolveAgentDefinitions } from "./agent-set.js";
+import { createReviewAgent, type ReviewAgentDeps } from "./runtime.js";
 import { reviewPromptContractProblems } from "../prompts.js";
 import {
   context,
@@ -19,21 +18,16 @@ import {
   makeFinding,
   makeGithub,
   message,
+  repositoryAgent,
+  repositoryAgents,
   systemPromptOf,
   textBlock,
 } from "../agent-test-support.js";
-import {
-  ALL_LENSES,
-  architectureLens,
-  correctnessLens,
-  createReviewAgents,
-  resolveReviewLenses,
-  reviewLenses,
-  securityLens,
-} from "./lenses.js";
 
-const SECURITY_SYSTEM_PROMPT = buildReviewSystemPrompt(securityLens);
-const ARCHITECTURE_SYSTEM_PROMPT = buildReviewSystemPrompt(architectureLens);
+const configuredAgents = repositoryAgents();
+const correctnessAgent = repositoryAgent("correctness");
+const securityAgent = repositoryAgent("security");
+const architectureAgent = repositoryAgent("architecture");
 
 const SIX_TOOL_NAMES = [
   "get_base_file",
@@ -73,43 +67,60 @@ function expectInjectionHardened(system: string, category: FindingCategory): voi
 }
 
 describe("agent names", () => {
-  it("names each agent after its lens", () => {
+  it("names each agent after its agent", () => {
     const { deps } = makeDeps([]);
 
-    for (const lens of reviewLenses) {
-      expect(createReviewAgent(lens, deps).name).toBe(lens.category);
+    for (const agent of configuredAgents) {
+      expect(createReviewAgent(agent, deps).name).toBe(agent.category);
     }
   });
 
-  it("createReviewAgents returns the three lenses in spec order", () => {
+  it("createReviewAgents builds one agent per agent, in configuration order", () => {
     const { deps } = makeDeps([]);
 
-    expect(createReviewAgents(deps).map((agent) => agent.name)).toEqual([
-      "correctness",
-      "security",
-      "architecture",
-    ]);
+    expect(createReviewAgents(deps, configuredAgents).map((agent) => agent.name)).toEqual(
+      configuredAgents.map((agent) => agent.category),
+    );
   });
 
-  it("createReviewAgents builds only the lenses it is given", () => {
+  it("createReviewAgents builds only the agents it is given", () => {
     const { deps } = makeDeps([]);
 
     expect(
-      createReviewAgents(deps, [architectureLens]).map((agent) => agent.name),
+      createReviewAgents(deps, [architectureAgent]).map((agent) => agent.name),
     ).toEqual(["architecture"]);
   });
 });
 
-/** The pipeline already copes with any number of agents, so these pin the list. */
-describe("resolveReviewLenses", () => {
+describe("resolveAgentDefinitions", () => {
   const names = (selection: string): string[] =>
-    resolveReviewLenses(selection).map((lens) => lens.category);
+    resolveAgentDefinitions(selection, configuredAgents).map((agent) => agent.category);
+
+  it("selects over the agent set it is given, not this repository's", () => {
+    const performanceAgent = {
+      category: "performance",
+      role: "Performance reviewer",
+      focus: "Review ONLY for performance problems.",
+    };
+    const available = [correctnessAgent, performanceAgent];
+
+    expect(
+      resolveAgentDefinitions("performance", available).map((agent) => agent.category),
+    ).toEqual(["performance"]);
+    expect(
+      resolveAgentDefinitions(ALL_AGENTS, available).map((agent) => agent.category),
+    ).toEqual(["correctness", "performance"]);
+    // An agent absent from the given set is unknown, not implied.
+    expect(() => resolveAgentDefinitions("security", available)).toThrow(
+      /Unknown review agent: security/,
+    );
+  });
 
   it("treats an absent selection and an explicit `all` alike", () => {
     // An unset action input arrives as "", so the two must not differ.
     expect(names("")).toEqual(["correctness", "security", "architecture"]);
     expect(names("   ")).toEqual(["correctness", "security", "architecture"]);
-    expect(names(ALL_LENSES)).toEqual([
+    expect(names(ALL_AGENTS)).toEqual([
       "correctness",
       "security",
       "architecture",
@@ -117,7 +128,7 @@ describe("resolveReviewLenses", () => {
     expect(names("ALL")).toEqual(["correctness", "security", "architecture"]);
   });
 
-  it("selects a single lens", () => {
+  it("selects a single agent", () => {
     expect(names("architecture")).toEqual(["architecture"]);
   });
 
@@ -140,110 +151,71 @@ describe("resolveReviewLenses", () => {
     ]);
   });
 
-  it("selects every lens when all appears alongside a name", () => {
+  it("selects every agent when all appears alongside a name", () => {
     // The error used to name "all" in its own list of valid values.
-    expect(resolveReviewLenses("all,security")).toEqual([...reviewLenses]);
-    expect(resolveReviewLenses("security,all")).toEqual([...reviewLenses]);
+    expect(resolveAgentDefinitions("all,security", configuredAgents)).toEqual([...configuredAgents]);
+    expect(resolveAgentDefinitions("security,all", configuredAgents)).toEqual([...configuredAgents]);
   });
 
   it("still rejects a typo sitting next to all", () => {
-    expect(() => resolveReviewLenses("all,secuirty")).toThrow(
+    expect(() => resolveAgentDefinitions("all,secuirty", configuredAgents)).toThrow(
       /Unknown review agent: secuirty/,
     );
   });
 
   it("rejects an unknown name instead of silently dropping it", () => {
     // A dropped name would look exactly like a clean review.
-    expect(() => resolveReviewLenses("secuirty")).toThrow(
+    expect(() => resolveAgentDefinitions("secuirty", configuredAgents)).toThrow(
       /Unknown review agent: secuirty/,
     );
-    expect(() => resolveReviewLenses("secuirty")).toThrow(/architecture/);
+    expect(() => resolveAgentDefinitions("secuirty", configuredAgents)).toThrow(/architecture/);
   });
 
   it("rejects a selection that names nothing at all", () => {
-    expect(() => resolveReviewLenses(",")).toThrow(/No review agents selected/);
+    expect(() => resolveAgentDefinitions(",", configuredAgents)).toThrow(/No review agents selected/);
   });
 });
 
-describe("the Security lens prompt", () => {
-  it("focuses on the spec §10 security review targets", () => {
-    const system = SECURITY_SYSTEM_PROMPT;
-
-    expect(system).toMatch(/authentication/i);
-    expect(system).toMatch(/authorisation|authorization/i);
-    expect(system).toMatch(/cross-tenant/i);
-    expect(system).toMatch(/injection/i);
-    expect(system).toMatch(/secret/i);
-    expect(system).toMatch(/user input/i);
-    expect(system).toMatch(/log/i);
-    expect(system).toMatch(/privilege/i);
-  });
-
-  it("explicitly prefers no finding over a speculative one", () => {
-    expect(SECURITY_SYSTEM_PROMPT).toMatch(
-      /no finding.*(over|rather than).*speculative/is,
-    );
-  });
-
-  it("stamps the security category on the output contract", () => {
-    expect(SECURITY_SYSTEM_PROMPT).toMatch(/"category": always "security"/);
-  });
-
-  it("carries the same §21 prompt-injection hardening as Correctness", () => {
-    expectInjectionHardened(SECURITY_SYSTEM_PROMPT, "security");
-  });
-});
-
-describe("the Architecture lens prompt", () => {
-  it("focuses on the spec §11 architecture review targets", () => {
-    const system = ARCHITECTURE_SYSTEM_PROMPT;
-
-    expect(system).toMatch(/abstraction/i);
-    expect(system).toMatch(/duplicat/i);
-    expect(system).toMatch(/dependenc/i);
-    expect(system).toMatch(/boundar/i);
-    expect(system).toMatch(/existing pattern/i);
-    expect(system).toMatch(/business logic/i);
-  });
-
-  it("requires retrieving surrounding repository context before architectural claims", () => {
-    expect(ARCHITECTURE_SYSTEM_PROMPT).toMatch(
-      /(get_file|search_repository).*(before|prior to).*claim|before.*claim.*(get_file|search_repository)/is,
-    );
-    expect(ARCHITECTURE_SYSTEM_PROMPT).toMatch(/surrounding repository context/i);
-  });
-
-  it("stamps the architecture category on the output contract", () => {
-    expect(ARCHITECTURE_SYSTEM_PROMPT).toMatch(/"category": always "architecture"/);
-  });
-
-  it("carries the same §21 prompt-injection hardening as Correctness", () => {
-    expectInjectionHardened(ARCHITECTURE_SYSTEM_PROMPT, "architecture");
-  });
-});
-
-describe("prompt wiring", () => {
-  it("each agent sends its own lens prompt to the model", async () => {
-    for (const lens of reviewLenses) {
-      const { deps, create } = makeDeps([
-        message([textBlock(finalFindingsJson([]))], "end_turn"),
-      ]);
-
-      await createReviewAgent(lens, deps).run(context);
-
-      expect(systemPromptOf(create.mock.calls[0]?.[0])).toBe(
-        buildReviewSystemPrompt(lens),
+describe("the composed agent prompt", () => {
+  it("stamps each agent's own category on its output contract", () => {
+    // Losing the stamp fails silently: the runtime discards findings
+    // whose category is not the agent's own.
+    for (const agent of configuredAgents) {
+      expect(buildReviewSystemPrompt(agent)).toContain(
+        `"category": always "${agent.category}"`,
       );
     }
   });
 
-  it("every lens exposes the identical six read-only tools", async () => {
-    for (const lens of reviewLenses) {
+  it("carries the §21 prompt-injection hardening for every agent", () => {
+    for (const agent of configuredAgents) {
+      expectInjectionHardened(buildReviewSystemPrompt(agent), agent.category);
+    }
+  });
+});
+
+describe("prompt wiring", () => {
+  it("each agent sends its own agent prompt to the model", async () => {
+    for (const agent of configuredAgents) {
       const { deps, create } = makeDeps([
         message([textBlock(finalFindingsJson([]))], "end_turn"),
       ]);
 
-      await createReviewAgent(lens, deps).run(context);
+      await createReviewAgent(agent, deps).run(context);
+
+      expect(systemPromptOf(create.mock.calls[0]?.[0])).toBe(
+        buildReviewSystemPrompt(agent),
+      );
+    }
+  });
+
+  it("every agent exposes the identical six read-only tools", async () => {
+    for (const agent of configuredAgents) {
+      const { deps, create } = makeDeps([
+        message([textBlock(finalFindingsJson([]))], "end_turn"),
+      ]);
+
+      await createReviewAgent(agent, deps).run(context);
 
       const toolNames = (create.mock.calls[0]?.[0]?.tools ?? [])
         .map((tool) => tool.name)
@@ -253,7 +225,7 @@ describe("prompt wiring", () => {
   });
 });
 
-describe("three lenses over one PR context", () => {
+describe("this repository's agents over one PR context", () => {
   it("runs concurrently and each returns findings in its own category", async () => {
     // Each fake call resolves only once all three agents have called,
     // so sequential execution would deadlock this test.
@@ -263,13 +235,13 @@ describe("three lenses over one PR context", () => {
       releaseAll = resolve;
     });
 
-    function gatedLensAgent(lens: (typeof reviewLenses)[number]) {
-      const finding = makeFinding(lens.category);
+    function gatedAgent(agent: (typeof configuredAgents)[number]) {
+      const finding = makeFinding(agent.category);
       const deps: ReviewAgentDeps = {
         anthropic: {
           messages: {
             create: async () => {
-              started.push(lens.category);
+              started.push(agent.category);
               if (started.length === 3) {
                 releaseAll();
               }
@@ -285,12 +257,12 @@ describe("three lenses over one PR context", () => {
         github: makeGithub(),
         logger: createCapturingLogger().logger,
       };
-      return { agent: createReviewAgent(lens, deps), finding };
+      return { agent: createReviewAgent(agent, deps), finding };
     }
 
-    const correctness = gatedLensAgent(correctnessLens);
-    const security = gatedLensAgent(securityLens);
-    const architecture = gatedLensAgent(architectureLens);
+    const correctness = gatedAgent(correctnessAgent);
+    const security = gatedAgent(securityAgent);
+    const architecture = gatedAgent(architectureAgent);
 
     const [correctnessFindings, securityFindings, architectureFindings] =
       await Promise.all([

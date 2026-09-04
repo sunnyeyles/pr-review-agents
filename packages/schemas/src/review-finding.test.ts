@@ -37,11 +37,20 @@ describe("reviewFindingSchema", () => {
     }
   });
 
-  it("rejects an unknown category", () => {
+  it("accepts any category slug, because the agent set is configurable", () => {
+    // Membership is checked against the run's agents, not here.
     expect(
-      reviewFindingSchema.safeParse({ ...validFinding, category: "style" })
+      reviewFindingSchema.safeParse({ ...validFinding, category: "performance" })
         .success,
-    ).toBe(false);
+    ).toBe(true);
+  });
+
+  it("rejects a category that is not a lowercase slug", () => {
+    for (const category of ["", "Style", "sty le", "9lives", "style!"]) {
+      expect(
+        reviewFindingSchema.safeParse({ ...validFinding, category }).success,
+      ).toBe(false);
+    }
   });
 
   it("rejects an unknown severity", () => {
