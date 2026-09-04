@@ -37,8 +37,8 @@ describe("reviewFindingSchema", () => {
     }
   });
 
-  it("accepts any category slug, because the lens set is configurable", () => {
-    // Membership is checked against the run's lenses, not here.
+  it("accepts any category slug, because the agent set is configurable", () => {
+    // Membership is checked against the run's agents, not here.
     expect(
       reviewFindingSchema.safeParse({ ...validFinding, category: "performance" })
         .success,

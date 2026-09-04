@@ -20,7 +20,7 @@ import {
   makeAnthropic,
   makeFinding,
   message,
-  repositoryLenses,
+  repositoryAgents,
   textBlock,
 } from "../../packages/ai/src/agent-test-support.js";
 import { evalCases } from "./cases.js";
@@ -49,7 +49,7 @@ import { buildPatch, diffOps, toLines } from "./unified-diff.js";
 
 const MODEL = "harness-test-model";
 
-const configuredLenses = repositoryLenses();
+const configuredAgents = repositoryAgents();
 
 /** The line number of the first line containing `marker`. */
 function lineOf(contents: string, marker: string): number {
@@ -103,11 +103,11 @@ function scriptedDeps(
   const synthesised = Object.values(byCategory).flat();
   return {
     createAgents: (github: GithubInstallationClient): ReviewAgent[] =>
-      configuredLenses.map((lens) =>
-        createReviewAgent(lens, {
+      configuredAgents.map((agent) =>
+        createReviewAgent(agent, {
           anthropic: makeAnthropic([
             message(
-              [textBlock(finalFindingsJson(byCategory[lens.category] ?? []))],
+              [textBlock(finalFindingsJson(byCategory[agent.category] ?? []))],
               "end_turn",
             ),
           ]).anthropic,
@@ -121,7 +121,7 @@ function scriptedDeps(
         message([textBlock(finalFindingsJson(synthesised))], "end_turn"),
       ]).anthropic,
       model: MODEL,
-      lenses: configuredLenses,
+      agents: configuredAgents,
     }),
   };
 }
@@ -232,7 +232,7 @@ describe("generated diffs", () => {
       line: lineOf(contents, "and (display_name ilike $2 or email ilike $2)"),
     });
 
-    const categories = configuredLenses.map((lens) => lens.category);
+    const categories = configuredAgents.map((agent) => agent.category);
     expect(validateFindings([planted], [changed], categories)).toEqual([
       planted,
     ]);

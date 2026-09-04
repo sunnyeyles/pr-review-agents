@@ -4,7 +4,7 @@
  * module under test evaluates the guard.
  */
 import {
-  repositoryLensConfigYaml,
+  repositoryAgentConfigYaml,
   validRemotePrompt,
   validRemoteSynthesisPrompt,
 } from "../../../packages/ai/src/agent-test-support.js";
@@ -58,8 +58,8 @@ const validInputs = {
   "INPUT_GITHUB-TOKEN": "ghs-test-token",
 };
 
-/** The lens configuration a workspace would have checked out. */
-const lensConfigYaml = repositoryLensConfigYaml();
+/** The agent configuration a workspace would have checked out. */
+const agentConfigYaml = repositoryAgentConfigYaml();
 
 interface Harness {
   environment: ActionEnvironment;
@@ -108,7 +108,7 @@ function harness(
     exitCodes,
     environment: {
       env,
-      readWorkspaceFile: async () => lensConfigYaml,
+      readWorkspaceFile: async () => agentConfigYaml,
       readEventFile: (path) => {
         readPaths.push(path);
         return eventFile instanceof Error
@@ -161,7 +161,7 @@ function harness(
 }
 
 /**
- * Log entries other than the lens selection every run records, which
+ * Log entries other than the agent selection every run records, which
  * `agent selection` below covers on its own.
  */
 function beyondSelection<T extends { event?: unknown }>(entries: T[]): T[] {
@@ -319,7 +319,7 @@ describe("runAction", () => {
 
 /**
  * Selecting which agents run. Selection itself is pinned in
- * @pr-review/ai's lenses.test.ts; what belongs here is the wiring —
+ * @pr-review/ai's agents.test.ts; what belongs here is the wiring —
  * that the input reaches the parser, that the run always records which
  * agents it chose, and that a bad value costs nothing.
  */

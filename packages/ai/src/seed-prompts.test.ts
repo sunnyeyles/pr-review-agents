@@ -2,9 +2,9 @@
 import { createCapturingLogger } from "@pr-review/logging";
 import { describe, expect, it, vi } from "vitest";
 
-import { lensPromptKey } from "./agents/lens.js";
+import { agentPromptKey } from "./agents/definition.js";
 import {
-  repositoryLenses,
+  repositoryAgents,
   validRemotePrompt,
   validRemoteSynthesisPrompt,
 } from "./agent-test-support.js";
@@ -13,12 +13,12 @@ import {
   seedManagedPrompts,
   type LabelledPrompt,
   type LangfusePromptWriter,
-} from "./prompt-seed.js";
+} from "./seed-prompts.js";
 import { inCodePrompts } from "./prompts.js";
 
-const configuredLenses = repositoryLenses();
+const configuredAgents = repositoryAgents();
 
-/** One prompt per configured lens, all satisfying the contract guard. */
+/** One prompt per configured agent, all satisfying the contract guard. */
 function validPrompts() {
   return {
     correctness: validRemotePrompt("correctness", "SEED CORRECTNESS"),
@@ -231,9 +231,9 @@ describe("seedManagedPrompts", () => {
       logger: createCapturingLogger().logger,
     });
 
-    for (const id of Object.keys(inCodePrompts(configuredLenses))) {
+    for (const id of Object.keys(inCodePrompts(configuredAgents))) {
       expect(writer.readLabelled).toHaveBeenCalledWith(
-        lensPromptKey(id),
+        agentPromptKey(id),
         "staging",
       );
     }

@@ -13,16 +13,16 @@ import {
 import {
   SYNTHESIS_PROMPT_ID,
   buildReviewSystemPrompt,
-  lensPromptKey,
-  type ReviewLens,
-} from "./agents/lens.js";
+  agentPromptKey,
+  type AgentDefinition,
+} from "./agents/definition.js";
 import { buildSynthesisSystemPrompt } from "./agents/synthesiser.js";
 
 /** Where a resolved prompt came from. */
 export type PromptSource = "langfuse" | "fallback";
 
 /**
- * System prompts keyed by managed-prompt id — a lens category, or
+ * System prompts keyed by managed-prompt id — an agent category, or
  * SYNTHESIS_PROMPT_ID. inCodePrompts decides the set, and its keys are
  * the only place the ids are enumerated.
  */
@@ -56,7 +56,7 @@ export interface LangfusePromptClientConfig {
   baseUrl: string;
 }
 
-/** The SDK client shared by the prompt reader here and the writer in prompt-seed.ts. */
+/** The SDK client shared by the prompt reader here and the writer in seed-prompts.ts. */
 export function createLangfuseClient(
   config: LangfusePromptClientConfig,
 ): LangfuseClient {
@@ -121,9 +121,9 @@ function sharedPromptProblems(text: string): string[] {
 }
 
 /**
- * The invariants a review-lens system prompt must satisfy. A prompt that
+ * The invariants a review-agent system prompt must satisfy. A prompt that
  * loses its output contract fails silently — the runtime discards
- * findings whose category is not the lens's own.
+ * findings whose category is not the agent's own.
  */
 export function reviewPromptContractProblems(
   text: string,
@@ -154,29 +154,29 @@ export function reviewPromptContractProblems(
 /** The contract for one managed prompt; gates both fetched and about-to-be-seeded text. */
 export function promptContractProblems(id: string, text: string): string[] {
   // The synthesiser reads findings rather than a repository, so none of
-  // the lens-specific rules apply.
+  // the agent-specific rules apply.
   return id === SYNTHESIS_PROMPT_ID
     ? sharedPromptProblems(text)
     : reviewPromptContractProblems(text, id);
 }
 
 /**
- * The prompts one lens set implies, as this build defines them: both the
+ * The prompts one agent set implies, as this build defines them: both the
  * loader's fallback and the seeder's baseline, so the two can never
  * disagree.
  */
-export function inCodePrompts(lenses: readonly ReviewLens[]): ManagedPrompts {
+export function inCodePrompts(agents: readonly AgentDefinition[]): ManagedPrompts {
   const prompts: ManagedPrompts = {};
-  for (const lens of lenses) {
-    prompts[lens.category] = buildReviewSystemPrompt(lens);
+  for (const agent of agents) {
+    prompts[agent.category] = buildReviewSystemPrompt(agent);
   }
-  prompts[SYNTHESIS_PROMPT_ID] = buildSynthesisSystemPrompt(lenses);
+  prompts[SYNTHESIS_PROMPT_ID] = buildSynthesisSystemPrompt(agents);
   return prompts;
 }
 
 export interface LoadManagedPromptsOptions {
-  /** The run's lens set; decides which prompts are fetched. */
-  lenses: readonly ReviewLens[];
+  /** The run's agent set; decides which prompts are fetched. */
+  agents: readonly AgentDefinition[];
   /** Label to fetch. Defaults to DEFAULT_PROMPT_LABEL. */
   label?: string | undefined;
   logger?: StructuredLogger | undefined;
@@ -206,7 +206,7 @@ export async function loadManagedPrompts(
   const timeoutMs = options.timeoutMs ?? DEFAULT_PROMPT_TIMEOUT_MS;
 
   // Start from the in-code prompts so a fetch is only ever an upgrade.
-  const prompts: ManagedPrompts = inCodePrompts(options.lenses);
+  const prompts: ManagedPrompts = inCodePrompts(options.agents);
   const ids = Object.keys(prompts);
   const sources: Record<string, PromptSource> = Object.fromEntries(
     ids.map((id) => [id, "fallback" as PromptSource]),
@@ -214,7 +214,7 @@ export async function loadManagedPrompts(
 
   await Promise.all(
     ids.map(async (id) => {
-      const name = lensPromptKey(id);
+      const name = agentPromptKey(id);
       try {
         const text = await withDeadline(
           client.getTextPrompt(name, { label }),
@@ -244,8 +244,8 @@ export async function loadManagedPrompts(
   const fellBack = ids.filter((id) => sources[id] === "fallback");
   logger.info("langfuse.prompts.loaded", {
     label,
-    loadedPromptKeys: loaded.map(lensPromptKey),
-    fallbackPromptKeys: fellBack.map(lensPromptKey),
+    loadedPromptKeys: loaded.map(agentPromptKey),
+    fallbackPromptKeys: fellBack.map(agentPromptKey),
     loadedCount: loaded.length,
     fallbackCount: fellBack.length,
   });

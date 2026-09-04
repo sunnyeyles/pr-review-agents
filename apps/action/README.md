@@ -5,7 +5,7 @@ result as inline pull request review comments, alongside an `AI PR Review`
 check run carrying the full summary.
 
 This action ships no agents of its own. You declare them in
-`.github/pr-review.yml` and the review runs exactly those — see
+`.github/pr-review-agents.yml` and the review runs exactly those — see
 [Defining your agents](#defining-your-agents), which you need before the
 first run.
 
@@ -45,12 +45,12 @@ code they review.
 
 ## Defining your agents
 
-Each agent is one **lens**: a name, a role, and a focus. Declare them in
-`.github/pr-review.yml`. Nothing runs until you do — this action has no agents
+Each agent is one **agent**: a name, a role, and a focus. Declare them in
+`.github/pr-review-agents.yml`. Nothing runs until you do — this action has no agents
 of its own, so there is no default review to inherit and no fork to maintain.
 
 ```yaml
-lenses:
+agents:
   - category: correctness
     role: Correctness reviewer
     focus: |
@@ -77,14 +77,14 @@ agent may report; `synthesis` and `all` are reserved. Order decides the order
 findings reach the Synthesiser.
 
 The rest of each prompt — the injection hardening, the tool guidance, the JSON
-output contract — is shared, so a lens only ever states its own focus.
+output contract — is shared, so an agent only ever states its own focus.
 
 A missing file, a malformed one, or one declaring no agents fails the step
 before any model call: a review with the wrong agents, or none, looks exactly
 like a clean bill of health.
 
 A working three-agent starting point lives in
-[`.github/pr-review.yml`](https://github.com/sunnyeyles/pr-review-agents/blob/main/.github/pr-review.yml)
+[`.github/pr-review-agents.yml`](https://github.com/sunnyeyles/pr-review-agents/blob/main/.github/pr-review-agents.yml)
 of this action's repository — copy it and edit.
 
 ## Inputs
@@ -95,7 +95,7 @@ of this action's repository — copy it and edit.
 | `github-token` | no | `${{ github.token }}` | Token for the read-only tools, the review comments, and the check run. |
 | `model` | no | `claude-sonnet-5` | Anthropic model id. |
 | `agents` | no | `all` | Which of the configured agents run: `all`, or a comma-separated subset of their names. |
-| `lens-config` | no | `.github/pr-review.yml` | Path to the YAML file defining this repository's agents. Absent means the built-in set. |
+| `agent-config` | no | `.github/pr-review-agents.yml` | Path to the YAML file defining this repository's agents. Absent means the built-in set. |
 | `langfuse-public-key` | no | — | Langfuse public key. Set this and the secret key to manage prompts and collect traces. |
 | `langfuse-secret-key` | no | — | Langfuse secret key. Store it as a secret. |
 | `langfuse-base-url` | no | `https://cloud.langfuse.com` | Langfuse host, for self-hosted instances. |

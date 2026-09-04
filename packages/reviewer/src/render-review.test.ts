@@ -25,7 +25,7 @@ describe("renderReview", () => {
     expect(renderReview([])).toBeUndefined();
   });
 
-  it("posts nothing when only a lens failed, leaving the check run to say so", () => {
+  it("posts nothing when only an agent failed, leaving the check run to say so", () => {
     expect(renderReview([], [{ agent: "security", error: "timed out" }])).toBeUndefined();
   });
 
@@ -41,7 +41,7 @@ describe("renderReview", () => {
     ]);
   });
 
-  it("carries the severity and lens into the comment heading", () => {
+  it("carries the severity and agent into the comment heading", () => {
     const rendered = renderReview([finding({ severity: "medium", category: "security" })]);
 
     expect(rendered?.comments[0]?.body).toContain("**MEDIUM — Security:");
@@ -114,7 +114,7 @@ describe("renderReview", () => {
     expect(postedFindingKeys([{ body: "a human wrote this" }]).size).toBe(0);
   });
 
-  it("notes a lens that did not complete", () => {
+  it("notes an agent that did not complete", () => {
     const rendered = renderReview(
       [finding()],
       [{ agent: "architecture", error: "timed out" }],

@@ -13,42 +13,42 @@ import type {
 import type { ReviewFinding } from "@pr-review/schemas";
 import { vi } from "vitest";
 
-import type { ReviewLens } from "./agents/lens.js";
-import { parseLensConfig } from "./lens-config.js";
-import type { ReviewContext } from "./review-types.js";
+import type { AgentDefinition } from "./agents/definition.js";
+import { parseAgentConfig } from "./agents/config.js";
+import type { ReviewContext } from "./agent-contract.js";
 
-const REPOSITORY_LENS_CONFIG = ".github/pr-review.yml";
+const REPOSITORY_AGENT_CONFIG = ".github/pr-review-agents.yml";
 
 /** The shipped config file verbatim, for tests that feed it to a fake workspace. */
-export function repositoryLensConfigYaml(): string {
+export function repositoryAgentConfigYaml(): string {
   return readFileSync(
-    new URL(`../../../${REPOSITORY_LENS_CONFIG}`, import.meta.url),
+    new URL(`../../../${REPOSITORY_AGENT_CONFIG}`, import.meta.url),
     "utf8",
   );
 }
 
-let cachedLenses: ReviewLens[] | undefined;
+let cachedAgents: AgentDefinition[] | undefined;
 
 /**
- * This repository's own configured lenses — the starter set the README
+ * This repository's own configured agents — the starter set the README
  * points newcomers at. Tests use it as their fixture, which also keeps
- * the shipped file honest: nothing else defines lenses in code.
+ * the shipped file honest: nothing else defines agents in code.
  */
-export function repositoryLenses(): ReviewLens[] {
-  cachedLenses ??= parseLensConfig(
-    repositoryLensConfigYaml(),
-    REPOSITORY_LENS_CONFIG,
+export function repositoryAgents(): AgentDefinition[] {
+  cachedAgents ??= parseAgentConfig(
+    repositoryAgentConfigYaml(),
+    REPOSITORY_AGENT_CONFIG,
   );
-  return [...cachedLenses];
+  return [...cachedAgents];
 }
 
-/** One named lens from repositoryLenses(); an unknown name is a test bug. */
-export function repositoryLens(category: string): ReviewLens {
-  const lens = repositoryLenses().find((entry) => entry.category === category);
-  if (lens === undefined) {
-    throw new Error(`${REPOSITORY_LENS_CONFIG} defines no "${category}" lens`);
+/** One named agent from repositoryAgents(); an unknown name is a test bug. */
+export function repositoryAgent(category: string): AgentDefinition {
+  const agent = repositoryAgents().find((entry) => entry.category === category);
+  if (agent === undefined) {
+    throw new Error(`${REPOSITORY_AGENT_CONFIG} defines no "${category}" agent`);
   }
-  return lens;
+  return agent;
 }
 
 export const headSha = "6dcb09b5b57875f334f61aebed695e2e4193db5e";

@@ -1,13 +1,13 @@
 /**
- * A LangGraph playground — NOT part of the shipped pipeline. Three
- * runnable experiments over the mechanics review-graph.ts relies on.
+ * Pins the LangGraph behaviour review-graph.ts depends on, so an upgrade
+ * that changes it fails here rather than in the pipeline.
  */
 import { Annotation, END, START, StateGraph } from "@langchain/langgraph";
 import { describe, expect, it } from "vitest";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/* Experiment 1 — supersteps are real, and concurrency is implicit. */
+/* Supersteps are real, and concurrency is implicit. */
 
 const TraceState = Annotation.Root({
   /** Append-only: three nodes write this channel in the same superstep. */
@@ -35,7 +35,7 @@ function tracer(name: string, delayMs: number) {
   };
 }
 
-describe("experiment 1: supersteps and the fan-in barrier", () => {
+describe("supersteps and the fan-in barrier", () => {
   it("runs fan-out nodes concurrently against one frozen snapshot", async () => {
     const graph = new StateGraph(TraceState)
       .addNode("slow", tracer("slow", 30))
@@ -65,11 +65,11 @@ describe("experiment 1: supersteps and the fan-in barrier", () => {
 
     expect(final.sawAtJoin).toBe(3);
 
-    console.log("experiment 1 trace:", final.trace);
+    
   });
 });
 
-/* Experiment 2 — a cycle, the same shape as agent-runtime.ts tool loop. */
+/* A cycle, the same shape as the agents/runtime.ts tool loop. */
 
 const LoopState = Annotation.Root({
   turn: Annotation<number>({ reducer: (_l, r) => r, default: () => 0 }),
@@ -80,7 +80,7 @@ const LoopState = Annotation.Root({
   done: Annotation<boolean>({ reducer: (_l, r) => r, default: () => false }),
 });
 
-describe("experiment 2: cycles via conditional edges", () => {
+describe("cycles via conditional edges", () => {
   it("loops until the router sends it to END", async () => {
     const MAX_TURNS = 3;
 
@@ -112,7 +112,7 @@ describe("experiment 2: cycles via conditional edges", () => {
 });
 
 /*
- * Experiment 3 — the reducer as a concurrency contract. Three scanners
+ * The reducer as a concurrency contract. Three scanners
  * race; the result must be "high" whichever one wins.
  */
 
@@ -158,7 +158,7 @@ function buildScanGraph(delays: { low: number; medium: number; high: number }) {
     .compile();
 }
 
-describe("experiment 3: the reducer is the concurrency contract", () => {
+describe("the reducer is the concurrency contract", () => {
   it("merges two writes order-independently", () => {
     expect(worstSeverityReducer("low", "high")).toBe("high");
     expect(worstSeverityReducer("high", "low")).toBe("high");

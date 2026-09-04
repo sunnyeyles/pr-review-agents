@@ -10,8 +10,8 @@ import {
   type LangfusePromptWriter,
 } from "@pr-review/ai";
 import {
-  repositoryLensConfigYaml,
-  repositoryLenses,
+  repositoryAgentConfigYaml,
+  repositoryAgents,
 } from "../../../packages/ai/src/agent-test-support.js";
 import { createCapturingLogger } from "@pr-review/logging";
 import { describe, expect, it, vi } from "vitest";
@@ -22,17 +22,17 @@ import {
   main,
   parseSeedArgs,
   requireLangfuseConfig,
-} from "./prompts-seed-cli.js";
+} from "./seed-prompts-cli.js";
 
 const CREDENTIALS = {
   LANGFUSE_PUBLIC_KEY: "pk-test",
   LANGFUSE_SECRET_KEY: "sk-test",
 };
 
-const configuredLenses = repositoryLenses();
-const SYNTHESIS_SYSTEM_PROMPT = buildSynthesisSystemPrompt(configuredLenses);
+const configuredAgents = repositoryAgents();
+const SYNTHESIS_SYSTEM_PROMPT = buildSynthesisSystemPrompt(configuredAgents);
 /** The seeder reads the same config the action does. */
-const configYaml = repositoryLensConfigYaml();
+const configYaml = repositoryAgentConfigYaml();
 
 interface Harness {
   environment: Parameters<typeof main>[1] & {};
@@ -72,7 +72,7 @@ describe("parseSeedArgs", () => {
     expect(parseSeedArgs([])).toEqual({
       label: "production",
       dryRun: false,
-      config: ".github/pr-review.yml",
+      config: ".github/pr-review-agents.yml",
     });
   });
 
@@ -82,15 +82,15 @@ describe("parseSeedArgs", () => {
   });
 
   it("accepts --config in both spellings", () => {
-    expect(parseSeedArgs(["--config", "lenses.yml"]).config).toBe("lenses.yml");
-    expect(parseSeedArgs(["--config=lenses.yml"]).config).toBe("lenses.yml");
+    expect(parseSeedArgs(["--config", "agents.yml"]).config).toBe("agents.yml");
+    expect(parseSeedArgs(["--config=agents.yml"]).config).toBe("agents.yml");
   });
 
   it("accepts --dry-run alongside a label", () => {
     expect(parseSeedArgs(["--label", "staging", "--dry-run"])).toEqual({
       label: "staging",
       dryRun: true,
-      config: ".github/pr-review.yml",
+      config: ".github/pr-review-agents.yml",
     });
   });
 
@@ -99,7 +99,7 @@ describe("parseSeedArgs", () => {
     expect(parseSeedArgs(["--", "--dry-run"])).toEqual({
       label: "production",
       dryRun: true,
-      config: ".github/pr-review.yml",
+      config: ".github/pr-review-agents.yml",
     });
   });
 
@@ -163,7 +163,7 @@ describe("main", () => {
 
     await main([], environment);
 
-    const expected = inCodePrompts(configuredLenses);
+    const expected = inCodePrompts(configuredAgents);
     const byName = new Map(published.map((e) => [e.name, e.text]));
     expect(byName.get("correctness_system")).toBe(expected.correctness);
     expect(byName.get("security_system")).toBe(expected.security);

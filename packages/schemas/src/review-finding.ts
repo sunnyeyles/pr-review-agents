@@ -1,9 +1,9 @@
 import { z } from "zod";
 
 /**
- * A category names one review lens, and the set of lenses is
+ * A category names one review agent, and the set of agents is
  * configurable — so the shape is constrained here and membership is
- * checked against the lenses a given run was configured with.
+ * checked against the agents a given run was configured with.
  */
 export const findingCategorySchema = z
   .string()

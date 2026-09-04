@@ -1,6 +1,6 @@
 /**
- * The shared review-agent runtime — the tool loop every lens runs. A
- * ReviewLens supplies the role, focus, and category; the rest is
+ * The shared review-agent runtime — the tool loop every agent runs. A
+ * AgentDefinition supplies the role, focus, and category; the rest is
  * identical for every agent, however many are configured.
  */
 import type Anthropic from "@anthropic-ai/sdk";
@@ -13,11 +13,11 @@ import {
   type StructuredLogger,
 } from "@pr-review/logging";
 
-import { buildReviewSystemPrompt, type ReviewLens } from "./lens.js";
+import { buildReviewSystemPrompt, type AgentDefinition } from "./definition.js";
 import { extractAgentOutput, messageText } from "./output.js";
 import type { AnthropicLike } from "../anthropic.js";
 import { traceModelCall } from "../model-tracing.js";
-import type { ReviewAgent, ReviewContext } from "../review-types.js";
+import type { ReviewAgent, ReviewContext } from "../agent-contract.js";
 import { dispatchReviewTool, reviewTools, type ReviewToolScope } from "./tools.js";
 import { addTokenUsage, emptyTokenUsage } from "../usage.js";
 
@@ -97,10 +97,10 @@ const anthropicToolDefinitions: Anthropic.Messages.Tool[] = reviewTools.map(
   }),
 );
 
-/** Keyed by lens category. A lens with no entry uses buildReviewSystemPrompt. */
+/** Keyed by agent category. An agent with no entry uses buildReviewSystemPrompt. */
 export type ReviewSystemPrompts = Readonly<Record<string, string>>;
 
-/** What every review agent needs, regardless of lens. */
+/** What every review agent needs, regardless of agent. */
 export interface ReviewAgentDeps {
   anthropic: AnthropicLike;
   /** Model id from configuration (ANTHROPIC_MODEL); never hard-coded. */
@@ -109,7 +109,7 @@ export interface ReviewAgentDeps {
   maxTurns?: number | undefined;
   /** Receives agent.started / agent.completed / agent.failed. */
   logger?: StructuredLogger | undefined;
-  /** Pre-resolved system prompts; missing lenses fall back to the in-code prompt. */
+  /** Pre-resolved system prompts; missing agents fall back to the in-code prompt. */
   systemPrompts?: ReviewSystemPrompts | undefined;
 }
 
@@ -127,20 +127,20 @@ function toolUseBlocks(
 }
 
 /**
- * Builds one review agent: the given lens over the shared runtime,
+ * Builds one review agent: the given agent over the shared runtime,
  * with its tools bound to one installation's GitHub client.
  */
 export function createReviewAgent(
-  lens: ReviewLens,
+  agent: AgentDefinition,
   deps: ReviewAgentDeps,
 ): ReviewAgent {
   const maxTurns = deps.maxTurns ?? DEFAULT_MAX_TURNS;
   const systemPrompt =
-    deps.systemPrompts?.[lens.category] ?? buildReviewSystemPrompt(lens);
+    deps.systemPrompts?.[agent.category] ?? buildReviewSystemPrompt(agent);
   const logger = deps.logger ?? createConsoleLogger();
 
   return {
-    name: lens.category,
+    name: agent.category,
 
     async run(context: ReviewContext): Promise<readonly unknown[]> {
       const scope: ReviewToolScope = {
@@ -156,12 +156,12 @@ export function createReviewAgent(
         repository: `${context.owner}/${context.repo}`,
         pullRequestNumber: context.pullRequest.number,
         headSha: context.pullRequest.headSha,
-        agent: lens.category,
+        agent: agent.category,
       };
       logger.info("agent.started", eventFields);
       // With no tracing configured every observation call is a no-op.
       const agentObservation = startObservation(
-        `review-agent-${lens.category}`,
+        `review-agent-${agent.category}`,
         {
           input: {
             repository: eventFields.repository,
@@ -169,7 +169,7 @@ export function createReviewAgent(
             headSha: eventFields.headSha,
             changedFileCount: context.changedFiles.length,
           },
-          metadata: { agent: lens.category, model: deps.model },
+          metadata: { agent: agent.category, model: deps.model },
         },
         { asType: "agent" },
       );
@@ -260,7 +260,7 @@ export function createReviewAgent(
       };
 
       const turnCapExceeded = new AgentRunError(
-        `${lens.category} agent exceeded the ${maxTurns}-turn cap without returning findings`,
+        `${agent.category} agent exceeded the ${maxTurns}-turn cap without returning findings`,
       );
 
       try {
@@ -285,13 +285,13 @@ export function createReviewAgent(
         const output = extractAgentOutput(finalText);
         if (!output.ok) {
           throw new AgentRunError(
-            `${lens.category} agent produced invalid findings output ` +
+            `${agent.category} agent produced invalid findings output ` +
               `(stop_reason: ${apiStopReason ?? "unknown"}): ${output.error}`,
           );
         }
         // Cross-category findings are dropped, never re-stamped.
         const findings = output.findings.filter(
-          (finding) => finding.category === lens.category,
+          (finding) => finding.category === agent.category,
         );
 
         logger.info("agent.completed", {

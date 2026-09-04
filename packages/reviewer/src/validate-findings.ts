@@ -63,8 +63,8 @@ export function validateFindings(
   // 1. Schema validity.
   const wellFormed = wellFormedFindings(candidates);
 
-  // 2. Category is one the run's lenses own. The schema cannot check
-  // this: the lens set is configurable and known only at runtime.
+  // 2. Category is one the run's agents own. The schema cannot check
+  // this: the agent set is configurable and known only at runtime.
   const allowed = new Set(allowedCategories);
   const inCategory = wellFormed.filter((finding) =>
     allowed.has(finding.category),

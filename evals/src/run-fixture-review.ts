@@ -8,7 +8,7 @@ import {
   createReviewAgents,
   createSynthesiser,
   type ReviewAgent,
-  type ReviewLens,
+  type AgentDefinition,
   type Synthesiser,
 } from "@pr-review/ai";
 import type { GithubInstallationClient } from "@pr-review/github";
@@ -55,13 +55,13 @@ export interface FixtureReview {
 }
 
 /**
- * The production wiring, over the lens set the caller evaluates —
+ * The production wiring, over the agent set the caller evaluates —
  * normally this repository's own configuration.
  */
 export function modelBackedDeps(
   access: ModelAccess,
   logger: StructuredLogger | undefined,
-  lenses: readonly ReviewLens[],
+  agents: readonly AgentDefinition[],
 ): FixtureReviewDeps {
   const anthropic = createAnthropicClient({ apiKey: access.apiKey });
   const model = access.model;
@@ -69,9 +69,9 @@ export function modelBackedDeps(
     createAgents: (github, reviewLogger) =>
       createReviewAgents(
         { anthropic, model, github, logger: reviewLogger },
-        lenses,
+        agents,
       ),
-    synthesiser: createSynthesiser({ anthropic, model, lenses }),
+    synthesiser: createSynthesiser({ anthropic, model, agents }),
     logger,
   };
 }

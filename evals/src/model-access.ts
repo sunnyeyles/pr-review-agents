@@ -11,7 +11,7 @@ export const MODEL_ENV = "ANTHROPIC_MODEL";
 
 /**
  * Narrows which review agents the evaluations run, spelled like the
- * action's `agents` input. Expectations for a lens that no longer runs
+ * action's `agents` input. Expectations for an agent that no longer runs
  * will fail, and should.
  */
 export const AGENTS_ENV = "REVIEW_AGENTS";

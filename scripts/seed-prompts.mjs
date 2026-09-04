@@ -15,7 +15,7 @@
  * The alternative — copying the prompt text into this file — would
  * create a second definition of the exact thing the contract guard
  * exists to protect, and the copy would be wrong the first time
- * anyone edited a lens. So the prompts reach this script the same way
+ * anyone edited an agent. So the prompts reach this script the same way
  * they reach the Actions runner: through esbuild.
  *
  * The bundle is a temporary artefact rather than dist/, because it is
@@ -30,7 +30,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { bundle } from "./lib/bundle.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const entryPoint = path.join(repoRoot, "apps/action/src/prompts-seed-cli.ts");
+const entryPoint = path.join(repoRoot, "apps/action/src/seed-prompts-cli.ts");
 
 /**
  * Reads .env.local into a plain object. It is gitignored and holds

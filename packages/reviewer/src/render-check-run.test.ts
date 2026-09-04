@@ -187,7 +187,7 @@ describe("renderCheckRun with agent failures", () => {
     error: "model unavailable at https://internal-host.example",
   };
 
-  it("notes the failed lens in the summary alongside the surviving findings", () => {
+  it("notes the failed agent in the summary alongside the surviving findings", () => {
     const rendered = renderCheckRun([finding()], [failure]);
 
     expect(rendered.conclusion).toBe("neutral");
@@ -200,10 +200,10 @@ describe("renderCheckRun with agent failures", () => {
     );
   });
 
-  it("notes the failed lens even when no finding survived, without claiming success", () => {
+  it("notes the failed agent even when no finding survived, without claiming success", () => {
     const rendered = renderCheckRun([], [failure]);
 
-    // A review missing a whole lens must not publish a clean bill of
+    // A review missing a whole agent must not publish a clean bill of
     // health: the conclusion drops from "success" to "neutral".
     expect(rendered.conclusion).toBe("neutral");
     expect(rendered.output.title).toMatch(/no issues found/i);
@@ -212,7 +212,7 @@ describe("renderCheckRun with agent failures", () => {
     );
   });
 
-  it("lists every failed lens", () => {
+  it("lists every failed agent", () => {
     const rendered = renderCheckRun(
       [],
       [failure, { agent: "architecture", error: "turn cap exceeded" }],

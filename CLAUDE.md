@@ -85,12 +85,12 @@ pnpm eval          # vitest run --config evals/vitest.eval.config.ts
 
 ### Issue tracker
 
-Issues live as markdown files under `.scratch/<feature>/` in this repo. See `docs/agents/issue-tracker.md`.
+Issues live as markdown files under `.scratch/<feature>/` in this repo. See `docs/claude/issue-tracker.md`.
 
 ### Triage labels
 
-The five default triage roles, used as-is. See `docs/agents/triage-labels.md`.
+The five default triage roles, used as-is. See `docs/claude/triage-labels.md`.
 
 ### Domain docs
 
-Single-context: `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+Single-context: `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/claude/domain.md`.

@@ -13,7 +13,7 @@ export {
   messageText,
   type AgentOutputResult,
 } from "./agents/output.js";
-export type { ReviewAgent, ReviewContext } from "./review-types.js";
+export type { ReviewAgent, ReviewContext } from "./agent-contract.js";
 export { addTokenUsage, emptyTokenUsage, type TokenUsage } from "./usage.js";
 export {
   AgentRunError,
@@ -22,22 +22,22 @@ export {
   type ReviewSystemPrompts,
 } from "./agents/runtime.js";
 export {
-  ALL_LENSES,
+  ALL_AGENTS,
   SYNTHESIS_PROMPT_ID,
-  type ReviewLens,
-} from "./agents/lens.js";
+  type AgentDefinition,
+} from "./agents/definition.js";
 export {
   createReviewAgents,
-  resolveReviewLenses,
-} from "./agents/lens-set.js";
+  resolveAgentDefinitions,
+} from "./agents/agent-set.js";
 export {
-  DEFAULT_LENS_CONFIG_PATH,
-  LensConfigError,
-  loadLensSet,
-  parseLensConfig,
-  type LoadLensSetOptions,
+  DEFAULT_AGENT_CONFIG_PATH,
+  AgentConfigError,
+  loadAgentDefinitions,
+  parseAgentConfig,
+  type LoadAgentDefinitionsOptions,
   type ReadOptionalFile,
-} from "./lens-config.js";
+} from "./agents/config.js";
 export {
   SynthesisError,
   buildSynthesisSystemPrompt,
@@ -70,7 +70,7 @@ export {
   type SeedManagedPromptsOptions,
   type SeedOutcome,
   type SeedReport,
-} from "./prompt-seed.js";
+} from "./seed-prompts.js";
 export {
   traceModelCall,
   type GenerationParent,
