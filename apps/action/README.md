@@ -34,7 +34,7 @@ jobs:
     steps:
       - uses: sunnyeyles/pr-review-action@v1
         with:
-          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          api-key: ${{ secrets.ANTHROPIC_API_KEY }}
 ```
 
 No checkout step is needed. Everything — the pull request, the diff, and the
@@ -89,15 +89,37 @@ of this action's repository — copy it and edit.
 
 | Input | Required | Default | Purpose |
 | --- | --- | --- | --- |
-| `anthropic-api-key` | yes | — | Key the agents and Synthesiser authenticate with. Store it as a secret. |
+| `api-key` | yes | — | Key for the selected provider, which the agents and Synthesiser authenticate with. Store it as a secret. |
+| `model-provider` | no | `anthropic` | Which provider to call: `anthropic` or `openai`. An unknown name fails the step before any model call. |
 | `github-token` | no | `${{ github.token }}` | Token for the read-only tools, the review comments, and the check run. |
-| `model` | no | `claude-sonnet-5` | Anthropic model id. |
+| `model` | no | the provider's own | Model id, as the provider spells it: `claude-sonnet-5` on `anthropic`, `gpt-5` on `openai`. |
+| `model-base-url` | no | the provider's own host | Overrides the provider's API host — a gateway, a proxy, or a compatible endpoint. |
 | `agents` | no | `all` | Which of the configured agents run: `all`, or a comma-separated subset of their names. |
 | `agent-config` | no | `.github/pr-review-agents.yml` | Path to the YAML file defining this repository's agents, read from the pull request's base commit. The file itself is required — there is no built-in set, and a missing one fails the step. |
 | `langfuse-public-key` | no | — | Langfuse public key. Set this and the secret key to manage prompts and collect traces. |
 | `langfuse-secret-key` | no | — | Langfuse secret key. Store it as a secret. |
 | `langfuse-base-url` | no | `https://cloud.langfuse.com` | Langfuse host, for self-hosted instances. |
 | `langfuse-prompt-label` | no | `production` | Which labelled version of each prompt to fetch. |
+
+## Model providers
+
+The action is provider-agnostic: `model-provider` picks the adapter, `api-key`
+carries that provider's key, and `model` names the model as that provider
+spells it.
+
+```yaml
+        with:
+          model-provider: openai
+          api-key: ${{ secrets.OPENAI_API_KEY }}
+          model: gpt-5
+```
+
+`model-base-url` points the selected adapter somewhere else — an Azure
+deployment, a gateway, or a self-hosted server speaking that provider's API.
+
+Prompt caching is requested on every turn and honoured where the provider
+supports it; the token counters report cache writes and reads separately, and a
+provider that reports neither leaves them at zero.
 
 ## Langfuse (optional)
 

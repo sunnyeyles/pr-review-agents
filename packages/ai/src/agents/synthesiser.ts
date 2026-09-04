@@ -5,7 +5,7 @@
  */
 import { startObservation } from "@langfuse/tracing";
 import { extractAgentOutput, messageText } from "./output.js";
-import type { AnthropicLike } from "../anthropic.js";
+import type { ModelClient } from "../model/types.js";
 import { traceModelCall } from "../model-tracing.js";
 import { addTokenUsage, emptyTokenUsage, type TokenUsage } from "../usage.js";
 import { errorMessage } from "@pr-review/logging";
@@ -82,9 +82,9 @@ export function buildSynthesisMessage(
 }
 
 export interface SynthesiserDeps {
-  anthropic: AnthropicLike;
-  /** Model id from configuration (ANTHROPIC_MODEL); never hard-coded. */
-  model: string;
+  model: ModelClient;
+  /** Model id from configuration; never hard-coded. */
+  modelId: string;
   /** The run's agent set, which names the categories the prompt accepts. */
   agents: readonly AgentDefinition[];
   /** Omitted means the prompt built from `agents`. */
@@ -103,7 +103,7 @@ export interface Synthesiser {
   synthesise(candidates: readonly unknown[]): Promise<SynthesisResult>;
 }
 
-/** Builds the Synthesiser over the shared Anthropic seam. */
+/** Builds the Synthesiser over the shared model seam. */
 export function createSynthesiser(deps: SynthesiserDeps): Synthesiser {
   const systemPrompt =
     deps.systemPrompt ?? buildSynthesisSystemPrompt(deps.agents);
@@ -121,7 +121,11 @@ export function createSynthesiser(deps: SynthesiserDeps): Synthesiser {
         // Malformed candidates could never survive validation anyway.
         const wellFormed = wellFormedFindings(candidates);
         observation.update({
-          metadata: { model: deps.model, wellFormedCount: wellFormed.length },
+          metadata: {
+            provider: deps.model.provider,
+            model: deps.modelId,
+            wellFormedCount: wellFormed.length,
+          },
         });
 
         if (wellFormed.length === 0) {
@@ -133,14 +137,15 @@ export function createSynthesiser(deps: SynthesiserDeps): Synthesiser {
         const response = await traceModelCall(
           observation,
           {
-            model: deps.model,
+            provider: deps.model.provider,
+            model: deps.modelId,
             input: { wellFormedCount: wellFormed.length },
             maxTokens: MAX_OUTPUT_TOKENS,
           },
           () =>
-            deps.anthropic.messages.create({
-              model: deps.model,
-              max_tokens: MAX_OUTPUT_TOKENS,
+            deps.model.createMessage({
+              model: deps.modelId,
+              maxOutputTokens: MAX_OUTPUT_TOKENS,
               system: systemPrompt,
               messages: [
                 { role: "user", content: buildSynthesisMessage(wellFormed) },
@@ -153,7 +158,7 @@ export function createSynthesiser(deps: SynthesiserDeps): Synthesiser {
         if (!output.ok) {
           throw new SynthesisError(
             `synthesiser produced invalid findings output ` +
-              `(stop_reason: ${response.stop_reason ?? "unknown"}): ${output.error}`,
+              `(stop reason: ${response.stopReason ?? "unknown"}): ${output.error}`,
           );
         }
         observation.update({

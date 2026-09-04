@@ -5,7 +5,6 @@
 import { createCapturingLogger } from "@pr-review/logging";
 import { describe, expect, it, vi } from "vitest";
 
-import type { AnthropicLike } from "./anthropic.js";
 import {
   repositoryAgents,
   validRemoteSynthesisPrompt,
@@ -14,34 +13,29 @@ import {
   buildSynthesisSystemPrompt,
   createSynthesiser,
 } from "./agents/synthesiser.js";
+import type { ModelClient, ModelRequest } from "./model/types.js";
 import { loadManagedPrompts, type LangfusePromptClient } from "./prompts.js";
 
 const configuredAgents = repositoryAgents();
 const SYNTHESIS_SYSTEM_PROMPT = buildSynthesisSystemPrompt(configuredAgents);
 
-/** The message shape the Anthropic seam resolves to. */
-type CreateResult = Awaited<ReturnType<AnthropicLike["messages"]["create"]>>;
-
 /** Records what reached the model and answers with an empty result. */
-function recordingAnthropic(): {
-  anthropic: AnthropicLike;
-  calls: { system?: string }[];
-} {
-  const calls: { system?: string }[] = [];
-  const create = vi.fn((params: { system?: string }) => {
-    calls.push(params);
+function recordingModel(): { model: ModelClient; calls: ModelRequest[] } {
+  const calls: ModelRequest[] = [];
+  const createMessage = vi.fn((request: ModelRequest) => {
+    calls.push(request);
     return Promise.resolve({
-      id: "msg_test",
-      type: "message",
-      role: "assistant",
-      model: "claude-test-model",
-      content: [{ type: "text", text: JSON.stringify({ findings: [] }) }],
-      stop_reason: "end_turn",
-      stop_sequence: null,
-      usage: { input_tokens: 1, output_tokens: 1 },
-    } as unknown as CreateResult);
+      content: [{ type: "text" as const, text: JSON.stringify({ findings: [] }) }],
+      stopReason: "end_turn",
+      usage: {
+        inputTokens: 1,
+        outputTokens: 1,
+        cacheCreationInputTokens: 0,
+        cacheReadInputTokens: 0,
+      },
+    });
   });
-  return { anthropic: { messages: { create } } as AnthropicLike, calls };
+  return { model: { provider: "test-provider", createMessage }, calls };
 }
 
 function clientReturning(text: string): LangfusePromptClient {
@@ -79,10 +73,10 @@ describe("resolving the synthesis prompt", () => {
     );
     expect(sources.synthesis).toBe("langfuse");
 
-    const { anthropic, calls } = recordingAnthropic();
+    const { model, calls } = recordingModel();
     const synthesiser = createSynthesiser({
-      anthropic,
-      model: "claude-test-model",
+      model,
+      modelId: "test-model",
       agents: configuredAgents,
       systemPrompt: prompts.synthesis,
     });

@@ -36,22 +36,28 @@ const response = message([textBlock("done")], "end_turn", {
 });
 
 describe("traceModelCall", () => {
-  it("opens one call-anthropic-model generation with the call's shape", async () => {
+  it("opens one call-model generation with the call's shape", async () => {
     const { parent, starts } = fakeParent();
 
     await traceModelCall(
       parent,
-      { model: "claude-test-model", input: { messageCount: 3 }, maxTokens: 8_000 },
+      {
+        provider: "test-provider",
+        model: "test-model",
+        input: { messageCount: 3 },
+        maxTokens: 8_000,
+      },
       () => Promise.resolve(response),
     );
 
     expect(starts).toEqual([
       {
-        name: "call-anthropic-model",
+        name: "call-model",
         attributes: {
-          model: "claude-test-model",
+          model: "test-model",
           input: { messageCount: 3 },
           modelParameters: { maxTokens: 8_000 },
+          metadata: { provider: "test-provider" },
         },
       },
     ]);
@@ -62,7 +68,7 @@ describe("traceModelCall", () => {
 
     const result = await traceModelCall(
       parent,
-      { model: "m", input: {}, maxTokens: 1 },
+      { provider: "p", model: "m", input: {}, maxTokens: 1 },
       () => Promise.resolve(response),
     );
 
@@ -90,7 +96,7 @@ describe("traceModelCall", () => {
 
     await traceModelCall(
       parent,
-      { model: "m", input: {}, maxTokens: 1 },
+      { provider: "p", model: "m", input: {}, maxTokens: 1 },
       () => Promise.resolve(uncached),
     );
 
@@ -106,7 +112,7 @@ describe("traceModelCall", () => {
     const { parent, updates, endCount } = fakeParent();
 
     await expect(
-      traceModelCall(parent, { model: "m", input: {}, maxTokens: 1 }, () =>
+      traceModelCall(parent, { provider: "p", model: "m", input: {}, maxTokens: 1 }, () =>
         Promise.reject(new Error("overloaded")),
       ),
     ).rejects.toThrow("overloaded");
@@ -122,7 +128,7 @@ describe("traceModelCall", () => {
 
     const call = vi.fn(() => Promise.reject(thrown));
     await expect(
-      traceModelCall(parent, { model: "m", input: {}, maxTokens: 1 }, call),
+      traceModelCall(parent, { provider: "p", model: "m", input: {}, maxTokens: 1 }, call),
     ).rejects.toBe(thrown);
     expect(call).toHaveBeenCalledTimes(1);
   });

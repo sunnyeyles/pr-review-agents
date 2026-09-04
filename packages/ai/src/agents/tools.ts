@@ -25,7 +25,7 @@ export interface ReviewToolInputSchema {
   properties: Record<string, unknown>;
   required?: string[];
   additionalProperties: false;
-  /** Structural compatibility with the SDK's Tool.InputSchema. */
+  /** Structural compatibility with ModelToolDefinition's JSON Schema. */
   [key: string]: unknown;
 }
 

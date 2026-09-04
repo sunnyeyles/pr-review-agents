@@ -2,7 +2,8 @@ name: AI PR Review
 description: >-
   Reviews a pull request with the independent AI review agents the repository
   declares in .github/pr-review-agents.yml, and publishes an AI PR Review check run
-  with inline annotations. No agents are built in.
+  with inline annotations. No agents are built in, and the model provider is
+  configurable.
 author: sunnyeyles
 
 branding:
@@ -10,11 +11,25 @@ branding:
   color: purple
 
 inputs:
+  model-provider:
+    description: >-
+      Which model provider the review agents and Synthesiser call: `anthropic`
+      or `openai`. An unknown name fails the step before any model call.
+    required: false
+    default: anthropic
+  api-key:
+    description: >-
+      API key for the selected provider. Store it as a repository or
+      organisation secret; never inline it. Required unless the deprecated
+      anthropic-api-key input is used instead.
+    required: false
+    default: ""
   anthropic-api-key:
     description: >-
-      Anthropic API key the review agents and Synthesiser authenticate with.
-      Store it as a repository or organisation secret; never inline it.
-    required: true
+      Deprecated alias for api-key, kept so existing workflows on the
+      Anthropic provider keep working. Prefer api-key.
+    required: false
+    default: ""
   github-token:
     description: >-
       Token used for the six read-only repository tools, for the review
@@ -24,9 +39,19 @@ inputs:
     required: false
     default: ${{ github.token }}
   model:
-    description: Anthropic model id the agents and Synthesiser use.
+    description: >-
+      Model id the agents and Synthesiser use, as the selected provider spells
+      it. Leave empty for that provider's default (claude-sonnet-5 on
+      anthropic, gpt-5 on openai).
     required: false
-    default: claude-sonnet-5
+    default: ""
+  model-base-url:
+    description: >-
+      Overrides the provider's API host — point it at a gateway, a proxy, or
+      any endpoint compatible with the selected provider's API. Leave empty to
+      use the provider's own host.
+    required: false
+    default: ""
   agents:
     description: >-
       Which of the configured review agents run: `all`, or a comma-separated

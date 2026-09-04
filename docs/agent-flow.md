@@ -23,7 +23,7 @@ flowchart TD
     subgraph BOOT["1 · Boot — apps/action"]
         ENTRY["runEntrypoint / runAction<br/><code>index.ts</code>"]
         ENTRY --> AGENT["loadAgentDefinitions → resolveAgentDefinitions<br/><i>which agents exist, then which run</i>"]
-        AGENT --> CLIENTS["build Anthropic + GitHub clients<br/>start tracing, fetch prompts"]
+        AGENT --> CLIENTS["build model + GitHub clients<br/>start tracing, fetch prompts"]
     end
 
     CLIENTS --> INSPECT["2 · inspectEvent<br/><code>event.ts</code>"]
@@ -102,7 +102,7 @@ prompt fetch so the fetch's own spans are captured.
 | --- | --- | --- |
 | Load configured agents | `loadAgentDefinitions` | Yes — missing or malformed config |
 | Narrow to the selection | `resolveAgentDefinitions` | Yes — unknown name |
-| Anthropic client | `createAnthropicClient` | Yes — missing key |
+| Model client | `createModelClient` | Yes — unknown provider or missing key |
 | Langfuse tracing | `createLangfuseRuntime` | No — optional |
 | Managed prompts | `loadManagedPrompts` | No — falls back per prompt |
 | GitHub client | `createTokenClient` | Yes — missing token |

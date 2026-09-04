@@ -2,8 +2,10 @@
 # apps/action, built from the branch under review rather than a published tag.
 # If a change breaks the reviewer, it shows up on the pull request that made it.
 #
-# Requires an ANTHROPIC_API_KEY repository secret. Without one the job is
-# skipped rather than failed, so forks and unconfigured clones stay green.
+# Requires the selected provider's API key as a repository secret — set
+# vars.MODEL_PROVIDER to pick one, defaulting to Anthropic. Without a key the
+# job is skipped rather than failed, so forks and unconfigured clones stay
+# green.
 
 name: Self review
 
@@ -25,15 +27,15 @@ jobs:
     name: AI PR Review
     runs-on: ubuntu-latest
     steps:
-      - name: Check for an Anthropic key
+      - name: Check for a model provider key
         id: key
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          API_KEY: ${{ secrets.OPENAI_API_KEY || secrets.ANTHROPIC_API_KEY }}
         run: |
-          if [ -n "$ANTHROPIC_API_KEY" ]; then
+          if [ -n "$API_KEY" ]; then
             echo "present=true" >> "$GITHUB_OUTPUT"
           else
-            echo "::notice::ANTHROPIC_API_KEY is not set — skipping the self review"
+            echo "::notice::No model provider API key is set — skipping the self review"
             echo "present=false" >> "$GITHUB_OUTPUT"
           fi
 
@@ -66,7 +68,10 @@ jobs:
         if: steps.key.outputs.present == 'true'
         uses: ./apps/action
         with:
-          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Set vars.MODEL_PROVIDER to review with a different provider; the
+          # matching secret below is the one that gets used.
+          model-provider: ${{ vars.MODEL_PROVIDER || 'anthropic' }}
+          api-key: ${{ secrets.OPENAI_API_KEY || secrets.ANTHROPIC_API_KEY }}
           # The agents come from .github/pr-review-agents.yml, read at the
           # pull request's base commit rather than from the checkout above.
           # Narrow the review from repository variables — set

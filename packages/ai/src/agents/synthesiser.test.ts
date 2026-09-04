@@ -1,8 +1,8 @@
-import type { AnthropicLike } from "../anthropic.js";
 import type { ReviewFinding } from "@pr-review/schemas";
 import { describe, expect, it } from "vitest";
 
 import { repositoryAgents } from "../agent-test-support.js";
+import type { ModelClient, ModelRequest } from "../model/types.js";
 import {
   SynthesisError,
   buildSynthesisMessage,
@@ -13,7 +13,7 @@ import {
 const configuredAgents = repositoryAgents();
 const SYNTHESIS_SYSTEM_PROMPT = buildSynthesisSystemPrompt(configuredAgents);
 
-const model = "claude-test-model";
+const modelId = "test-model";
 
 /** A schema-valid candidate finding, overridable per test. */
 function makeFinding(overrides: Partial<ReviewFinding> = {}): ReviewFinding {
@@ -52,7 +52,7 @@ const combinedFinding = makeFinding({
   confidence: 0.95,
 });
 
-type CreateParams = Parameters<AnthropicLike["messages"]["create"]>[0];
+type CreateParams = ModelRequest;
 
 /** One scripted response: text, optionally with explicit token usage. */
 type ScriptedResponse =
@@ -64,50 +64,37 @@ type ScriptedResponse =
  * Each entry is the next response's text, or an Error to reject with.
  * Captures every create() params object for assertions.
  */
-function makeAnthropic(script: readonly ScriptedResponse[]) {
+function makeModel(script: readonly ScriptedResponse[]) {
   const queue = [...script];
   const calls: CreateParams[] = [];
-  const anthropic: AnthropicLike = {
-    messages: {
-      create: async (params) => {
-        calls.push(params);
-        const next = queue.shift();
-        if (next === undefined) {
-          throw new Error("fake anthropic client ran out of scripted responses");
-        }
-        if (next instanceof Error) {
-          throw next;
-        }
-        const scripted =
-          typeof next === "string"
-            ? { text: next, inputTokens: 1, outputTokens: 1 }
-            : next;
-        return {
-          id: "msg_synthesis",
-          type: "message",
-          role: "assistant",
-          model: params.model,
-          container: null,
-          content: [{ type: "text", text: scripted.text, citations: null }],
-          stop_reason: "end_turn",
-          stop_details: null,
-          stop_sequence: null,
-          usage: {
-            input_tokens: scripted.inputTokens,
-            output_tokens: scripted.outputTokens,
-            cache_creation: null,
-            cache_creation_input_tokens: null,
-            cache_read_input_tokens: null,
-            inference_geo: null,
-            output_tokens_details: null,
-            server_tool_use: null,
-            service_tier: null,
-          },
-        };
-      },
+  const model: ModelClient = {
+    provider: "test-provider",
+    createMessage: async (request) => {
+      calls.push(request);
+      const next = queue.shift();
+      if (next === undefined) {
+        throw new Error("fake model client ran out of scripted responses");
+      }
+      if (next instanceof Error) {
+        throw next;
+      }
+      const scripted =
+        typeof next === "string"
+          ? { text: next, inputTokens: 1, outputTokens: 1 }
+          : next;
+      return {
+        content: [{ type: "text", text: scripted.text }],
+        stopReason: "end_turn",
+        usage: {
+          inputTokens: scripted.inputTokens,
+          outputTokens: scripted.outputTokens,
+          cacheCreationInputTokens: 0,
+          cacheReadInputTokens: 0,
+        },
+      };
     },
   };
-  return { anthropic, calls };
+  return { model, calls };
 }
 
 function findingsJson(findings: readonly ReviewFinding[]): string {
@@ -116,8 +103,8 @@ function findingsJson(findings: readonly ReviewFinding[]): string {
 
 describe("createSynthesiser", () => {
   it("combines duplicates across agents into the model's single refined finding", async () => {
-    const { anthropic } = makeAnthropic([findingsJson([combinedFinding])]);
-    const synthesiser = createSynthesiser({ anthropic, model, agents: configuredAgents });
+    const { model } = makeModel([findingsJson([combinedFinding])]);
+    const synthesiser = createSynthesiser({ model, modelId, agents: configuredAgents });
 
     const { findings } = await synthesiser.synthesise([
       correctnessDuplicate,
@@ -128,14 +115,14 @@ describe("createSynthesiser", () => {
   });
 
   it("reports the single model call's token usage on the result (spec §26)", async () => {
-    const { anthropic } = makeAnthropic([
+    const { model } = makeModel([
       {
         text: findingsJson([combinedFinding]),
         inputTokens: 321,
         outputTokens: 45,
       },
     ]);
-    const synthesiser = createSynthesiser({ anthropic, model, agents: configuredAgents });
+    const synthesiser = createSynthesiser({ model, modelId, agents: configuredAgents });
 
     const { usage } = await synthesiser.synthesise([
       correctnessDuplicate,
@@ -151,14 +138,14 @@ describe("createSynthesiser", () => {
   });
 
   it("makes exactly one single-turn model call with no tools", async () => {
-    const { anthropic, calls } = makeAnthropic([findingsJson([combinedFinding])]);
-    const synthesiser = createSynthesiser({ anthropic, model, agents: configuredAgents });
+    const { model, calls } = makeModel([findingsJson([combinedFinding])]);
+    const synthesiser = createSynthesiser({ model, modelId, agents: configuredAgents });
 
     await synthesiser.synthesise([correctnessDuplicate, securityDuplicate]);
 
     expect(calls).toHaveLength(1);
     const params = calls[0];
-    expect(params?.model).toBe(model);
+    expect(params?.model).toBe(modelId);
     expect(params?.system).toBe(SYNTHESIS_SYSTEM_PROMPT);
     expect(params?.tools).toBeUndefined();
     expect(params?.messages).toHaveLength(1);
@@ -166,8 +153,8 @@ describe("createSynthesiser", () => {
   });
 
   it("sends every well-formed candidate to the model as untrusted data", async () => {
-    const { anthropic, calls } = makeAnthropic([findingsJson([combinedFinding])]);
-    const synthesiser = createSynthesiser({ anthropic, model, agents: configuredAgents });
+    const { model, calls } = makeModel([findingsJson([combinedFinding])]);
+    const synthesiser = createSynthesiser({ model, modelId, agents: configuredAgents });
 
     await synthesiser.synthesise([correctnessDuplicate, securityDuplicate]);
 
@@ -183,8 +170,8 @@ describe("createSynthesiser", () => {
   });
 
   it("excludes malformed candidates from the synthesis input", async () => {
-    const { anthropic, calls } = makeAnthropic([findingsJson([combinedFinding])]);
-    const synthesiser = createSynthesiser({ anthropic, model, agents: configuredAgents });
+    const { model, calls } = makeModel([findingsJson([combinedFinding])]);
+    const synthesiser = createSynthesiser({ model, modelId, agents: configuredAgents });
 
     await synthesiser.synthesise([
       correctnessDuplicate,
@@ -204,8 +191,8 @@ describe("createSynthesiser", () => {
       title: "Possible unclear naming in the admin check",
       confidence: 0.72,
     });
-    const { anthropic } = makeAnthropic([findingsJson([strong])]);
-    const synthesiser = createSynthesiser({ anthropic, model, agents: configuredAgents });
+    const { model } = makeModel([findingsJson([strong])]);
+    const synthesiser = createSynthesiser({ model, modelId, agents: configuredAgents });
 
     const { findings } = await synthesiser.synthesise([strong, weak]);
 
@@ -215,8 +202,8 @@ describe("createSynthesiser", () => {
   it("propagates the model's severity corrections", async () => {
     const overstated = makeFinding({ severity: "high" });
     const corrected = makeFinding({ severity: "medium" });
-    const { anthropic } = makeAnthropic([findingsJson([corrected])]);
-    const synthesiser = createSynthesiser({ anthropic, model, agents: configuredAgents });
+    const { model } = makeModel([findingsJson([corrected])]);
+    const synthesiser = createSynthesiser({ model, modelId, agents: configuredAgents });
 
     const { findings } = await synthesiser.synthesise([overstated]);
 
@@ -225,8 +212,8 @@ describe("createSynthesiser", () => {
   });
 
   it("skips the model call entirely when there are no candidates, reporting zero usage", async () => {
-    const { anthropic, calls } = makeAnthropic([]);
-    const synthesiser = createSynthesiser({ anthropic, model, agents: configuredAgents });
+    const { model, calls } = makeModel([]);
+    const synthesiser = createSynthesiser({ model, modelId, agents: configuredAgents });
 
     const result = await synthesiser.synthesise([]);
 
@@ -243,8 +230,8 @@ describe("createSynthesiser", () => {
   });
 
   it("skips the model call when no candidate is well-formed", async () => {
-    const { anthropic, calls } = makeAnthropic([]);
-    const synthesiser = createSynthesiser({ anthropic, model, agents: configuredAgents });
+    const { model, calls } = makeModel([]);
+    const synthesiser = createSynthesiser({ model, modelId, agents: configuredAgents });
 
     const result = await synthesiser.synthesise([
       { nonsense: true },
@@ -264,8 +251,8 @@ describe("createSynthesiser", () => {
   });
 
   it("rejects with SynthesisError when the model output contains no JSON", async () => {
-    const { anthropic } = makeAnthropic(["I refined the findings for you."]);
-    const synthesiser = createSynthesiser({ anthropic, model, agents: configuredAgents });
+    const { model } = makeModel(["I refined the findings for you."]);
+    const synthesiser = createSynthesiser({ model, modelId, agents: configuredAgents });
 
     await expect(
       synthesiser.synthesise([correctnessDuplicate]),
@@ -273,10 +260,10 @@ describe("createSynthesiser", () => {
   });
 
   it("rejects with SynthesisError when the model output fails schema validation", async () => {
-    const { anthropic } = makeAnthropic([
+    const { model } = makeModel([
       JSON.stringify({ findings: [{ file: "", confidence: 2 }] }),
     ]);
-    const synthesiser = createSynthesiser({ anthropic, model, agents: configuredAgents });
+    const synthesiser = createSynthesiser({ model, modelId, agents: configuredAgents });
 
     await expect(
       synthesiser.synthesise([correctnessDuplicate]),
@@ -284,12 +271,12 @@ describe("createSynthesiser", () => {
   });
 
   it("propagates model API errors to the caller", async () => {
-    const { anthropic } = makeAnthropic([new Error("anthropic unavailable")]);
-    const synthesiser = createSynthesiser({ anthropic, model, agents: configuredAgents });
+    const { model } = makeModel([new Error("model provider unavailable")]);
+    const synthesiser = createSynthesiser({ model, modelId, agents: configuredAgents });
 
     await expect(
       synthesiser.synthesise([correctnessDuplicate]),
-    ).rejects.toThrowError("anthropic unavailable");
+    ).rejects.toThrowError("model provider unavailable");
   });
 });
 
@@ -371,10 +358,10 @@ describe("buildSynthesisMessage", () => {
 describe("a pre-resolved synthesis prompt", () => {
   it("is used in place of the in-code prompt", async () => {
     const injected = "INJECTED SYNTHESIS SYSTEM PROMPT";
-    const { anthropic, calls } = makeAnthropic([findingsJson([combinedFinding])]);
+    const { model, calls } = makeModel([findingsJson([combinedFinding])]);
     const synthesiser = createSynthesiser({
-      anthropic,
       model,
+      modelId,
       agents: configuredAgents,
       systemPrompt: injected,
     });

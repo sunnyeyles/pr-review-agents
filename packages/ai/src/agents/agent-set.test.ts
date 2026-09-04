@@ -3,7 +3,6 @@
  * agent runtime. There is no built-in agent set, so the fixtures here come
  * from .github/pr-review-agents.yml. Model calls are scripted fakes.
  */
-import type Anthropic from "@anthropic-ai/sdk";
 import { createCapturingLogger } from "@pr-review/logging";
 import type { FindingCategory } from "@pr-review/schemas";
 import { describe, expect, it, vi } from "vitest";
@@ -20,9 +19,9 @@ import {
   message,
   repositoryAgent,
   repositoryAgents,
-  systemPromptOf,
   textBlock,
 } from "../agent-test-support.js";
+import type { ModelRequest, ModelResponse } from "../model/types.js";
 
 const configuredAgents = repositoryAgents();
 const correctnessAgent = repositoryAgent("correctness");
@@ -38,20 +37,18 @@ const SIX_TOOL_NAMES = [
   "search_repository",
 ];
 
-function makeDeps(responses: Anthropic.Messages.Message[]) {
+function makeDeps(responses: ModelResponse[]) {
   const queue = [...responses];
-  const create = vi.fn(
-    async (_params: Anthropic.Messages.MessageCreateParamsNonStreaming) => {
-      const next = queue.shift();
-      if (!next) {
-        throw new Error("fake anthropic client ran out of scripted responses");
-      }
-      return next;
-    },
-  );
+  const create = vi.fn(async (_request: ModelRequest) => {
+    const next = queue.shift();
+    if (!next) {
+      throw new Error("fake model client ran out of scripted responses");
+    }
+    return next;
+  });
   const deps: ReviewAgentDeps = {
-    anthropic: { messages: { create } },
-    model: "claude-test-model",
+    model: { provider: "test-provider", createMessage: create },
+    modelId: "test-model",
     github: makeGithub(),
     logger: createCapturingLogger().logger,
   };
@@ -203,7 +200,7 @@ describe("prompt wiring", () => {
 
       await createReviewAgent(agent, deps).run(context);
 
-      expect(systemPromptOf(create.mock.calls[0]?.[0])).toBe(
+      expect(create.mock.calls[0]?.[0]?.system).toBe(
         buildReviewSystemPrompt(agent),
       );
     }
@@ -238,22 +235,21 @@ describe("this repository's agents over one PR context", () => {
     function gatedAgent(agent: (typeof configuredAgents)[number]) {
       const finding = makeFinding(agent.category);
       const deps: ReviewAgentDeps = {
-        anthropic: {
-          messages: {
-            create: async () => {
-              started.push(agent.category);
-              if (started.length === 3) {
-                releaseAll();
-              }
-              await allStarted;
-              return message(
-                [textBlock(finalFindingsJson([finding]))],
-                "end_turn",
-              );
-            },
+        model: {
+          provider: "test-provider",
+          createMessage: async () => {
+            started.push(agent.category);
+            if (started.length === 3) {
+              releaseAll();
+            }
+            await allStarted;
+            return message(
+              [textBlock(finalFindingsJson([finding]))],
+              "end_turn",
+            );
           },
         },
-        model: "claude-test-model",
+        modelId: "test-model",
         github: makeGithub(),
         logger: createCapturingLogger().logger,
       };

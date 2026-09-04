@@ -1,20 +1,12 @@
 /**
- * Token-usage accounting for model calls. Four counters, not two: with
- * caching, `input_tokens` is only the uncached remainder and the three
- * input counters bill differently.
+ * Token-usage accounting for model calls. Four counters, not two: where a
+ * provider caches, `inputTokens` is only the uncached remainder and the
+ * three input counters bill differently.
  */
-import type Anthropic from "@anthropic-ai/sdk";
+import type { ModelUsage } from "./model/types.js";
 
 /** Aggregated token usage of one model-calling unit of work. */
-export interface TokenUsage {
-  /** Input tokens processed at full price — the uncached remainder. */
-  inputTokens: number;
-  /** Input tokens written to the cache this run (~1.25x input price). */
-  cacheCreationInputTokens: number;
-  /** Input tokens served from the cache this run (~0.1x input price). */
-  cacheReadInputTokens: number;
-  outputTokens: number;
-}
+export type TokenUsage = ModelUsage;
 
 export function emptyTokenUsage(): TokenUsage {
   return {
@@ -28,14 +20,14 @@ export function emptyTokenUsage(): TokenUsage {
 /** Adds one response's usage block to a running total. */
 export function addTokenUsage(
   total: TokenUsage,
-  usage: Anthropic.Messages.Usage,
+  usage: ModelUsage,
 ): TokenUsage {
   return {
-    inputTokens: total.inputTokens + usage.input_tokens,
+    inputTokens: total.inputTokens + usage.inputTokens,
     cacheCreationInputTokens:
-      total.cacheCreationInputTokens + (usage.cache_creation_input_tokens ?? 0),
+      total.cacheCreationInputTokens + usage.cacheCreationInputTokens,
     cacheReadInputTokens:
-      total.cacheReadInputTokens + (usage.cache_read_input_tokens ?? 0),
-    outputTokens: total.outputTokens + usage.output_tokens,
+      total.cacheReadInputTokens + usage.cacheReadInputTokens,
+    outputTokens: total.outputTokens + usage.outputTokens,
   };
 }

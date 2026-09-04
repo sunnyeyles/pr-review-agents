@@ -42,7 +42,7 @@ jobs:
     steps:
       - uses: sunnyeyles/pr-review-action@v1
         with:
-          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          api-key: ${{ secrets.ANTHROPIC_API_KEY }}
 ```
 
 Source lives in [`apps/action`](apps/action); `release-action.yml` publishes the
@@ -129,8 +129,9 @@ Reinforcing rules:
 apps/
   action/     Event parsing → review pipeline → check run (or job summary)
 packages/
-  ai/         Anthropic seam, prompts, agent configuration, and agents/:
-              agent definition, runtime loop, read-only tools, synthesiser
+  ai/         Provider-neutral model seam (model/), prompts, agent
+              configuration, and agents/: agent definition, runtime loop,
+              read-only tools, synthesiser
   reviewer/   Review graph, validation chain, check-run rendering
   github/     GitHub client (workflow-token auth) + Octokit calls
   schemas/    Zod schemas: ReviewFinding, the review trigger contract
@@ -145,7 +146,7 @@ LangGraph runs the review pipeline
 (`packages/reviewer/src/review-graph.ts`): one node per selected agent → `join`
 → `synthesise` → `validate`. Every agent node has `START` as its only
 dependency, so they run in the same superstep. Inside a node, one agent's
-tool-calling loop is a plain turn loop over the Messages API
+tool-calling loop is a plain turn loop over the provider-neutral model seam
 (`packages/ai/src/agents/runtime.ts`), capped at 12 model calls.
 
 ### Partial failure
@@ -167,11 +168,35 @@ Set as `with:` inputs on the Action step ([`apps/action/action.yml`](apps/action
 
 | Input | Required | Purpose |
 | --- | --- | --- |
-| `anthropic-api-key` | yes | Anthropic key the agents and synthesiser authenticate with. Store as a repository or organisation secret; never inline it. |
+| `api-key` | yes | Key for the selected provider, which the agents and synthesiser authenticate with. Store as a repository or organisation secret; never inline it. |
+| `model-provider` | no (default `anthropic`) | Which provider the agents and synthesiser call: `anthropic` or `openai`. An unknown name fails the step before any model call. |
 | `github-token` | no (default `${{ github.token }}`) | Token for the six read-only repository tools and for publishing the check run. |
-| `model` | no (default `claude-sonnet-5`) | Anthropic model id the agents and synthesiser use. |
+| `model` | no (default: the provider's own — `claude-sonnet-5`, `gpt-5`) | Model id the agents and synthesiser use, as the provider spells it. |
+| `model-base-url` | no (default: the provider's own host) | Overrides the provider's API host — a gateway, a proxy, or a compatible endpoint. |
 | `agents` | no (default `all`) | Which of the configured agents run: `all`, or a comma-separated subset of their names. |
 | `agent-config` | no (default `.github/pr-review-agents.yml`) | Path to the YAML file defining the agents. Required — there is no built-in set. |
+
+### Model providers
+
+The model is reached through one provider-neutral seam
+(`packages/ai/src/model/`): the agent loop, the synthesiser, tracing, and token
+accounting speak `ModelClient` only. Each provider is one adapter beneath it,
+selected by `model-provider`:
+
+```yaml
+        with:
+          model-provider: openai
+          api-key: ${{ secrets.OPENAI_API_KEY }}
+          model: gpt-5
+```
+
+`model-base-url` points an adapter at a gateway, a proxy, or any endpoint
+speaking that provider's API. Adding a provider means one adapter plus its
+entry in `model/provider.ts` — nothing above the seam changes.
+
+Prompt caching is requested on every turn and applied where the provider
+supports it. The four token counters keep cache writes and reads apart from the
+uncached input remainder; a provider that reports neither leaves them at zero.
 
 ### Defining your own agents
 
@@ -263,7 +288,7 @@ the sum of its agents, and narrowing the set cuts that roughly in proportion:
 
 ```yaml
         with:
-          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          api-key: ${{ secrets.ANTHROPIC_API_KEY }}
           agents: architecture        # or: correctness,security
 ```
 
@@ -274,8 +299,8 @@ run must exercise the same path a full review does, or it is useless for
 iterating on a prompt.
 
 Nothing is read from a secrets store at runtime — the workflow token and the
-`anthropic-api-key` input are the only credentials involved, and neither ever
-needs to be provisioned outside GitHub's own secret settings.
+`api-key` input are the only credentials involved, and neither ever needs to be
+provisioned outside GitHub's own secret settings.
 
 ### Token permissions
 
@@ -338,8 +363,8 @@ Every seam that decides what reaches GitHub is covered by unit tests: event
 parsing, the agent loop and its tool dispatch, the diff line index, the
 validation chain, duplicate removal, partial-agent-failure semantics,
 synthesis fallback, check-run rendering, and the fork-PR job-summary fallback.
-Anthropic and Octokit are both injected behind narrow interfaces, so the suite
-makes no network calls and runs in under two seconds.
+The model client and Octokit are both injected behind narrow interfaces, so the
+suite makes no network calls and runs in under two seconds.
 
 ```sh
 pnpm test

@@ -3,7 +3,6 @@
  * AgentDefinition supplies the role, focus, and category; the rest is
  * identical for every agent, however many are configured.
  */
-import type Anthropic from "@anthropic-ai/sdk";
 import { startObservation } from "@langfuse/tracing";
 import type { GithubInstallationClient } from "@pr-review/github";
 import {
@@ -15,7 +14,15 @@ import {
 
 import { buildReviewSystemPrompt, type AgentDefinition } from "./definition.js";
 import { extractAgentOutput, messageText } from "./output.js";
-import type { AnthropicLike } from "../anthropic.js";
+import type {
+  ModelClient,
+  ModelContentBlock,
+  ModelMessage,
+  ModelResponse,
+  ModelToolDefinition,
+  ModelToolResultBlock,
+  ModelToolUseBlock,
+} from "../model/types.js";
 import { traceModelCall } from "../model-tracing.js";
 import type { ReviewAgent, ReviewContext } from "../agent-contract.js";
 import { dispatchReviewTool, reviewTools, type ReviewToolScope } from "./tools.js";
@@ -34,10 +41,6 @@ export const DEFAULT_MAX_TURNS = 12;
 
 /** Output budget per model call (response text + tool requests). */
 const MAX_OUTPUT_TOKENS = 16_000;
-
-// Marks the cache breakpoints. Nothing above them may vary between
-// turns, or the cache stops hitting silently.
-const CACHE_CONTROL = { type: "ephemeral" } as const;
 
 /** The opening message embeds at most this much of the diff. */
 const MAX_DIFF_CHARS = 80_000;
@@ -89,22 +92,20 @@ export function buildOpeningMessage(context: ReviewContext): string {
   ].join("\n");
 }
 
-const anthropicToolDefinitions: Anthropic.Messages.Tool[] = reviewTools.map(
-  (tool) => ({
-    name: tool.name,
-    description: tool.description,
-    input_schema: tool.inputSchema,
-  }),
-);
+const modelToolDefinitions: ModelToolDefinition[] = reviewTools.map((tool) => ({
+  name: tool.name,
+  description: tool.description,
+  inputSchema: tool.inputSchema,
+}));
 
 /** Keyed by agent category. An agent with no entry uses buildReviewSystemPrompt. */
 export type ReviewSystemPrompts = Readonly<Record<string, string>>;
 
 /** What every review agent needs, regardless of agent. */
 export interface ReviewAgentDeps {
-  anthropic: AnthropicLike;
-  /** Model id from configuration (ANTHROPIC_MODEL); never hard-coded. */
-  model: string;
+  model: ModelClient;
+  /** Model id from configuration; never hard-coded. */
+  modelId: string;
   github: GithubInstallationClient;
   maxTurns?: number | undefined;
   /** Receives agent.started / agent.completed / agent.failed. */
@@ -115,14 +116,10 @@ export interface ReviewAgentDeps {
 
 /** The tool_use blocks of one message's content, in order. */
 function toolUseBlocks(
-  content: readonly unknown[],
-): Anthropic.Messages.ToolUseBlock[] {
+  content: readonly ModelContentBlock[],
+): ModelToolUseBlock[] {
   return content.filter(
-    (block): block is Anthropic.Messages.ToolUseBlock =>
-      typeof block === "object" &&
-      block !== null &&
-      "type" in block &&
-      block.type === "tool_use",
+    (block): block is ModelToolUseBlock => block.type === "tool_use",
   );
 }
 
@@ -169,12 +166,16 @@ export function createReviewAgent(
             headSha: eventFields.headSha,
             changedFileCount: context.changedFiles.length,
           },
-          metadata: { agent: agent.category, model: deps.model },
+          metadata: {
+            agent: agent.category,
+            provider: deps.model.provider,
+            model: deps.modelId,
+          },
         },
         { asType: "agent" },
       );
       const startedAt = Date.now();
-      const messages: Anthropic.Messages.MessageParam[] = [
+      const messages: ModelMessage[] = [
         { role: "user", content: buildOpeningMessage(context) },
       ];
       // Outside the try: a mid-loop API error still reports its spend.
@@ -182,41 +183,38 @@ export function createReviewAgent(
       let apiStopReason: string | undefined;
       let finalText = "";
 
-      /** One model call, accumulating usage and the last stop_reason. */
-      const callModel = async (): Promise<Anthropic.Messages.Message> => {
+      /** One model call, accumulating usage and the last stop reason. */
+      const callModel = async (): Promise<ModelResponse> => {
         const response = await traceModelCall(
           agentObservation,
           {
-            model: deps.model,
+            provider: deps.model.provider,
+            model: deps.modelId,
             input: { messageCount: messages.length },
             maxTokens: MAX_OUTPUT_TOKENS,
           },
           () =>
-            deps.anthropic.messages.create({
-              model: deps.model,
-              max_tokens: MAX_OUTPUT_TOKENS,
-              cache_control: CACHE_CONTROL,
-              system: [
-                {
-                  type: "text",
-                  text: systemPrompt,
-                  cache_control: CACHE_CONTROL,
-                },
-              ],
-              tools: anthropicToolDefinitions,
+            deps.model.createMessage({
+              model: deps.modelId,
+              maxOutputTokens: MAX_OUTPUT_TOKENS,
+              // The system prompt and tools never vary between turns,
+              // so providers that cache can reuse them.
+              cachePrefix: true,
+              system: systemPrompt,
+              tools: modelToolDefinitions,
               messages,
             }),
         );
         usage = addTokenUsage(usage, response.usage);
-        apiStopReason = response.stop_reason ?? undefined;
+        apiStopReason = response.stopReason;
         return response;
       };
 
       /** Dispatches every requested tool into one user turn of results. */
       const answerToolUses = async (
-        toolUses: readonly Anthropic.Messages.ToolUseBlock[],
-      ): Promise<Anthropic.Messages.ToolResultBlockParam[]> => {
-        const results: Anthropic.Messages.ToolResultBlockParam[] = [];
+        toolUses: readonly ModelToolUseBlock[],
+      ): Promise<ModelToolResultBlock[]> => {
+        const results: ModelToolResultBlock[] = [];
         for (const toolUse of toolUses) {
           const toolObservation = agentObservation.startObservation(
             `execute-tool-${toolUse.name}`,
@@ -245,14 +243,14 @@ export function createReviewAgent(
             outcome.ok
               ? {
                   type: "tool_result",
-                  tool_use_id: toolUse.id,
+                  toolUseId: toolUse.id,
                   content: outcome.content,
                 }
               : {
                   type: "tool_result",
-                  tool_use_id: toolUse.id,
+                  toolUseId: toolUse.id,
                   content: outcome.error,
-                  is_error: true,
+                  isError: true,
                 },
           );
         }
@@ -286,7 +284,7 @@ export function createReviewAgent(
         if (!output.ok) {
           throw new AgentRunError(
             `${agent.category} agent produced invalid findings output ` +
-              `(stop_reason: ${apiStopReason ?? "unknown"}): ${output.error}`,
+              `(stop reason: ${apiStopReason ?? "unknown"}): ${output.error}`,
           );
         }
         // Cross-category findings are dropped, never re-stamped.
