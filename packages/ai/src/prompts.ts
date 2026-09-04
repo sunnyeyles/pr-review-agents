@@ -18,36 +18,19 @@ import {
 } from "./agents/lens.js";
 import { buildSynthesisSystemPrompt } from "./agents/synthesiser.js";
 
-/**
- * One managed prompt's id: a lens category, or SYNTHESIS_PROMPT_ID. The
- * set is per-run, since the lens set is configurable.
- */
-export type ManagedPromptId = string;
-
-/** The Langfuse prompt names one lens set implies, in lens order. */
-export function managedPromptKeys(
-  lenses: readonly ReviewLens[],
-): Record<ManagedPromptId, string> {
-  const keys: Record<string, string> = {};
-  for (const lens of lenses) {
-    keys[lens.category] = lensPromptKey(lens.category);
-  }
-  keys[SYNTHESIS_PROMPT_ID] = lensPromptKey(SYNTHESIS_PROMPT_ID);
-  return keys;
-}
-
 /** Where a resolved prompt came from. */
 export type PromptSource = "langfuse" | "fallback";
 
 /**
- * Resolved system prompts keyed by managed-prompt id: one per lens, plus
- * SYNTHESIS_PROMPT_ID.
+ * System prompts keyed by managed-prompt id — a lens category, or
+ * SYNTHESIS_PROMPT_ID. inCodePrompts decides the set, and its keys are
+ * the only place the ids are enumerated.
  */
-export type ManagedPrompts = Record<ManagedPromptId, string>;
+export type ManagedPrompts = Record<string, string>;
 
 export interface LoadPromptsResult {
   prompts: ManagedPrompts;
-  sources: Record<ManagedPromptId, PromptSource>;
+  sources: Record<string, PromptSource>;
 }
 
 /** Label fetched when the caller does not name one. */
@@ -169,10 +152,7 @@ export function reviewPromptContractProblems(
 }
 
 /** The contract for one managed prompt; gates both fetched and about-to-be-seeded text. */
-export function promptContractProblems(
-  id: ManagedPromptId,
-  text: string,
-): string[] {
+export function promptContractProblems(id: string, text: string): string[] {
   // The synthesiser reads findings rather than a repository, so none of
   // the lens-specific rules apply.
   return id === SYNTHESIS_PROMPT_ID
@@ -186,12 +166,11 @@ export function promptContractProblems(
  * disagree.
  */
 export function inCodePrompts(lenses: readonly ReviewLens[]): ManagedPrompts {
-  const prompts: ManagedPrompts = {
-    [SYNTHESIS_PROMPT_ID]: buildSynthesisSystemPrompt(lenses),
-  };
+  const prompts: ManagedPrompts = {};
   for (const lens of lenses) {
     prompts[lens.category] = buildReviewSystemPrompt(lens);
   }
+  prompts[SYNTHESIS_PROMPT_ID] = buildSynthesisSystemPrompt(lenses);
   return prompts;
 }
 
@@ -228,13 +207,14 @@ export async function loadManagedPrompts(
 
   // Start from the in-code prompts so a fetch is only ever an upgrade.
   const prompts: ManagedPrompts = inCodePrompts(options.lenses);
-  const entries = Object.entries(managedPromptKeys(options.lenses));
-  const sources: Record<ManagedPromptId, PromptSource> = Object.fromEntries(
-    entries.map(([id]) => [id, "fallback" as PromptSource]),
+  const ids = Object.keys(prompts);
+  const sources: Record<string, PromptSource> = Object.fromEntries(
+    ids.map((id) => [id, "fallback" as PromptSource]),
   );
 
   await Promise.all(
-    entries.map(async ([id, name]) => {
+    ids.map(async (id) => {
+      const name = lensPromptKey(id);
       try {
         const text = await withDeadline(
           client.getTextPrompt(name, { label }),
@@ -260,12 +240,12 @@ export async function loadManagedPrompts(
     }),
   );
 
-  const loaded = entries.filter(([id]) => sources[id] === "langfuse");
-  const fellBack = entries.filter(([id]) => sources[id] === "fallback");
+  const loaded = ids.filter((id) => sources[id] === "langfuse");
+  const fellBack = ids.filter((id) => sources[id] === "fallback");
   logger.info("langfuse.prompts.loaded", {
     label,
-    loadedPromptKeys: loaded.map(([, name]) => name),
-    fallbackPromptKeys: fellBack.map(([, name]) => name),
+    loadedPromptKeys: loaded.map(lensPromptKey),
+    fallbackPromptKeys: fellBack.map(lensPromptKey),
     loadedCount: loaded.length,
     fallbackCount: fellBack.length,
   });

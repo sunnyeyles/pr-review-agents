@@ -58,19 +58,17 @@ function duplicateKeys(finding: ReviewFinding): [string, string] {
 export function validateFindings(
   candidates: readonly unknown[],
   changedFiles: readonly ChangedFile[],
-  allowedCategories?: readonly string[],
+  allowedCategories: readonly string[],
 ): ReviewFinding[] {
   // 1. Schema validity.
   const wellFormed = wellFormedFindings(candidates);
 
   // 2. Category is one the run's lenses own. The schema cannot check
   // this: the lens set is configurable and known only at runtime.
-  const allowed =
-    allowedCategories === undefined ? undefined : new Set(allowedCategories);
-  const inCategory =
-    allowed === undefined
-      ? wellFormed
-      : wellFormed.filter((finding) => allowed.has(finding.category));
+  const allowed = new Set(allowedCategories);
+  const inCategory = wellFormed.filter((finding) =>
+    allowed.has(finding.category),
+  );
 
   // 3 + 4. File exists in the PR; line (when present) is an added line
   // in that file's diff.

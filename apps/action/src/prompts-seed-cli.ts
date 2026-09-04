@@ -2,8 +2,6 @@
  * The `pnpm seed-prompts` entry point. Nothing in src/index.ts imports
  * it, so it stays out of the shipped action bundle.
  */
-import { readFile } from "node:fs/promises";
-
 import {
   DEFAULT_LANGFUSE_BASE_URL,
   DEFAULT_LENS_CONFIG_PATH,
@@ -22,6 +20,8 @@ import {
   errorMessage,
   type StructuredLogger,
 } from "@pr-review/logging";
+
+import { readOptional } from "./read-optional.js";
 
 /** Environment variables the seeder authenticates with. */
 export const PUBLIC_KEY_ENV = "LANGFUSE_PUBLIC_KEY";
@@ -133,16 +133,7 @@ export function seedCliEnvironment(): SeedCliEnvironment {
   return {
     env: process.env,
     createWriter: createLangfusePromptWriter,
-    readConfigFile: async (filePath) => {
-      try {
-        return await readFile(filePath, "utf8");
-      } catch (error: unknown) {
-        if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-          return undefined;
-        }
-        throw error;
-      }
-    },
+    readConfigFile: readOptional,
     logger: createConsoleLogger(),
     write: (line) => {
       process.stdout.write(`${line}\n`);
@@ -182,7 +173,6 @@ export async function main(
 
   const report = await seedManagedPrompts(environment.createWriter(config), {
     prompts: inCodePrompts(lenses),
-    lenses,
     label: args.label,
     dryRun: args.dryRun,
     logger,

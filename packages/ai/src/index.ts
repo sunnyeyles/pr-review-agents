@@ -24,9 +24,6 @@ export {
 export {
   ALL_LENSES,
   SYNTHESIS_PROMPT_ID,
-  buildReviewSystemPrompt,
-  lensPromptKey,
-  reviewLensSchema,
   type ReviewLens,
 } from "./agents/lens.js";
 export {
@@ -37,9 +34,7 @@ export {
   DEFAULT_LENS_CONFIG_PATH,
   LensConfigError,
   loadLensSet,
-  missingConfigMessage,
   parseLensConfig,
-  type LensConfig,
   type LoadLensSetOptions,
   type ReadOptionalFile,
 } from "./lens-config.js";
@@ -57,14 +52,12 @@ export {
   createLangfusePromptClient,
   inCodePrompts,
   loadManagedPrompts,
-  managedPromptKeys,
   promptContractProblems,
   reviewPromptContractProblems,
   type LangfusePromptClient,
   type LangfusePromptClientConfig,
   type LoadManagedPromptsOptions,
   type LoadPromptsResult,
-  type ManagedPromptId,
   type ManagedPrompts,
   type PromptSource,
 } from "./prompts.js";

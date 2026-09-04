@@ -10,8 +10,8 @@ import { resolveReviewLenses } from "@pr-review/ai";
 import { createConsoleLogger } from "@pr-review/logging";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 
+import { repositoryLenses } from "../../packages/ai/src/agent-test-support.js";
 import { evalCases } from "./cases.js";
-import { repositoryLenses } from "./lenses.js";
 import { evaluateExpectation } from "./expectations.js";
 import { loadFixture } from "./fixture.js";
 import { AGENTS_ENV, requireModelAccess } from "./model-access.js";

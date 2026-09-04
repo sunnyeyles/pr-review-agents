@@ -12,7 +12,7 @@ import {
 import type { ChangedFile, GithubInstallationClient } from "@pr-review/github";
 import { createCapturingLogger } from "@pr-review/logging";
 import { validateFindings } from "@pr-review/reviewer";
-import type { FindingCategory, ReviewFinding } from "@pr-review/schemas";
+import type { ReviewFinding } from "@pr-review/schemas";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -20,10 +20,10 @@ import {
   makeAnthropic,
   makeFinding,
   message,
+  repositoryLenses,
   textBlock,
 } from "../../packages/ai/src/agent-test-support.js";
 import { evalCases } from "./cases.js";
-import { repositoryLenses } from "./lenses.js";
 import {
   evaluateExpectation,
   resolveAnchor,
@@ -98,11 +98,9 @@ function findingExpectationFor(fixtureName: string): FixtureExpectation {
 
 /** Real agents and Synthesiser, with only the Anthropic client scripted. */
 function scriptedDeps(
-  byCategory: Partial<Record<FindingCategory, ReviewFinding[]>>,
+  byCategory: Record<string, ReviewFinding[]>,
 ): FixtureReviewDeps {
-  const synthesised = Object.values(byCategory)
-    .flat()
-    .filter((finding) => finding !== undefined);
+  const synthesised = Object.values(byCategory).flat();
   return {
     createAgents: (github: GithubInstallationClient): ReviewAgent[] =>
       configuredLenses.map((lens) =>
@@ -234,8 +232,11 @@ describe("generated diffs", () => {
       line: lineOf(contents, "and (display_name ilike $2 or email ilike $2)"),
     });
 
-    expect(validateFindings([planted], [changed])).toEqual([planted]);
-    expect(validateFindings([untouched], [changed])).toEqual([]);
+    const categories = configuredLenses.map((lens) => lens.category);
+    expect(validateFindings([planted], [changed], categories)).toEqual([
+      planted,
+    ]);
+    expect(validateFindings([untouched], [changed], categories)).toEqual([]);
   });
 
   it("emits one hunk per changed region rather than one giant hunk", () => {

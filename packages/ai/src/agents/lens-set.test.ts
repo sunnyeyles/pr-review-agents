@@ -29,9 +29,6 @@ const correctnessLens = repositoryLens("correctness");
 const securityLens = repositoryLens("security");
 const architectureLens = repositoryLens("architecture");
 
-const SECURITY_SYSTEM_PROMPT = buildReviewSystemPrompt(securityLens);
-const ARCHITECTURE_SYSTEM_PROMPT = buildReviewSystemPrompt(architectureLens);
-
 const SIX_TOOL_NAMES = [
   "get_base_file",
   "get_diff",
@@ -78,7 +75,7 @@ describe("agent names", () => {
     }
   });
 
-  it("createReviewAgents defaults to the built-in lenses, in registry order", () => {
+  it("createReviewAgents builds one agent per lens, in configuration order", () => {
     const { deps } = makeDeps([]);
 
     expect(createReviewAgents(deps, configuredLenses).map((agent) => agent.name)).toEqual(
@@ -99,7 +96,7 @@ describe("resolveReviewLenses", () => {
   const names = (selection: string): string[] =>
     resolveReviewLenses(selection, configuredLenses).map((lens) => lens.category);
 
-  it("selects over the lens set it is given, not the built-ins", () => {
+  it("selects over the lens set it is given, not this repository's", () => {
     const performanceLens = {
       category: "performance",
       role: "Performance reviewer",
@@ -113,7 +110,7 @@ describe("resolveReviewLenses", () => {
     expect(
       resolveReviewLenses(ALL_LENSES, available).map((lens) => lens.category),
     ).toEqual(["correctness", "performance"]);
-    // A built-in absent from the given set is unknown, not implied.
+    // A lens absent from the given set is unknown, not implied.
     expect(() => resolveReviewLenses("security", available)).toThrow(
       /Unknown review agent: security/,
     );
@@ -179,60 +176,21 @@ describe("resolveReviewLenses", () => {
   });
 });
 
-describe("the Security lens prompt", () => {
-  it("focuses on the spec §10 security review targets", () => {
-    const system = SECURITY_SYSTEM_PROMPT;
-
-    expect(system).toMatch(/authentication/i);
-    expect(system).toMatch(/authorisation|authorization/i);
-    expect(system).toMatch(/cross-tenant/i);
-    expect(system).toMatch(/injection/i);
-    expect(system).toMatch(/secret/i);
-    expect(system).toMatch(/user input/i);
-    expect(system).toMatch(/log/i);
-    expect(system).toMatch(/privilege/i);
+describe("the composed lens prompt", () => {
+  it("stamps each lens's own category on its output contract", () => {
+    // Losing the stamp fails silently: the runtime discards findings
+    // whose category is not the lens's own.
+    for (const lens of configuredLenses) {
+      expect(buildReviewSystemPrompt(lens)).toContain(
+        `"category": always "${lens.category}"`,
+      );
+    }
   });
 
-  it("explicitly prefers no finding over a speculative one", () => {
-    expect(SECURITY_SYSTEM_PROMPT).toMatch(
-      /no finding.*(over|rather than).*speculative/is,
-    );
-  });
-
-  it("stamps the security category on the output contract", () => {
-    expect(SECURITY_SYSTEM_PROMPT).toMatch(/"category": always "security"/);
-  });
-
-  it("carries the same §21 prompt-injection hardening as Correctness", () => {
-    expectInjectionHardened(SECURITY_SYSTEM_PROMPT, "security");
-  });
-});
-
-describe("the Architecture lens prompt", () => {
-  it("focuses on the spec §11 architecture review targets", () => {
-    const system = ARCHITECTURE_SYSTEM_PROMPT;
-
-    expect(system).toMatch(/abstraction/i);
-    expect(system).toMatch(/duplicat/i);
-    expect(system).toMatch(/dependenc/i);
-    expect(system).toMatch(/boundar/i);
-    expect(system).toMatch(/existing pattern/i);
-    expect(system).toMatch(/business logic/i);
-  });
-
-  it("requires retrieving surrounding repository context before architectural claims", () => {
-    expect(ARCHITECTURE_SYSTEM_PROMPT).toMatch(
-      /(get_file|search_repository).*(before|prior to).*claim|before.*claim.*(get_file|search_repository)/is,
-    );
-    expect(ARCHITECTURE_SYSTEM_PROMPT).toMatch(/surrounding repository context/i);
-  });
-
-  it("stamps the architecture category on the output contract", () => {
-    expect(ARCHITECTURE_SYSTEM_PROMPT).toMatch(/"category": always "architecture"/);
-  });
-
-  it("carries the same §21 prompt-injection hardening as Correctness", () => {
-    expectInjectionHardened(ARCHITECTURE_SYSTEM_PROMPT, "architecture");
+  it("carries the §21 prompt-injection hardening for every lens", () => {
+    for (const lens of configuredLenses) {
+      expectInjectionHardened(buildReviewSystemPrompt(lens), lens.category);
+    }
   });
 });
 
@@ -267,7 +225,7 @@ describe("prompt wiring", () => {
   });
 });
 
-describe("the built-in lenses over one PR context", () => {
+describe("this repository's lenses over one PR context", () => {
   it("runs concurrently and each returns findings in its own category", async () => {
     // Each fake call resolves only once all three agents have called,
     // so sequential execution would deadlock this test.

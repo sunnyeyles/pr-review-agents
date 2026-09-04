@@ -26,10 +26,8 @@ const lensConfigSchema = z
   })
   .strict();
 
-export type LensConfig = z.infer<typeof lensConfigSchema>;
-
 /** Parses and validates a config document into the lenses it defines. */
-export function parseLensConfig(source: string, path: string): LensConfig {
+export function parseLensConfig(source: string, path: string): ReviewLens[] {
   let document: unknown;
   try {
     document = parseYaml(source);
@@ -56,7 +54,7 @@ export function parseLensConfig(source: string, path: string): LensConfig {
     }
     seen.add(lens.category);
   }
-  return parsed.data;
+  return parsed.data.lenses;
 }
 
 /** Reads a file, or resolves undefined when it does not exist. */
@@ -69,7 +67,7 @@ export interface LoadLensSetOptions {
 }
 
 /** The message shown when no configuration is found. */
-export function missingConfigMessage(path: string): string {
+function missingConfigMessage(path: string): string {
   return [
     `No review agents are configured: ${path} does not exist.`,
     "",
@@ -104,5 +102,5 @@ export async function loadLensSet(
   if (source === undefined) {
     throw new LensConfigError(missingConfigMessage(path));
   }
-  return [...parseLensConfig(source, path).lenses];
+  return parseLensConfig(source, path);
 }

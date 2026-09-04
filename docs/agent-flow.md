@@ -255,7 +255,7 @@ either way, because it flows through the same validation chain.
 
 `packages/reviewer/src/validate-findings.ts:58`
 
-Six deterministic steps, in this order:
+Seven deterministic steps, in this order:
 
 1. **Schema validity** — Zod (`reviewFindingSchema`)
 2. **Category is one of the run's lenses** — the schema cannot check this,

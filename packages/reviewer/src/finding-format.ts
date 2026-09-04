@@ -15,7 +15,7 @@ export function location(finding: ReviewFinding): string {
 
 /** The finding's heading: severity, lens, and title. */
 export function heading(finding: ReviewFinding): string {
-  return `${finding.severity.toUpperCase()} — ${lensLabel(finding.category)}: ${finding.title}`;
+  return `${finding.severity.toUpperCase()} — ${categoryLabel(finding.category)}: ${finding.title}`;
 }
 
 /** A finding as a standalone Markdown block, location included. */
@@ -33,18 +33,13 @@ export function summarise(finding: ReviewFinding): string {
   return lines.join("\n");
 }
 
-/** The lens name in prose, derived from its category slug. */
-export function lensLabel(agent: string): string {
-  return categoryLabel(agent);
-}
-
 /** Which lenses did not complete. Names only; error strings never reach GitHub. */
 export function failureNotes(
   agentFailures: readonly AgentFailure[],
 ): string[] {
   return agentFailures.map(
     (failure) =>
-      `> **Note:** The ${lensLabel(failure.agent)} review did not complete, so its findings are missing from this run.`,
+      `> **Note:** The ${categoryLabel(failure.agent)} review did not complete, so its findings are missing from this run.`,
   );
 }
 

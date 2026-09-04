@@ -2,6 +2,7 @@
 import { createCapturingLogger } from "@pr-review/logging";
 import { describe, expect, it, vi } from "vitest";
 
+import { lensPromptKey } from "./agents/lens.js";
 import {
   repositoryLenses,
   validRemotePrompt,
@@ -13,7 +14,7 @@ import {
   type LabelledPrompt,
   type LangfusePromptWriter,
 } from "./prompt-seed.js";
-import { managedPromptKeys } from "./prompts.js";
+import { inCodePrompts } from "./prompts.js";
 
 const configuredLenses = repositoryLenses();
 
@@ -63,7 +64,6 @@ describe("seedManagedPrompts", () => {
     const { writer, published } = makeWriter();
 
     const report = await seedManagedPrompts(writer, {
-      lenses: configuredLenses,
       prompts: validPrompts(),
       logger: createCapturingLogger().logger,
     });
@@ -93,7 +93,6 @@ describe("seedManagedPrompts", () => {
     });
 
     const report = await seedManagedPrompts(writer, {
-      lenses: configuredLenses,
       prompts,
       logger: createCapturingLogger().logger,
     });
@@ -119,7 +118,6 @@ describe("seedManagedPrompts", () => {
     });
 
     const report = await seedManagedPrompts(writer, {
-      lenses: configuredLenses,
       prompts,
       logger: createCapturingLogger().logger,
     });
@@ -141,7 +139,6 @@ describe("seedManagedPrompts", () => {
     });
 
     const report = await seedManagedPrompts(writer, {
-      lenses: configuredLenses,
       prompts,
       logger: createCapturingLogger().logger,
     });
@@ -165,7 +162,6 @@ describe("seedManagedPrompts", () => {
     const { logger, entries } = createCapturingLogger();
 
     const report = await seedManagedPrompts(writer, {
-      lenses: configuredLenses,
       prompts,
       logger,
     });
@@ -189,7 +185,6 @@ describe("seedManagedPrompts", () => {
     });
 
     const report = await seedManagedPrompts(writer, {
-      lenses: configuredLenses,
       prompts: validPrompts(),
       logger: createCapturingLogger().logger,
     });
@@ -213,7 +208,6 @@ describe("seedManagedPrompts", () => {
     });
 
     const report = await seedManagedPrompts(writer, {
-      lenses: configuredLenses,
       prompts,
       dryRun: true,
       logger: createCapturingLogger().logger,
@@ -232,14 +226,16 @@ describe("seedManagedPrompts", () => {
     const { writer, published } = makeWriter();
 
     await seedManagedPrompts(writer, {
-      lenses: configuredLenses,
       prompts: validPrompts(),
       label: "staging",
       logger: createCapturingLogger().logger,
     });
 
-    for (const name of Object.values(managedPromptKeys(configuredLenses))) {
-      expect(writer.readLabelled).toHaveBeenCalledWith(name, "staging");
+    for (const id of Object.keys(inCodePrompts(configuredLenses))) {
+      expect(writer.readLabelled).toHaveBeenCalledWith(
+        lensPromptKey(id),
+        "staging",
+      );
     }
     expect(published.every((entry) => entry.label === "staging")).toBe(true);
   });
@@ -248,7 +244,6 @@ describe("seedManagedPrompts", () => {
     const { writer } = makeWriter();
 
     await seedManagedPrompts(writer, {
-      lenses: configuredLenses,
       prompts: validPrompts(),
       logger: createCapturingLogger().logger,
     });
@@ -265,7 +260,6 @@ describe("seedManagedPrompts", () => {
     const prompts = validPrompts();
 
     await seedManagedPrompts(writer, {
-      lenses: configuredLenses,
       prompts,
       logger,
     });

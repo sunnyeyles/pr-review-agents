@@ -1,7 +1,6 @@
 /**
- * Working with a run's lens set. There is no built-in set and no default:
- * every lens comes from repository configuration (lens-config.ts), so
- * both functions here take the set they are to work with.
+ * Working with a run's lens set. Every lens comes from repository
+ * configuration (lens-config.ts), so both functions take the set to use.
  */
 import { ALL_LENSES, type ReviewLens } from "./lens.js";
 import { createReviewAgent, type ReviewAgentDeps } from "./runtime.js";
@@ -23,6 +22,9 @@ export function resolveReviewLenses(
   }
 
   const known = new Set<string>(available.map((lens) => lens.category));
+  const choices =
+    `This repository configures ${[...known].join(", ")}. ` +
+    `Use one of those, or ${ALL_LENSES}.`;
   const requested = new Set<string>();
   // Every name is checked before `all` is honoured, so a typo alongside
   // it still fails rather than hiding inside a full review.
@@ -37,10 +39,7 @@ export function resolveReviewLenses(
       continue;
     }
     if (!known.has(name)) {
-      throw new Error(
-        `Unknown review agent: ${name}. This repository configures ` +
-          `${[...known].join(", ")}. Use one of those, or ${ALL_LENSES}.`,
-      );
+      throw new Error(`Unknown review agent: ${name}. ${choices}`);
     }
     requested.add(name);
   }
@@ -49,10 +48,7 @@ export function resolveReviewLenses(
     return [...available];
   }
   if (requested.size === 0) {
-    throw new Error(
-      `No review agents selected. This repository configures ` +
-        `${[...known].join(", ")}. Use one of those, or ${ALL_LENSES}.`,
-    );
+    throw new Error(`No review agents selected. ${choices}`);
   }
   return available.filter((lens) => requested.has(lens.category));
 }

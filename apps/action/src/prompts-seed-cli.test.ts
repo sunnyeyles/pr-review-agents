@@ -3,14 +3,16 @@
  * exit codes, and that the text handed to Langfuse is byte-for-byte
  * what a review would have fallen back to.
  */
-import { readFileSync } from "node:fs";
 
 import {
   buildSynthesisSystemPrompt,
   inCodePrompts,
   type LangfusePromptWriter,
 } from "@pr-review/ai";
-import { repositoryLenses } from "../../../packages/ai/src/agent-test-support.js";
+import {
+  repositoryLensConfigYaml,
+  repositoryLenses,
+} from "../../../packages/ai/src/agent-test-support.js";
 import { createCapturingLogger } from "@pr-review/logging";
 import { describe, expect, it, vi } from "vitest";
 
@@ -30,10 +32,7 @@ const CREDENTIALS = {
 const configuredLenses = repositoryLenses();
 const SYNTHESIS_SYSTEM_PROMPT = buildSynthesisSystemPrompt(configuredLenses);
 /** The seeder reads the same config the action does. */
-const configYaml = readFileSync(
-  new URL("../../../.github/pr-review.yml", import.meta.url),
-  "utf8",
-);
+const configYaml = repositoryLensConfigYaml();
 
 interface Harness {
   environment: Parameters<typeof main>[1] & {};

@@ -48,6 +48,7 @@ import {
   type LangfuseRuntime,
   type LangfuseRuntimeConfig,
 } from "./langfuse.js";
+import { readOptional } from "./read-optional.js";
 import { createFallbackPublisher } from "./summary.js";
 
 /** Everything the entrypoint reads from outside itself; tests pass fakes. */
@@ -67,18 +68,6 @@ export interface ActionEnvironment {
   logger: StructuredLogger;
   /** Marks the process as failed without exiting it. */
   setExitCode: (code: number) => void;
-}
-
-/** A missing file is the ordinary case for optional configuration. */
-async function readOptional(filePath: string): Promise<string | undefined> {
-  try {
-    return await readFile(filePath, "utf8");
-  } catch (error: unknown) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return undefined;
-    }
-    throw error;
-  }
 }
 
 /** The real environment: the live process, filesystem, and SDK clients. */
@@ -208,9 +197,7 @@ export async function runAction(
   const eventName = env["GITHUB_EVENT_NAME"] ?? "";
 
   // Resolved before any client is built, so a missing config or a typo'd
-  // agent name fails the step rather than producing a review that looks
-  // clean. Configuration is the only source of lenses; `agents` narrows
-  // that set for one run.
+  // agent name fails the step rather than producing a review that looks clean.
   const configured = await loadLensSet({
     readFile: environment.readWorkspaceFile,
     path: getInput(env, "lens-config") || DEFAULT_LENS_CONFIG_PATH,

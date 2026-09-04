@@ -3,9 +3,8 @@
  * guard. GITHUB_ACTIONS is cleared before import because importing the
  * module under test evaluates the guard.
  */
-import { readFileSync } from "node:fs";
-
 import {
+  repositoryLensConfigYaml,
   validRemotePrompt,
   validRemoteSynthesisPrompt,
 } from "../../../packages/ai/src/agent-test-support.js";
@@ -60,10 +59,7 @@ const validInputs = {
 };
 
 /** The lens configuration a workspace would have checked out. */
-const lensConfigYaml = readFileSync(
-  new URL("../../../.github/pr-review.yml", import.meta.url),
-  "utf8",
-);
+const lensConfigYaml = repositoryLensConfigYaml();
 
 interface Harness {
   environment: ActionEnvironment;

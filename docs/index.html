@@ -322,8 +322,14 @@ p { margin: 0; }
 .link { width: 2px; height: 22px; background: var(--rule); margin: 0 auto; }
 .link.long { height: 30px; }
 
-/* the lens cards */
+/* the lens cards: one column per configured lens, three here by example */
 .lenses { display: grid; grid-template-columns: repeat(3, 1fr); gap: .6rem; }
+.lenses-note {
+  text-align: center;
+  font-size: .64rem;
+  color: var(--slate-dim);
+  margin-top: .4rem;
+}
 .lens {
   border: 1px solid var(--rule);
   border-top: 3px solid var(--lc);
@@ -625,7 +631,7 @@ html { scroll-behavior: smooth; }
         <div class="stat"><span class="stat-n">n</span><span class="stat-l">Review lenses, from config</span></div>
         <div class="stat"><span class="stat-n">6</span><span class="stat-l">Read-only tools</span></div>
         <div class="stat"><span class="stat-n">12</span><span class="stat-l">Turn cap / agent</span></div>
-        <div class="stat"><span class="stat-n">6</span><span class="stat-l">Validation steps</span></div>
+        <div class="stat"><span class="stat-n">7</span><span class="stat-l">Validation steps</span></div>
         <div class="stat"><span class="stat-n">10</span><span class="stat-l">Findings published</span></div>
       </div>
     </header>
@@ -655,6 +661,7 @@ html { scroll-behavior: smooth; }
           <div class="lens s"><b>security</b><span>authz · injection · leaks</span></div>
           <div class="lens a"><b>architecture</b><span>layers · coupling · reuse</span></div>
         </div>
+        <div class="lenses-note">this repository's <code>.github/pr-review.yml</code> — yours defines its own, any number</div>
 
         <div class="fan in"><i></i><i></i><i></i></div>
 
@@ -664,7 +671,7 @@ html { scroll-behavior: smooth; }
         <div class="node">synthesise<span class="n-sub">one model call · no tools · no loop</span></div>
         <div class="link"></div>
 
-        <div class="node trust">validate<span class="n-sub">the trust boundary · 6 deterministic steps</span></div>
+        <div class="node trust">validate<span class="n-sub">the trust boundary · 7 deterministic steps</span></div>
         <div class="link"></div>
 
         <div class="node">renderCheckRun<span class="n-sub">pure · no I/O</span></div>
@@ -995,12 +1002,13 @@ html { scroll-behavior: smooth; }
       </div>
       <div class="prose">
         <p>
-          Six deterministic steps, in this order. No I/O, no model, no
+          Seven deterministic steps, in this order. No I/O, no model, no
           mutation of its inputs.
         </p>
       </div>
       <ol class="rules">
         <li><b>Schema validity</b> — <code>reviewFindingSchema</code> (Zod)</li>
+        <li><b>The category belongs to one of the run's agents</b> — the schema cannot check this, since the set is known only at runtime</li>
         <li><b>The file exists</b> among the PR's changed files</li>
         <li><b>The line is an added line</b> in that file's diff, when a line is given</li>
         <li><b>Confidence ≥ 0.7</b> — <code>CONFIDENCE_THRESHOLD</code></li>

@@ -9,15 +9,13 @@ import {
   type StructuredLogger,
 } from "@pr-review/logging";
 
-import type { ReviewLens } from "./agents/lens.js";
+import { lensPromptKey } from "./agents/lens.js";
 import {
   DEFAULT_PROMPT_LABEL,
   createLangfuseClient,
   fetchTextPrompt,
-  managedPromptKeys,
   promptContractProblems,
   type LangfusePromptClientConfig,
-  type ManagedPromptId,
   type ManagedPrompts,
 } from "./prompts.js";
 
@@ -96,10 +94,8 @@ export type SeedOutcome =
   | "failed";
 
 export interface SeedManagedPromptsOptions {
-  /** The prompts to publish, normally from inCodePrompts(lenses). */
+  /** The prompts to publish, from inCodePrompts(lenses); its keys decide what is seeded. */
   prompts: ManagedPrompts;
-  /** The lens set those prompts belong to; decides which keys are published. */
-  lenses: readonly ReviewLens[];
   /** Deployment label to point at the published versions. */
   label?: string | undefined;
   /** Decide everything, write nothing. */
@@ -107,7 +103,7 @@ export interface SeedManagedPromptsOptions {
   logger?: StructuredLogger | undefined;
 }
 
-export type SeedReport = Record<ManagedPromptId, SeedOutcome>;
+export type SeedReport = Record<string, SeedOutcome>;
 
 /**
  * Publishes each managed prompt Langfuse does not already hold at this
@@ -122,10 +118,10 @@ export async function seedManagedPrompts(
   const label = options.label ?? DEFAULT_PROMPT_LABEL;
   const dryRun = options.dryRun ?? false;
 
-  const entries = Object.entries(managedPromptKeys(options.lenses));
+  const entries = Object.entries(options.prompts);
   const outcomes = await Promise.all(
-    entries.map(async ([id, name]): Promise<SeedOutcome> => {
-      const text = options.prompts[id] ?? "";
+    entries.map(async ([id, text]): Promise<SeedOutcome> => {
+      const name = lensPromptKey(id);
 
       const problems = promptContractProblems(id, text);
       if (problems.length > 0) {

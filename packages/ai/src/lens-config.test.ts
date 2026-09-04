@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { repositoryLenses } from "./agent-test-support.js";
+import { repositoryLens, repositoryLenses } from "./agent-test-support.js";
 import { resolveReviewLenses } from "./agents/lens-set.js";
 import { buildSynthesisSystemPrompt } from "./agents/synthesiser.js";
 import {
@@ -14,7 +14,8 @@ import {
   loadLensSet,
   parseLensConfig,
 } from "./lens-config.js";
-import { inCodePrompts, managedPromptKeys } from "./prompts.js";
+import { buildReviewSystemPrompt, lensPromptKey } from "./agents/lens.js";
+import { inCodePrompts } from "./prompts.js";
 
 const PATH = "config.yml";
 
@@ -28,7 +29,7 @@ lenses:
 
 /** The categories a config document defines, in order. */
 function categories(source: string): string[] {
-  return parseLensConfig(source, PATH).lenses.map((lens) => lens.category);
+  return parseLensConfig(source, PATH).map((lens) => lens.category);
 }
 
 describe("parseLensConfig", () => {
@@ -42,13 +43,13 @@ describe("parseLensConfig", () => {
   });
 
   it("keeps an optional contextGuidance and omits it otherwise", () => {
-    const [plain] = parseLensConfig(performanceYaml, PATH).lenses;
+    const [plain] = parseLensConfig(performanceYaml, PATH);
     expect(plain?.contextGuidance).toBeUndefined();
 
     const [guided] = parseLensConfig(
       `${performanceYaml}    contextGuidance: Read the neighbours first.\n`,
       PATH,
-    ).lenses;
+    );
     expect(guided?.contextGuidance).toBe("Read the neighbours first.");
   });
 
@@ -158,10 +159,10 @@ lenses:
     const lenses = await loadLensSet({ readFile: async () => onlyPerformance });
 
     expect(lenses.map((lens) => lens.category)).toEqual(["performance"]);
-    expect(managedPromptKeys(lenses)).toEqual({
-      performance: "performance_system",
-      synthesis: "synthesis_system",
-    });
+    expect(Object.keys(inCodePrompts(lenses)).map(lensPromptKey)).toEqual([
+      "performance_system",
+      "synthesis_system",
+    ]);
     expect(inCodePrompts(lenses)["performance"]).toContain(
       '"category": always "performance"',
     );
@@ -171,14 +172,20 @@ lenses:
     expect(
       resolveReviewLenses("all", lenses).map((lens) => lens.category),
     ).toEqual(["performance"]);
-    // A name this build once shipped is no longer special.
     expect(() => resolveReviewLenses("security", lenses)).toThrow(
       /Unknown review agent: security/,
     );
   });
 });
 
+/**
+ * The prose in .github/pr-review.yml is configuration, so what it must
+ * say belongs here rather than in the engine's own tests.
+ */
 describe("this repository's own configuration", () => {
+  const focusOf = (category: string): string =>
+    buildReviewSystemPrompt(repositoryLens(category));
+
   it("parses, and defines the agents the docs describe", () => {
     // The README points newcomers at this file as their starting point.
     expect(repositoryLenses().map((lens) => lens.category)).toEqual([
@@ -186,5 +193,43 @@ describe("this repository's own configuration", () => {
       "security",
       "architecture",
     ]);
+  });
+
+  it("aims the security agent at the spec §10 targets", () => {
+    const system = focusOf("security");
+
+    for (const target of [
+      /authentication/i,
+      /authorisation|authorization/i,
+      /cross-tenant/i,
+      /injection/i,
+      /secret/i,
+      /user input/i,
+      /log/i,
+      /privilege/i,
+    ]) {
+      expect(system).toMatch(target);
+    }
+    expect(system).toMatch(/no finding.*(over|rather than).*speculative/is);
+  });
+
+  it("aims the architecture agent at the spec §11 targets", () => {
+    const system = focusOf("architecture");
+
+    for (const target of [
+      /abstraction/i,
+      /duplicat/i,
+      /dependenc/i,
+      /boundar/i,
+      /existing pattern/i,
+      /business logic/i,
+    ]) {
+      expect(system).toMatch(target);
+    }
+    // An architectural claim needs the surrounding code, not just the diff.
+    expect(system).toMatch(
+      /(get_file|search_repository).*(before|prior to).*claim|before.*claim.*(get_file|search_repository)/is,
+    );
+    expect(system).toMatch(/surrounding repository context/i);
   });
 });

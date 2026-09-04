@@ -68,9 +68,9 @@ GitHub Action (apps/action)
    ▼
 Review pipeline (LangGraph)
    │
-   ├─ agent__correctness  ─┐
-   ├─ agent__security      ├─► join ─► synthesise ─► validate ─► END
-   └─ agent__architecture ─┘
+   ├─ agent__<lens 1>  ─┐
+   ├─ agent__<lens 2>   ├─► join ─► synthesise ─► validate ─► END
+   └─ agent__<lens n>  ─┘
                                                         │
                                                         ▼
                                 GitHub Check Run + annotations
@@ -94,11 +94,12 @@ Agents ──► raw candidates (unknown[])
    ┌──────────────────────────────────────┐
    │ validateFindings()  — no model here  │
    │  1. Zod schema                       │
-   │  2. file exists in the PR            │
-   │  3. line is an ADDED line in the diff│
-   │  4. confidence >= 0.70               │
-   │  5. duplicate removal                │
-   │  6. cap at 10, strongest first       │
+   │  2. category is one of your agents   │
+   │  3. file exists in the PR            │
+   │  4. line is an ADDED line in the diff│
+   │  5. confidence >= 0.70               │
+   │  6. duplicate removal                │
+   │  7. cap at 10, strongest first       │
    └──────────────────────────────────────┘
               │
               ▼

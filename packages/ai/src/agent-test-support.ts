@@ -19,17 +19,27 @@ import type { ReviewContext } from "./review-types.js";
 
 const REPOSITORY_LENS_CONFIG = ".github/pr-review.yml";
 
+/** The shipped config file verbatim, for tests that feed it to a fake workspace. */
+export function repositoryLensConfigYaml(): string {
+  return readFileSync(
+    new URL(`../../../${REPOSITORY_LENS_CONFIG}`, import.meta.url),
+    "utf8",
+  );
+}
+
+let cachedLenses: ReviewLens[] | undefined;
+
 /**
  * This repository's own configured lenses — the starter set the README
  * points newcomers at. Tests use it as their fixture, which also keeps
  * the shipped file honest: nothing else defines lenses in code.
  */
 export function repositoryLenses(): ReviewLens[] {
-  const path = new URL(`../../../${REPOSITORY_LENS_CONFIG}`, import.meta.url);
-  return [
-    ...parseLensConfig(readFileSync(path, "utf8"), REPOSITORY_LENS_CONFIG)
-      .lenses,
-  ];
+  cachedLenses ??= parseLensConfig(
+    repositoryLensConfigYaml(),
+    REPOSITORY_LENS_CONFIG,
+  );
+  return [...cachedLenses];
 }
 
 /** One named lens from repositoryLenses(); an unknown name is a test bug. */

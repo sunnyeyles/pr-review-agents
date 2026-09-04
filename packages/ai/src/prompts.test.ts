@@ -1,7 +1,11 @@
 import { createCapturingLogger } from "@pr-review/logging";
 import { describe, expect, it, vi } from "vitest";
 
-import { buildReviewSystemPrompt } from "./agents/lens.js";
+import {
+  buildReviewSystemPrompt,
+  lensPromptKey,
+  type ReviewLens,
+} from "./agents/lens.js";
 import { buildSynthesisSystemPrompt } from "./agents/synthesiser.js";
 import {
   repositoryLens,
@@ -11,8 +15,8 @@ import {
 } from "./agent-test-support.js";
 import {
   DEFAULT_PROMPT_LABEL,
+  inCodePrompts,
   loadManagedPrompts,
-  managedPromptKeys,
   type LangfusePromptClient,
 } from "./prompts.js";
 
@@ -54,10 +58,17 @@ function allValid(): Record<string, string> {
   };
 }
 
-describe("managedPromptKeys", () => {
-  it("uses the stable remote prompt names for the built-in lenses", () => {
+/** The Langfuse name each managed prompt of a lens set is fetched under. */
+function remoteNames(lenses: readonly ReviewLens[]): Record<string, string> {
+  return Object.fromEntries(
+    Object.keys(inCodePrompts(lenses)).map((id) => [id, lensPromptKey(id)]),
+  );
+}
+
+describe("managed prompt names", () => {
+  it("uses the stable remote prompt names for the configured lenses", () => {
     // Renaming one of these silently orphans the prompt in Langfuse.
-    expect(managedPromptKeys(configuredLenses)).toEqual({
+    expect(remoteNames(configuredLenses)).toEqual({
       correctness: "correctness_system",
       security: "security_system",
       architecture: "architecture_system",
@@ -65,9 +76,9 @@ describe("managedPromptKeys", () => {
     });
   });
 
-  it("derives a key for any configured lens, and always the synthesiser", () => {
+  it("derives a name for any configured lens, and always the synthesiser", () => {
     expect(
-      managedPromptKeys([
+      remoteNames([
         {
           category: "data-access",
           role: "Data access reviewer",

@@ -12,7 +12,6 @@ import {
   errorName,
   type StructuredLogger,
 } from "@pr-review/logging";
-import type { FindingCategory } from "@pr-review/schemas";
 
 import { buildReviewSystemPrompt, type ReviewLens } from "./lens.js";
 import { extractAgentOutput, messageText } from "./output.js";
@@ -99,9 +98,7 @@ const anthropicToolDefinitions: Anthropic.Messages.Tool[] = reviewTools.map(
 );
 
 /** Keyed by lens category. A lens with no entry uses buildReviewSystemPrompt. */
-export type ReviewSystemPrompts = Readonly<
-  Partial<Record<FindingCategory, string>>
->;
+export type ReviewSystemPrompts = Readonly<Record<string, string>>;
 
 /** What every review agent needs, regardless of lens. */
 export interface ReviewAgentDeps {

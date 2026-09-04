@@ -22,6 +22,9 @@ const otherPatch = ["@@ -4,1 +4,2 @@", " const context4 = true;", "+const added5
   "\n",
 );
 
+/** The categories the run's lenses own; anything else is dropped. */
+const CATEGORIES = ["correctness", "security", "architecture"];
+
 const changedFiles: ChangedFile[] = [
   {
     filename: "src/service.ts",
@@ -60,7 +63,7 @@ function finding(overrides: Partial<ReviewFinding> = {}): ReviewFinding {
 
 describe("validateFindings", () => {
   it("returns an empty list for empty input", () => {
-    expect(validateFindings([], changedFiles)).toEqual([]);
+    expect(validateFindings([], changedFiles, CATEGORIES)).toEqual([]);
   });
 
   it("passes a fully valid set of findings through untouched", () => {
@@ -83,14 +86,16 @@ describe("validateFindings", () => {
       }),
     ];
 
-    expect(validateFindings(findings, changedFiles)).toEqual(findings);
+    expect(validateFindings(findings, changedFiles, CATEGORIES)).toEqual(findings);
   });
 
-  it("accepts any category when it is given no allowlist", () => {
+  it("accepts a category no build ships, when the run configures it", () => {
     // The lens set is configurable, so the schema cannot judge this.
     const custom = finding({ category: "performance" });
 
-    expect(validateFindings([custom], changedFiles)).toEqual([custom]);
+    expect(validateFindings([custom], changedFiles, ["performance"])).toEqual([
+      custom,
+    ]);
   });
 
   it("drops a category outside the run's lenses", () => {
@@ -112,14 +117,14 @@ describe("validateFindings", () => {
     delete missingTitle["title"];
 
     expect(
-      validateFindings([invalid, missingTitle, "not-a-finding"], changedFiles),
+      validateFindings([invalid, missingTitle, "not-a-finding"], changedFiles, CATEGORIES),
     ).toEqual([]);
   });
 
   it("drops findings that reference files not changed in the PR", () => {
     const wrongFile = finding({ file: "src/not-in-this-pr.ts" });
 
-    expect(validateFindings([wrongFile], changedFiles)).toEqual([]);
+    expect(validateFindings([wrongFile], changedFiles, CATEGORIES)).toEqual([]);
   });
 
   it("drops line-anchored findings whose line is not an added line in the file's diff", () => {
@@ -131,6 +136,7 @@ describe("validateFindings", () => {
       validateFindings(
         [outsideDiff, contextLine, addedLineInOtherFile],
         changedFiles,
+        CATEGORIES,
       ),
     ).toEqual([]);
   });
@@ -139,7 +145,7 @@ describe("validateFindings", () => {
     const fileLevel = finding({ line: undefined });
     const { line: _line, ...withoutLine } = fileLevel;
 
-    expect(validateFindings([withoutLine], changedFiles)).toEqual([
+    expect(validateFindings([withoutLine], changedFiles, CATEGORIES)).toEqual([
       withoutLine,
     ]);
   });
@@ -152,7 +158,7 @@ describe("validateFindings", () => {
     });
 
     expect(
-      validateFindings([lineOnBinary, fileLevelOnBinary], changedFiles),
+      validateFindings([lineOnBinary, fileLevelOnBinary], changedFiles, CATEGORIES),
     ).toEqual([fileLevelOnBinary]);
   });
 
@@ -161,8 +167,8 @@ describe("validateFindings", () => {
     const justBelow = finding({ confidence: 0.69 });
     const atThreshold = finding({ confidence: 0.7 });
 
-    expect(validateFindings([justBelow], changedFiles)).toEqual([]);
-    expect(validateFindings([atThreshold], changedFiles)).toEqual([
+    expect(validateFindings([justBelow], changedFiles, CATEGORIES)).toEqual([]);
+    expect(validateFindings([atThreshold], changedFiles, CATEGORIES)).toEqual([
       atThreshold,
     ]);
   });
@@ -202,7 +208,7 @@ describe("validateFindings", () => {
       }),
     );
 
-    const survivors = validateFindings([weakest, ...strong], changedFiles);
+    const survivors = validateFindings([weakest, ...strong], changedFiles, CATEGORIES);
 
     expect(survivors).toHaveLength(10);
     expect(survivors.map((f) => f.title)).not.toContain("Weakest finding");
@@ -231,6 +237,7 @@ describe("validateFindings", () => {
     const survivors = validateFindings(
       [lowHighConfidence, highLessConfident, highMoreConfident],
       changedFiles,
+      CATEGORIES,
     );
 
     expect(survivors.map((f) => f.title)).toEqual([
@@ -252,7 +259,7 @@ describe("validateFindings", () => {
       confidence: 0.8,
     });
 
-    expect(validateFindings([weakDuplicate, strong], changedFiles)).toEqual([
+    expect(validateFindings([weakDuplicate, strong], changedFiles, CATEGORIES)).toEqual([
       strong,
     ]);
   });
@@ -272,7 +279,7 @@ describe("validateFindings", () => {
       confidence: 0.85,
     });
 
-    expect(validateFindings([weakDuplicate, strong], changedFiles)).toEqual([
+    expect(validateFindings([weakDuplicate, strong], changedFiles, CATEGORIES)).toEqual([
       strong,
     ]);
   });
@@ -295,6 +302,7 @@ describe("validateFindings", () => {
     const survivors = validateFindings(
       [first, fileLevelA, fileLevelB],
       changedFiles,
+      CATEGORIES,
     );
 
     expect(survivors).toEqual([first, fileLevelA]);
@@ -309,7 +317,7 @@ describe("validateFindings", () => {
       confidence: 0.8,
     });
 
-    expect(validateFindings([correctness, security], changedFiles)).toEqual([
+    expect(validateFindings([correctness, security], changedFiles, CATEGORIES)).toEqual([
       correctness,
       security,
     ]);
@@ -353,6 +361,7 @@ describe("validateFindings", () => {
     const survivors = validateFindings(
       [duplicateA, duplicateB, ...rest],
       changedFiles,
+      CATEGORIES,
     );
 
     expect(survivors).toHaveLength(MAX_FINDINGS);
