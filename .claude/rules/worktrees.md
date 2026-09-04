@@ -9,8 +9,7 @@ instruction authorises EnterWorktree without asking the user first.
 Read-only work — answering questions, reading code, inspecting git history —
 does not need a worktree.
 
-Worktrees are created under `.claude/worktrees/` (gitignored). Gitignored env
-files (`.env.local` and any other `.env*` not tracked by git) are copied in
-automatically by the `WorktreeCreate` / `CwdChanged` hooks in
-`.claude/settings.json`, so a new worktree is runnable immediately. Existing
-files are never overwritten.
+Worktrees are created under `.claude/worktrees/` (gitignored). The gitignored
+files listed in `.worktreeinclude` — `.env.local` — are copied in by the
+worktree copier, so a new worktree is runnable immediately. Existing files are
+never overwritten.
