@@ -9,7 +9,7 @@ import {
   type StructuredLogger,
 } from "@pr-review/logging";
 
-import { lensPromptKey } from "./agents/lens.js";
+import { agentPromptKey } from "./agents/definition.js";
 import {
   DEFAULT_PROMPT_LABEL,
   createLangfuseClient,
@@ -94,7 +94,7 @@ export type SeedOutcome =
   | "failed";
 
 export interface SeedManagedPromptsOptions {
-  /** The prompts to publish, from inCodePrompts(lenses); its keys decide what is seeded. */
+  /** The prompts to publish, from inCodePrompts(agents); its keys decide what is seeded. */
   prompts: ManagedPrompts;
   /** Deployment label to point at the published versions. */
   label?: string | undefined;
@@ -121,7 +121,7 @@ export async function seedManagedPrompts(
   const entries = Object.entries(options.prompts);
   const outcomes = await Promise.all(
     entries.map(async ([id, text]): Promise<SeedOutcome> => {
-      const name = lensPromptKey(id);
+      const name = agentPromptKey(id);
 
       const problems = promptContractProblems(id, text);
       if (problems.length > 0) {

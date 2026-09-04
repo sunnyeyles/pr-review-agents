@@ -22,7 +22,7 @@ const otherPatch = ["@@ -4,1 +4,2 @@", " const context4 = true;", "+const added5
   "\n",
 );
 
-/** The categories the run's lenses own; anything else is dropped. */
+/** The categories the run's agents own; anything else is dropped. */
 const CATEGORIES = ["correctness", "security", "architecture"];
 
 const changedFiles: ChangedFile[] = [
@@ -90,7 +90,7 @@ describe("validateFindings", () => {
   });
 
   it("accepts a category no build ships, when the run configures it", () => {
-    // The lens set is configurable, so the schema cannot judge this.
+    // The agent set is configurable, so the schema cannot judge this.
     const custom = finding({ category: "performance" });
 
     expect(validateFindings([custom], changedFiles, ["performance"])).toEqual([
@@ -98,7 +98,7 @@ describe("validateFindings", () => {
     ]);
   });
 
-  it("drops a category outside the run's lenses", () => {
+  it("drops a category outside the run's agents", () => {
     // The synthesiser must not be able to invent a category.
     const invented = finding({ category: "performance" });
     const kept = finding({ line: 11, category: "security" });

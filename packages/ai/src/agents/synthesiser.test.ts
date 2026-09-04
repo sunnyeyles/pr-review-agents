@@ -2,7 +2,7 @@ import type { AnthropicLike } from "../anthropic.js";
 import type { ReviewFinding } from "@pr-review/schemas";
 import { describe, expect, it } from "vitest";
 
-import { repositoryLenses } from "../agent-test-support.js";
+import { repositoryAgents } from "../agent-test-support.js";
 import {
   SynthesisError,
   buildSynthesisMessage,
@@ -10,8 +10,8 @@ import {
   createSynthesiser,
 } from "./synthesiser.js";
 
-const configuredLenses = repositoryLenses();
-const SYNTHESIS_SYSTEM_PROMPT = buildSynthesisSystemPrompt(configuredLenses);
+const configuredAgents = repositoryAgents();
+const SYNTHESIS_SYSTEM_PROMPT = buildSynthesisSystemPrompt(configuredAgents);
 
 const model = "claude-test-model";
 
@@ -30,7 +30,7 @@ function makeFinding(overrides: Partial<ReviewFinding> = {}): ReviewFinding {
   };
 }
 
-/** Two lenses reporting the same underlying issue in their own words. */
+/** Two agents reporting the same underlying issue in their own words. */
 const correctnessDuplicate = makeFinding({
   category: "correctness",
   title: "Admin check assigns instead of comparing",
@@ -117,7 +117,7 @@ function findingsJson(findings: readonly ReviewFinding[]): string {
 describe("createSynthesiser", () => {
   it("combines duplicates across agents into the model's single refined finding", async () => {
     const { anthropic } = makeAnthropic([findingsJson([combinedFinding])]);
-    const synthesiser = createSynthesiser({ anthropic, model, lenses: configuredLenses });
+    const synthesiser = createSynthesiser({ anthropic, model, agents: configuredAgents });
 
     const { findings } = await synthesiser.synthesise([
       correctnessDuplicate,
@@ -135,7 +135,7 @@ describe("createSynthesiser", () => {
         outputTokens: 45,
       },
     ]);
-    const synthesiser = createSynthesiser({ anthropic, model, lenses: configuredLenses });
+    const synthesiser = createSynthesiser({ anthropic, model, agents: configuredAgents });
 
     const { usage } = await synthesiser.synthesise([
       correctnessDuplicate,
@@ -152,7 +152,7 @@ describe("createSynthesiser", () => {
 
   it("makes exactly one single-turn model call with no tools", async () => {
     const { anthropic, calls } = makeAnthropic([findingsJson([combinedFinding])]);
-    const synthesiser = createSynthesiser({ anthropic, model, lenses: configuredLenses });
+    const synthesiser = createSynthesiser({ anthropic, model, agents: configuredAgents });
 
     await synthesiser.synthesise([correctnessDuplicate, securityDuplicate]);
 
@@ -167,7 +167,7 @@ describe("createSynthesiser", () => {
 
   it("sends every well-formed candidate to the model as untrusted data", async () => {
     const { anthropic, calls } = makeAnthropic([findingsJson([combinedFinding])]);
-    const synthesiser = createSynthesiser({ anthropic, model, lenses: configuredLenses });
+    const synthesiser = createSynthesiser({ anthropic, model, agents: configuredAgents });
 
     await synthesiser.synthesise([correctnessDuplicate, securityDuplicate]);
 
@@ -184,7 +184,7 @@ describe("createSynthesiser", () => {
 
   it("excludes malformed candidates from the synthesis input", async () => {
     const { anthropic, calls } = makeAnthropic([findingsJson([combinedFinding])]);
-    const synthesiser = createSynthesiser({ anthropic, model, lenses: configuredLenses });
+    const synthesiser = createSynthesiser({ anthropic, model, agents: configuredAgents });
 
     await synthesiser.synthesise([
       correctnessDuplicate,
@@ -205,7 +205,7 @@ describe("createSynthesiser", () => {
       confidence: 0.72,
     });
     const { anthropic } = makeAnthropic([findingsJson([strong])]);
-    const synthesiser = createSynthesiser({ anthropic, model, lenses: configuredLenses });
+    const synthesiser = createSynthesiser({ anthropic, model, agents: configuredAgents });
 
     const { findings } = await synthesiser.synthesise([strong, weak]);
 
@@ -216,7 +216,7 @@ describe("createSynthesiser", () => {
     const overstated = makeFinding({ severity: "high" });
     const corrected = makeFinding({ severity: "medium" });
     const { anthropic } = makeAnthropic([findingsJson([corrected])]);
-    const synthesiser = createSynthesiser({ anthropic, model, lenses: configuredLenses });
+    const synthesiser = createSynthesiser({ anthropic, model, agents: configuredAgents });
 
     const { findings } = await synthesiser.synthesise([overstated]);
 
@@ -226,7 +226,7 @@ describe("createSynthesiser", () => {
 
   it("skips the model call entirely when there are no candidates, reporting zero usage", async () => {
     const { anthropic, calls } = makeAnthropic([]);
-    const synthesiser = createSynthesiser({ anthropic, model, lenses: configuredLenses });
+    const synthesiser = createSynthesiser({ anthropic, model, agents: configuredAgents });
 
     const result = await synthesiser.synthesise([]);
 
@@ -244,7 +244,7 @@ describe("createSynthesiser", () => {
 
   it("skips the model call when no candidate is well-formed", async () => {
     const { anthropic, calls } = makeAnthropic([]);
-    const synthesiser = createSynthesiser({ anthropic, model, lenses: configuredLenses });
+    const synthesiser = createSynthesiser({ anthropic, model, agents: configuredAgents });
 
     const result = await synthesiser.synthesise([
       { nonsense: true },
@@ -265,7 +265,7 @@ describe("createSynthesiser", () => {
 
   it("rejects with SynthesisError when the model output contains no JSON", async () => {
     const { anthropic } = makeAnthropic(["I refined the findings for you."]);
-    const synthesiser = createSynthesiser({ anthropic, model, lenses: configuredLenses });
+    const synthesiser = createSynthesiser({ anthropic, model, agents: configuredAgents });
 
     await expect(
       synthesiser.synthesise([correctnessDuplicate]),
@@ -276,7 +276,7 @@ describe("createSynthesiser", () => {
     const { anthropic } = makeAnthropic([
       JSON.stringify({ findings: [{ file: "", confidence: 2 }] }),
     ]);
-    const synthesiser = createSynthesiser({ anthropic, model, lenses: configuredLenses });
+    const synthesiser = createSynthesiser({ anthropic, model, agents: configuredAgents });
 
     await expect(
       synthesiser.synthesise([correctnessDuplicate]),
@@ -285,7 +285,7 @@ describe("createSynthesiser", () => {
 
   it("propagates model API errors to the caller", async () => {
     const { anthropic } = makeAnthropic([new Error("anthropic unavailable")]);
-    const synthesiser = createSynthesiser({ anthropic, model, lenses: configuredLenses });
+    const synthesiser = createSynthesiser({ anthropic, model, agents: configuredAgents });
 
     await expect(
       synthesiser.synthesise([correctnessDuplicate]),
@@ -294,7 +294,7 @@ describe("createSynthesiser", () => {
 });
 
 describe("buildSynthesisSystemPrompt", () => {
-  it("names the lens set it was built for, whatever its size", () => {
+  it("names the agent set it was built for, whatever its size", () => {
     expect(SYNTHESIS_SYSTEM_PROMPT).toContain(
       "3 review agents — Correctness, Security, and Architecture —",
     );
@@ -303,7 +303,7 @@ describe("buildSynthesisSystemPrompt", () => {
     );
   });
 
-  it("agrees with itself on a configured lens set", () => {
+  it("agrees with itself on a configured agent set", () => {
     const prompt = buildSynthesisSystemPrompt([
       {
         category: "performance",
@@ -323,7 +323,7 @@ describe("buildSynthesisSystemPrompt", () => {
     expect(prompt).toContain('"category": "performance"');
   });
 
-  it("reads naturally with a single lens", () => {
+  it("reads naturally with a single agent", () => {
     const prompt = buildSynthesisSystemPrompt([
       {
         category: "security",
@@ -375,7 +375,7 @@ describe("a pre-resolved synthesis prompt", () => {
     const synthesiser = createSynthesiser({
       anthropic,
       model,
-      lenses: configuredLenses,
+      agents: configuredAgents,
       systemPrompt: injected,
     });
 

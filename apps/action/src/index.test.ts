@@ -9,7 +9,7 @@ import {
   headSha,
   makeGithub,
   message,
-  repositoryLensConfigYaml,
+  repositoryAgentConfigYaml,
   textBlock,
   validRemotePrompt,
   validRemoteSynthesisPrompt,
@@ -48,8 +48,8 @@ const validInputs = {
   "INPUT_GITHUB-TOKEN": "ghs-test-token",
 };
 
-/** The lens configuration the repository has committed on its base branch. */
-const lensConfigYaml = repositoryLensConfigYaml();
+/** The agent configuration the repository has committed on its base branch. */
+const agentConfigYaml = repositoryAgentConfigYaml();
 
 /** An HTTP failure shaped the way Octokit raises one. */
 function httpError(status: number): Error {
@@ -92,7 +92,7 @@ interface Harness {
 interface HarnessOptions {
   /** Absent means the Langfuse seams are wired but must never be reached. */
   prompts?: Record<string, string | Error> | undefined;
-  /** Replaces the lens configuration the base commit serves. */
+  /** Replaces the agent configuration the base commit serves. */
   config?: string | Error | undefined;
   /** Fails every model call, after tracing has already started. */
   modelError?: Error | undefined;
@@ -115,7 +115,7 @@ function harness(
   const fileReads: Harness["fileReads"] = [];
   const exitCodes: number[] = [];
 
-  const configured = options.config ?? lensConfigYaml;
+  const configured = options.config ?? agentConfigYaml;
   const client: GithubInstallationClient = {
     ...makeGithub(),
     getFileContents: vi.fn(async (request: FileContentsRequest) => {
@@ -281,14 +281,14 @@ describe("readAtCommit", () => {
   const repository = { owner: "octo-org", repo: "example-service" };
 
   it("reads the requested path at the given commit", async () => {
-    const client = { ...makeGithub(), getFileContents: vi.fn(async () => "lenses:\n") };
+    const client = { ...makeGithub(), getFileContents: vi.fn(async () => "agents:\n") };
     const read = readAtCommit(client, repository, baseSha);
 
-    await expect(read(".github/pr-review.yml")).resolves.toBe("lenses:\n");
+    await expect(read(".github/pr-review-agents.yml")).resolves.toBe("agents:\n");
     expect(client.getFileContents).toHaveBeenCalledWith({
       owner: "octo-org",
       repo: "example-service",
-      path: ".github/pr-review.yml",
+      path: ".github/pr-review-agents.yml",
       ref: baseSha,
     });
   });
@@ -300,7 +300,7 @@ describe("readAtCommit", () => {
     };
 
     await expect(
-      readAtCommit(client, repository, baseSha)(".github/pr-review.yml"),
+      readAtCommit(client, repository, baseSha)(".github/pr-review-agents.yml"),
     ).resolves.toBeUndefined();
   });
 
@@ -314,7 +314,7 @@ describe("readAtCommit", () => {
       };
 
       await expect(
-        readAtCommit(client, repository, baseSha)(".github/pr-review.yml"),
+        readAtCommit(client, repository, baseSha)(".github/pr-review-agents.yml"),
       ).rejects.toThrow(`HTTP ${status}`);
     },
   );
@@ -418,24 +418,24 @@ describe("runAction", () => {
 });
 
 /**
- * Where the lens configuration comes from. It becomes the agents' system
+ * Where the agent configuration comes from. It becomes the agents' system
  * prompts, so reading it from the pull request's own head or merge ref
  * would let the branch under review rewrite its reviewers.
  */
-describe("lens configuration", () => {
+describe("agent configuration", () => {
   it("reads it from the pull request's base commit", async () => {
     const { environment, fileReads } = harness(reviewEnv);
 
     await runAction(environment);
 
-    expect(fileReads).toEqual([{ path: ".github/pr-review.yml", ref: baseSha }]);
+    expect(fileReads).toEqual([{ path: ".github/pr-review-agents.yml", ref: baseSha }]);
     expect(fileReads.every((read) => read.ref !== headSha)).toBe(true);
   });
 
-  it("honours the lens-config input", async () => {
+  it("honours the agent-config input", async () => {
     const { environment, fileReads } = harness({
       ...reviewEnv,
-      "INPUT_LENS-CONFIG": "ci/agents.yml",
+      "INPUT_AGENT-CONFIG": "ci/agents.yml",
     });
 
     await runAction(environment);
@@ -456,7 +456,7 @@ describe("lens configuration", () => {
 
   it("fails the step when the configuration is malformed", async () => {
     const { environment } = harness(reviewEnv, pullRequestEvent(), {
-      config: "lenses: []\n",
+      config: "agents: []\n",
     });
 
     await expect(runAction(environment)).rejects.toThrow(/is invalid/);
@@ -465,7 +465,7 @@ describe("lens configuration", () => {
 
 /**
  * Selecting which agents run. Selection itself is pinned in
- * @pr-review/ai's lenses.test.ts; what belongs here is the wiring —
+ * @pr-review/ai's agents.test.ts; what belongs here is the wiring —
  * that the input reaches the parser, that the run always records which
  * agents it chose, and that a bad value costs nothing.
  */

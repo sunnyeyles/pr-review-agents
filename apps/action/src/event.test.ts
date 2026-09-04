@@ -34,7 +34,7 @@ describe("inspectEvent", () => {
   });
 
   it("rejects a base SHA that is not a full commit SHA", () => {
-    // The lens configuration is read at this commit; a ref that is not a
+    // The agent configuration is read at this commit; a ref that is not a
     // pinned SHA could resolve to the branch under review.
     expect(() =>
       inspectEvent(

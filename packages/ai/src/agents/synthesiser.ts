@@ -14,7 +14,7 @@ import {
   wellFormedFindings,
   type ReviewFinding,
 } from "@pr-review/schemas";
-import type { ReviewLens } from "./lens.js";
+import type { AgentDefinition } from "./definition.js";
 
 /** A synthesis-level failure (the model broke the output contract). */
 export class SynthesisError extends Error {
@@ -27,9 +27,9 @@ export class SynthesisError extends Error {
 /** Output budget for the single synthesis call. */
 const MAX_OUTPUT_TOKENS = 8_000;
 
-/** "A, B, and C" — the lens names as the synthesiser prompt reads them. */
-function listLensNames(lenses: readonly ReviewLens[]): string {
-  const names = lenses.map((lens) => categoryLabel(lens.category));
+/** "A, B, and C" — the agent names as the synthesiser prompt reads them. */
+function listAgentNames(agents: readonly AgentDefinition[]): string {
+  const names = agents.map((agent) => categoryLabel(agent.category));
   if (names.length <= 2) {
     return names.join(" and ");
   }
@@ -38,15 +38,15 @@ function listLensNames(lenses: readonly ReviewLens[]): string {
 
 /**
  * Finding texts originate from repository content, so they get the same
- * hardening. The lens names and the category contract are derived from
- * the run's lens set, never hard-coded.
+ * hardening. The agent names and the category contract are derived from
+ * the run's agent set, never hard-coded.
  */
 export function buildSynthesisSystemPrompt(
-  lenses: readonly ReviewLens[],
+  agents: readonly AgentDefinition[],
 ): string {
-  const agentCount = lenses.length;
-  const quotedCategories = lenses.map((lens) => `"${lens.category}"`);
-  return `You are the synthesiser in an automated pull-request review system. ${agentCount} review ${agentCount === 1 ? "agent" : "agents"} — ${listLensNames(lenses)} — ${agentCount === 1 ? "has" : "have"} proposed candidate findings for one pull request. You refine their combined list into the final set worth a human reviewer's attention.
+  const agentCount = agents.length;
+  const quotedCategories = agents.map((agent) => `"${agent.category}"`);
+  return `You are the synthesiser in an automated pull-request review system. ${agentCount} review ${agentCount === 1 ? "agent" : "agents"} — ${listAgentNames(agents)} — ${agentCount === 1 ? "has" : "have"} proposed candidate findings for one pull request. You refine their combined list into the final set worth a human reviewer's attention.
 
 # Task
 - Remove duplicates: when several findings describe the same underlying issue — even across categories or in different words — keep exactly one.
@@ -85,9 +85,9 @@ export interface SynthesiserDeps {
   anthropic: AnthropicLike;
   /** Model id from configuration (ANTHROPIC_MODEL); never hard-coded. */
   model: string;
-  /** The run's lens set, which names the categories the prompt accepts. */
-  lenses: readonly ReviewLens[];
-  /** Omitted means the prompt built from `lenses`. */
+  /** The run's agent set, which names the categories the prompt accepts. */
+  agents: readonly AgentDefinition[];
+  /** Omitted means the prompt built from `agents`. */
   systemPrompt?: string | undefined;
 }
 
@@ -106,7 +106,7 @@ export interface Synthesiser {
 /** Builds the Synthesiser over the shared Anthropic seam. */
 export function createSynthesiser(deps: SynthesiserDeps): Synthesiser {
   const systemPrompt =
-    deps.systemPrompt ?? buildSynthesisSystemPrompt(deps.lenses);
+    deps.systemPrompt ?? buildSynthesisSystemPrompt(deps.agents);
 
   return {
     async synthesise(candidates) {

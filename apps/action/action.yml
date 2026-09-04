@@ -1,7 +1,7 @@
 name: AI PR Review
 description: >-
   Reviews a pull request with the independent AI review agents the repository
-  declares in .github/pr-review.yml, and publishes an AI PR Review check run
+  declares in .github/pr-review-agents.yml, and publishes an AI PR Review check run
   with inline annotations. No agents are built in.
 author: sunnyeyles
 
@@ -37,7 +37,7 @@ inputs:
       quietly running a narrower review.
     required: false
     default: all
-  lens-config:
+  agent-config:
     description: >-
       Repository-relative path to the YAML file declaring this repository's
       review agents. It is read from the pull request's base commit over the
@@ -46,7 +46,7 @@ inputs:
       a missing, malformed, or empty one fails the step rather than running a
       review nobody configured.
     required: false
-    default: .github/pr-review.yml
+    default: .github/pr-review-agents.yml
   langfuse-public-key:
     description: >-
       Langfuse public key. Supply this and langfuse-secret-key to fetch the

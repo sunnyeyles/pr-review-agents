@@ -152,7 +152,7 @@ describe("runReviewPipeline: agent fan-out and partial failure (spec §20)", () 
     expect(result.agentFailures).toEqual([]);
   });
 
-  it("with one of three agents failing, keeps the other two lenses' candidates, in order", async () => {
+  it("with one of three agents failing, keeps the other two agents' candidates, in order", async () => {
     const correctness = makeFinding({ category: "correctness", title: "c" });
     const architecture = makeFinding({ category: "architecture", title: "a" });
     const result = await runReviewPipeline(
@@ -173,7 +173,7 @@ describe("runReviewPipeline: agent fan-out and partial failure (spec §20)", () 
     ]);
   });
 
-  it("throws when all three agents fail, naming every lens", async () => {
+  it("throws when all three agents fail, naming every agent", async () => {
     const failing = (name: string) =>
       agent(name, async () => {
         throw new Error(`${name} exploded`);

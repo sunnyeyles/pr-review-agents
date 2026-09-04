@@ -3,13 +3,13 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   buildReviewSystemPrompt,
-  lensPromptKey,
-  type ReviewLens,
-} from "./agents/lens.js";
+  agentPromptKey,
+  type AgentDefinition,
+} from "./agents/definition.js";
 import { buildSynthesisSystemPrompt } from "./agents/synthesiser.js";
 import {
-  repositoryLens,
-  repositoryLenses,
+  repositoryAgent,
+  repositoryAgents,
   validRemotePrompt,
   validRemoteSynthesisPrompt,
 } from "./agent-test-support.js";
@@ -20,15 +20,15 @@ import {
   type LangfusePromptClient,
 } from "./prompts.js";
 
-const configuredLenses = repositoryLenses();
+const configuredAgents = repositoryAgents();
 const CORRECTNESS_FALLBACK = buildReviewSystemPrompt(
-  repositoryLens("correctness"),
+  repositoryAgent("correctness"),
 );
-const SECURITY_FALLBACK = buildReviewSystemPrompt(repositoryLens("security"));
+const SECURITY_FALLBACK = buildReviewSystemPrompt(repositoryAgent("security"));
 const ARCHITECTURE_FALLBACK = buildReviewSystemPrompt(
-  repositoryLens("architecture"),
+  repositoryAgent("architecture"),
 );
-const SYNTHESIS_FALLBACK = buildSynthesisSystemPrompt(configuredLenses);
+const SYNTHESIS_FALLBACK = buildSynthesisSystemPrompt(configuredAgents);
 
 /** A string resolves, an Error rejects, and an unlisted name is a test bug. */
 function makeClient(
@@ -58,17 +58,17 @@ function allValid(): Record<string, string> {
   };
 }
 
-/** The Langfuse name each managed prompt of a lens set is fetched under. */
-function remoteNames(lenses: readonly ReviewLens[]): Record<string, string> {
+/** The Langfuse name each managed prompt of an agent set is fetched under. */
+function remoteNames(agents: readonly AgentDefinition[]): Record<string, string> {
   return Object.fromEntries(
-    Object.keys(inCodePrompts(lenses)).map((id) => [id, lensPromptKey(id)]),
+    Object.keys(inCodePrompts(agents)).map((id) => [id, agentPromptKey(id)]),
   );
 }
 
 describe("managed prompt names", () => {
-  it("uses the stable remote prompt names for the configured lenses", () => {
+  it("uses the stable remote prompt names for the configured agents", () => {
     // Renaming one of these silently orphans the prompt in Langfuse.
-    expect(remoteNames(configuredLenses)).toEqual({
+    expect(remoteNames(configuredAgents)).toEqual({
       correctness: "correctness_system",
       security: "security_system",
       architecture: "architecture_system",
@@ -76,7 +76,7 @@ describe("managed prompt names", () => {
     });
   });
 
-  it("derives a name for any configured lens, and always the synthesiser", () => {
+  it("derives a name for any configured agent, and always the synthesiser", () => {
     expect(
       remoteNames([
         {
@@ -99,7 +99,7 @@ describe("loadManagedPrompts", () => {
     const { logger, entries } = createCapturingLogger();
 
     const { prompts, sources } = await loadManagedPrompts(client, {
-      lenses: configuredLenses,
+      agents: configuredAgents,
       logger,
     });
 
@@ -135,7 +135,7 @@ describe("loadManagedPrompts", () => {
     const { logger, entries } = createCapturingLogger();
 
     const { prompts, sources } = await loadManagedPrompts(client, {
-      lenses: configuredLenses,
+      agents: configuredAgents,
       logger,
     });
 
@@ -169,7 +169,7 @@ describe("loadManagedPrompts", () => {
     const { logger, entries } = createCapturingLogger();
 
     const { prompts, sources } = await loadManagedPrompts(client, {
-      lenses: configuredLenses,
+      agents: configuredAgents,
       logger,
     });
 
@@ -201,7 +201,7 @@ describe("loadManagedPrompts", () => {
     };
 
     const { sources } = await loadManagedPrompts(client, {
-      lenses: configuredLenses,
+      agents: configuredAgents,
       logger: createCapturingLogger().logger,
     });
 
@@ -213,7 +213,7 @@ describe("loadManagedPrompts", () => {
     const client = makeClient(allValid());
 
     await loadManagedPrompts(client, {
-      lenses: configuredLenses,
+      agents: configuredAgents,
       logger: createCapturingLogger().logger,
       label: "staging",
     });
@@ -227,7 +227,7 @@ describe("loadManagedPrompts", () => {
     const client = makeClient(allValid());
 
     await loadManagedPrompts(client, {
-      lenses: configuredLenses,
+      agents: configuredAgents,
       logger: createCapturingLogger().logger,
     });
 
@@ -249,7 +249,7 @@ describe("loadManagedPrompts", () => {
     const { logger, entries } = createCapturingLogger();
 
     const { prompts, sources } = await loadManagedPrompts(client, {
-      lenses: configuredLenses,
+      agents: configuredAgents,
       logger,
       timeoutMs: 10,
     });
@@ -268,7 +268,7 @@ describe("loadManagedPrompts", () => {
 });
 
 describe("the prompt contract guard", () => {
-  it("rejects a lens prompt that dropped its category", async () => {
+  it("rejects an agent prompt that dropped its category", async () => {
     // Without its category, every finding is discarded downstream and
     // the review reports nothing instead of failing.
     const client = makeClient({
@@ -282,7 +282,7 @@ describe("the prompt contract guard", () => {
     const { logger, entries } = createCapturingLogger();
 
     const { prompts, sources } = await loadManagedPrompts(client, {
-      lenses: configuredLenses,
+      agents: configuredAgents,
       logger,
     });
 
@@ -306,7 +306,7 @@ describe("the prompt contract guard", () => {
     const { logger, entries } = createCapturingLogger();
 
     const { sources } = await loadManagedPrompts(client, {
-      lenses: configuredLenses,
+      agents: configuredAgents,
       logger,
     });
 
@@ -329,7 +329,7 @@ describe("the prompt contract guard", () => {
     });
 
     return loadManagedPrompts(client, {
-      lenses: configuredLenses,
+      agents: configuredAgents,
       logger: createCapturingLogger().logger,
     }).then(({ sources }) => {
       expect(sources.correctness).toBe("langfuse");

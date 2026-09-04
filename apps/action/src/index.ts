@@ -7,23 +7,23 @@ import process from "node:process";
 
 import {
   DEFAULT_LANGFUSE_BASE_URL,
-  DEFAULT_LENS_CONFIG_PATH,
+  DEFAULT_AGENT_CONFIG_PATH,
   DEFAULT_PROMPT_LABEL,
   SYNTHESIS_PROMPT_ID,
   createAnthropicClient,
   createLangfusePromptClient,
   createReviewAgents,
   createSynthesiser,
-  loadLensSet,
+  loadAgentDefinitions,
   loadManagedPrompts,
-  resolveReviewLenses,
+  resolveAgentDefinitions,
   type AnthropicClientConfig,
   type AnthropicLike,
   type LangfusePromptClient,
   type LangfusePromptClientConfig,
   type ManagedPrompts,
   type ReadOptionalFile,
-  type ReviewLens,
+  type AgentDefinition,
 } from "@pr-review/ai";
 import {
   createTokenClient,
@@ -153,7 +153,7 @@ export function resolveLangfuseInputs(
 async function resolveManagedPrompts(
   environment: ActionEnvironment,
   inputs: LangfuseInputs,
-  lenses: readonly ReviewLens[],
+  agents: readonly AgentDefinition[],
 ): Promise<ManagedPrompts | undefined> {
   try {
     const client = environment.createPromptClient({
@@ -162,7 +162,7 @@ async function resolveManagedPrompts(
       baseUrl: inputs.baseUrl,
     });
     const { prompts } = await loadManagedPrompts(client, {
-      lenses,
+      agents,
       label: inputs.promptLabel,
       logger: environment.logger,
     });
@@ -176,7 +176,7 @@ async function resolveManagedPrompts(
 }
 
 /**
- * Reads repository files at one commit. The lens configuration defines
+ * Reads repository files at one commit. The agent configuration defines
  * the agents' system prompts, so it is read at the pull request's base
  * commit rather than from the workspace: a checkout of the head or merge
  * ref would let the branch under review rewrite its own reviewers.
@@ -231,14 +231,14 @@ export async function runAction(
   // Resolved before the model client is built, so a missing config or a
   // typo'd agent name fails the step rather than producing a review that
   // looks clean.
-  const configured = await loadLensSet({
+  const configured = await loadAgentDefinitions({
     readFile: readAtCommit(client, target, baseSha),
-    path: getInput(env, "lens-config") || DEFAULT_LENS_CONFIG_PATH,
+    path: getInput(env, "agent-config") || DEFAULT_AGENT_CONFIG_PATH,
   });
-  const lenses = resolveReviewLenses(getInput(env, "agents"), configured);
+  const agents = resolveAgentDefinitions(getInput(env, "agents"), configured);
   logger.info("review.agents_selected", {
-    agents: lenses.map((lens) => lens.category),
-    configuredAgents: configured.map((lens) => lens.category),
+    agents: agents.map((agent) => agent.category),
+    configuredAgents: configured.map((agent) => agent.category),
   });
 
   const anthropic: AnthropicLike = environment.createAnthropicClient({
@@ -262,13 +262,13 @@ export async function runAction(
     const prompts =
       langfuse === undefined
         ? undefined
-        : await resolveManagedPrompts(environment, langfuse, lenses);
+        : await resolveManagedPrompts(environment, langfuse, agents);
 
     // Repository-independent, so one instance serves the whole run.
     const synthesiser = createSynthesiser({
       anthropic,
       model,
-      lenses,
+      agents,
       ...(prompts === undefined
         ? {}
         : { systemPrompt: prompts[SYNTHESIS_PROMPT_ID] }),
@@ -284,7 +284,7 @@ export async function runAction(
               github: reviewClient,
               ...(prompts === undefined ? {} : { systemPrompts: prompts }),
             },
-            lenses,
+            agents,
           ),
           synthesiser,
           context,

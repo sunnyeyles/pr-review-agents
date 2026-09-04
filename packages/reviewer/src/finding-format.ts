@@ -13,7 +13,7 @@ export function location(finding: ReviewFinding): string {
     : `${finding.file}:${finding.line}`;
 }
 
-/** The finding's heading: severity, lens, and title. */
+/** The finding's heading: severity, agent, and title. */
 export function heading(finding: ReviewFinding): string {
   return `${finding.severity.toUpperCase()} — ${categoryLabel(finding.category)}: ${finding.title}`;
 }
@@ -33,7 +33,7 @@ export function summarise(finding: ReviewFinding): string {
   return lines.join("\n");
 }
 
-/** Which lenses did not complete. Names only; error strings never reach GitHub. */
+/** Which agents did not complete. Names only; error strings never reach GitHub. */
 export function failureNotes(
   agentFailures: readonly AgentFailure[],
 ): string[] {

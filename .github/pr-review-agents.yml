@@ -16,9 +16,9 @@
 # Order matters: it is the order findings reach the synthesiser.
 #
 # Everything else in the prompt — the injection hardening, the tool guidance,
-# the JSON output contract — is shared, so a lens only states its own focus.
+# the JSON output contract — is shared, so an agent only states its own focus.
 
-lenses:
+agents:
   - category: correctness
     role: Correctness reviewer
     focus: |

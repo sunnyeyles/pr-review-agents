@@ -4,7 +4,7 @@
 # Manual only. These evaluations drive the real pipeline against the fixtures
 # in evals/, which means real model calls and real token spend on every run, so
 # they are deliberately not on push — that is what CI's `pnpm test` is for.
-# Run this before a release, or after changing a prompt, a lens, the
+# Run this before a release, or after changing a prompt, an agent, the
 # Synthesiser, or the validation chain.
 #
 # Requires an ANTHROPIC_API_KEY repository secret. Unlike the self review, a

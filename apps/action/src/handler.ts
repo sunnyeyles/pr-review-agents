@@ -29,7 +29,7 @@ export type ActionHandler = (
 
 /**
  * Reviews the pull request the entrypoint's event inspection produced.
- * Whether an event is reviewable is decided before this, because the lens
+ * Whether an event is reviewable is decided before this, because the agent
  * configuration is read from that pull request's base commit.
  */
 export function createActionHandler({

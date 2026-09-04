@@ -4,11 +4,11 @@
  */
 import {
   DEFAULT_LANGFUSE_BASE_URL,
-  DEFAULT_LENS_CONFIG_PATH,
+  DEFAULT_AGENT_CONFIG_PATH,
   DEFAULT_PROMPT_LABEL,
   createLangfusePromptWriter,
   inCodePrompts,
-  loadLensSet,
+  loadAgentDefinitions,
   seedFailed,
   seedManagedPrompts,
   type LangfusePromptClientConfig,
@@ -52,7 +52,7 @@ export const MISSING_CREDENTIALS_MESSAGE = [
 export interface SeedArgs {
   label: string;
   dryRun: boolean;
-  /** Lens configuration to seed prompts for. */
+  /** Agent configuration to seed prompts for. */
   config: string;
 }
 
@@ -60,7 +60,7 @@ export interface SeedArgs {
 export function parseSeedArgs(argv: string[]): SeedArgs {
   let label = DEFAULT_PROMPT_LABEL;
   let dryRun = false;
-  let config = DEFAULT_LENS_CONFIG_PATH;
+  let config = DEFAULT_AGENT_CONFIG_PATH;
 
   /** Reads `--flag value`, advancing past the value it consumed. */
   const takeValue = (index: number, flag: string, example: string): string => {
@@ -85,7 +85,7 @@ export function parseSeedArgs(argv: string[]): SeedArgs {
     } else if (arg.startsWith("--label=")) {
       label = arg.slice("--label=".length);
     } else if (arg === "--config") {
-      config = takeValue(index, "--config", DEFAULT_LENS_CONFIG_PATH);
+      config = takeValue(index, "--config", DEFAULT_AGENT_CONFIG_PATH);
       index += 1;
     } else if (arg.startsWith("--config=")) {
       config = arg.slice("--config=".length);
@@ -99,7 +99,7 @@ export function parseSeedArgs(argv: string[]): SeedArgs {
   }
   if (config.trim() === "") {
     throw new Error(
-      `--config needs a value, for example --config ${DEFAULT_LENS_CONFIG_PATH}`,
+      `--config needs a value, for example --config ${DEFAULT_AGENT_CONFIG_PATH}`,
     );
   }
   return { label, dryRun, config };
@@ -126,7 +126,7 @@ export function requireLangfuseConfig(
 export interface SeedCliEnvironment {
   env: Record<string, string | undefined>;
   createWriter: (config: LangfusePromptClientConfig) => LangfusePromptWriter;
-  /** Reads the lens configuration; undefined when the file does not exist. */
+  /** Reads the agent configuration; undefined when the file does not exist. */
   readConfigFile: ReadOptionalFile;
   logger: StructuredLogger;
   /** Where the human-readable summary goes. */
@@ -155,12 +155,12 @@ export async function main(
 
   let args: SeedArgs;
   let config: LangfusePromptClientConfig;
-  let lenses;
+  let agents;
   try {
     args = parseSeedArgs(argv);
     config = requireLangfuseConfig(env);
-    // Seeds exactly the prompts the configured lens set will ask for.
-    lenses = await loadLensSet({
+    // Seeds exactly the prompts the configured agent set will ask for.
+    agents = await loadAgentDefinitions({
       readFile: environment.readConfigFile,
       path: args.config,
     });
@@ -174,10 +174,10 @@ export async function main(
       args.dryRun ? " (dry run — nothing will be written)" : ""
     }`,
   );
-  write(`Lenses: ${lenses.map((lens) => lens.category).join(", ")}`);
+  write(`Agents: ${agents.map((agent) => agent.category).join(", ")}`);
 
   const report = await seedManagedPrompts(environment.createWriter(config), {
-    prompts: inCodePrompts(lenses),
+    prompts: inCodePrompts(agents),
     label: args.label,
     dryRun: args.dryRun,
     logger,

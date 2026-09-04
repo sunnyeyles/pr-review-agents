@@ -6,11 +6,11 @@
  */
 import process from "node:process";
 
-import { resolveReviewLenses } from "@pr-review/ai";
+import { resolveAgentDefinitions } from "@pr-review/ai";
 import { createConsoleLogger } from "@pr-review/logging";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 
-import { repositoryLenses } from "../../packages/ai/src/agent-test-support.js";
+import { repositoryAgents } from "../../packages/ai/src/agent-test-support.js";
 import { evalCases } from "./cases.js";
 import { evaluateExpectation } from "./expectations.js";
 import { loadFixture } from "./fixture.js";
@@ -27,7 +27,7 @@ import {
 const deps = modelBackedDeps(
   requireModelAccess(process.env),
   createConsoleLogger(),
-  resolveReviewLenses(process.env[AGENTS_ENV] ?? "", repositoryLenses()),
+  resolveAgentDefinitions(process.env[AGENTS_ENV] ?? "", repositoryAgents()),
 );
 
 const reports: string[] = [];
