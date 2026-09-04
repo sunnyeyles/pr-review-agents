@@ -4,7 +4,7 @@
 # repository holds the source we intend to license. So the split: build here,
 # publish only the artefacts a consumer needs — action.yml, the bundled
 # dist/index.mjs, LICENSE, and usage docs — into a thin public repo. The
-# engine, the tests, the spec, and the Terraform stay private.
+# engine, the tests, and the spec stay private.
 #
 # Required repository configuration:
 #

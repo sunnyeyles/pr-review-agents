@@ -12,9 +12,9 @@ application code decides what actually gets published.
 
 ## Delivery path
 
-A GitHub Action, run in the repository's own Actions runner. No AWS account,
-no Terraform, no GitHub App registration; the workflow's own token
-authenticates the reads and publishes the check run.
+A GitHub Action, run in the repository's own Actions runner. There's no
+separate infrastructure to stand up and no GitHub App to register — the
+workflow's own token authenticates the reads and publishes the check run.
 
 ```yaml
 name: AI PR Review
