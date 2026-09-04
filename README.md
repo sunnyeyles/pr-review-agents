@@ -40,13 +40,15 @@ jobs:
   review:
     runs-on: ubuntu-latest
     steps:
-      - uses: sunnyeyles/pr-review-action@v1
+      - uses: sunnyeyles/pr-review-action@v2
         with:
           api-key: ${{ secrets.ANTHROPIC_API_KEY }}
 ```
 
 Source lives in [`apps/action`](apps/action); `release-action.yml` publishes the
-bundle to the public action repository.
+bundle to the public action repository. `v2` made the provider configurable and
+renamed the `anthropic-api-key` input to `api-key`; a `v1` workflow needs that
+one rename to move.
 
 On a fork PR, `GITHUB_TOKEN` is read-only and can't create a check run — the
 Action detects that permission error, degrades to writing the review into the
@@ -168,11 +170,11 @@ Set as `with:` inputs on the Action step ([`apps/action/action.yml`](apps/action
 
 | Input | Required | Purpose |
 | --- | --- | --- |
-| `api-key` | yes | Key for the selected provider, which the agents and synthesiser authenticate with. Store as a repository or organisation secret; never inline it. Falls back to the provider's own variable (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`) when left empty, so a workflow can pass keys through `env` instead of choosing one in YAML. |
+| `api-key` | yes, as the input or through `env` | Key for the selected provider, which the agents and synthesiser authenticate with. Store as a repository or organisation secret; never inline it. Falls back to the provider's own variable (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`) when left empty, so a workflow can pass keys through `env` instead of choosing one in YAML. |
 | `model-provider` | no (default `anthropic`) | Which provider the agents and synthesiser call: `anthropic` or `openai`. An unknown name fails the step before any model call. |
 | `github-token` | no (default `${{ github.token }}`) | Token for the six read-only repository tools and for publishing the check run. |
 | `model` | no (default: the provider's own — `claude-sonnet-5`, `gpt-5`) | Model id the agents and synthesiser use, as the provider spells it. |
-| `model-base-url` | no (default: the provider's own host) | Overrides the provider's API host — a gateway, a proxy, or a compatible endpoint. |
+| `model-base-url` | no (default: the provider's own host) | Overrides the provider's API host — a gateway, a proxy, or a compatible endpoint (for `openai`, one that accepts `max_completion_tokens`). |
 | `agents` | no (default `all`) | Which of the configured agents run: `all`, or a comma-separated subset of their names. |
 | `agent-config` | no (default `.github/pr-review-agents.yml`) | Path to the YAML file defining the agents. Required — there is no built-in set. |
 
@@ -194,7 +196,7 @@ selected by `model-provider`:
 speaking that provider's API. Adding a provider means one adapter plus its
 entry in `model/provider.ts` — nothing above the seam changes.
 
-Prompt caching is requested on every turn and applied where the provider
+Prompt caching is requested on every agent turn and applied where the provider
 supports it. The four token counters keep cache writes and reads apart from the
 uncached input remainder; a provider that reports neither leaves them at zero.
 
@@ -254,7 +256,7 @@ the prompts published to Langfuse always match the agents configured.
 
 ### What a review costs
 
-The Messages API is stateless, so every turn resends the whole conversation —
+A model API is stateless, so every turn resends the whole conversation —
 tools, system prompt, the opening message with the diff, and every tool result
 so far. A ten-turn agent bills its opening message ten times. One measured run
 of this repository's own PR #11, before caching, spent ~1.58M input tokens:
@@ -270,10 +272,12 @@ repository context before it may make a claim, and every retrieval is another
 round trip carrying the whole conversation.
 
 Prompt caching reprices that traffic rather than reducing it: roughly 0.1x for
-a cache read against 1.25x for the write that put it there. Each agent marks
-two breakpoints (`packages/ai/src/agents/runtime.ts`) — an explicit one on the
-system prompt, which also covers the tool schemas, and the automatic one, which
-follows the growing conversation tail.
+a cache read against 1.25x for the write that put it there. Each agent turn asks
+for its prefix to be cached (`cachePrefix` on the model request), which the
+Anthropic adapter (`packages/ai/src/model/anthropic.ts`) turns into two
+breakpoints — an explicit one on the system prompt, which also covers the tool
+schemas, and the automatic one, which follows the growing conversation tail.
+The synthesiser's single call is not cached; there is no next turn to read it.
 
 A cache that stops hitting raises the bill and changes nothing else, so the
 three input counters are reported separately on `agent.completed` and
@@ -377,7 +381,7 @@ pnpm test
 `.github/workflows/release-action.yml` runs on a `v*` tag (or manual dispatch):
 install → typecheck → test → build the bundle → push only `action.yml`,
 `dist/index.mjs`, `LICENSE`, and a usage `README.md` to a separate public repo,
-moving that repo's major-version alias (`v1`) to the new tag. The engine, the
+moving that repo's major-version alias (`v2`) to the new tag. The engine, the
 tests, the spec, and this README stay in the private source repo.
 `.github/workflows/ci.yml` runs typecheck and tests on every push;
 `.github/workflows/self-review.yml` dogfoods the Action on this repo's own PRs.

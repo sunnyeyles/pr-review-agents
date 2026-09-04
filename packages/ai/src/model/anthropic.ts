@@ -7,7 +7,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import type {
   ModelClient,
   ModelContentBlock,
-  ModelRequest,
+  ModelMessage,
   ModelResponse,
   ModelUsage,
 } from "./types.js";
@@ -35,23 +35,33 @@ export interface AnthropicClientConfig {
 // or the cache stops hitting silently.
 const CACHE_CONTROL = { type: "ephemeral" } as const;
 
+function toAnthropicBlock(
+  block: ModelContentBlock,
+): Anthropic.Messages.ContentBlockParam | undefined {
+  switch (block.type) {
+    case "text":
+      return { type: "text", text: block.text };
+    case "tool_use":
+      return { type: "tool_use", id: block.id, name: block.name, input: block.input };
+    case "provider":
+      // Thinking blocks go back exactly as they came, or the API rejects
+      // the turn; another provider's state means nothing here.
+      return block.provider === ANTHROPIC_PROVIDER
+        ? (block.block as Anthropic.Messages.ContentBlockParam)
+        : undefined;
+  }
+}
+
 function toAnthropicMessages(
-  messages: readonly ModelRequest["messages"][number][],
+  messages: readonly ModelMessage[],
 ): Anthropic.Messages.MessageParam[] {
   return messages.map((message) => {
     if (message.role === "assistant") {
       return {
         role: "assistant",
-        content: message.content.map((block) =>
-          block.type === "text"
-            ? { type: "text" as const, text: block.text }
-            : {
-                type: "tool_use" as const,
-                id: block.id,
-                name: block.name,
-                input: block.input,
-              },
-        ),
+        content: message.content
+          .map(toAnthropicBlock)
+          .filter((block) => block !== undefined),
       };
     }
     if (typeof message.content === "string") {
@@ -83,6 +93,8 @@ function fromAnthropicContent(
         name: block.name,
         input: block.input,
       });
+    } else if (block.type === "thinking" || block.type === "redacted_thinking") {
+      blocks.push({ type: "provider", provider: ANTHROPIC_PROVIDER, block });
     }
   }
   return blocks;
@@ -115,6 +127,9 @@ export function createAnthropicClient(
       const response = await sdk.messages.create({
         model: request.model,
         max_tokens: request.maxOutputTokens,
+        // The top-level marker lands on the last block, so the whole
+        // conversation is the next turn's cached prefix.
+        ...(cache ? { cache_control: CACHE_CONTROL } : {}),
         // Tools are sent ahead of the system prompt, so one breakpoint on
         // the system block caches both.
         system: [

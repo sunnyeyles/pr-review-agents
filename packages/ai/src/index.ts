@@ -19,6 +19,7 @@ export type {
   ModelClient,
   ModelContentBlock,
   ModelMessage,
+  ModelProviderBlock,
   ModelRequest,
   ModelResponse,
   ModelTextBlock,

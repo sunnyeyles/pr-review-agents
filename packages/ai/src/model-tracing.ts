@@ -10,6 +10,31 @@ import { errorMessage } from "@pr-review/logging";
 
 import type { ModelResponse } from "./model/types.js";
 
+// Langfuse prices usage by key, and each provider's model definitions
+// spell the cache keys their own way; the seam's names are the default.
+const CACHE_USAGE_KEYS: Record<string, { read: string; creation?: string }> = {
+  openai: { read: "input_cached_tokens" },
+};
+const DEFAULT_CACHE_USAGE_KEYS = {
+  read: "cache_read_input_tokens",
+  creation: "cache_creation_input_tokens",
+};
+
+function usageDetails(
+  provider: string,
+  usage: ModelResponse["usage"],
+): Record<string, number> {
+  const keys = CACHE_USAGE_KEYS[provider] ?? DEFAULT_CACHE_USAGE_KEYS;
+  return {
+    input: usage.inputTokens,
+    output: usage.outputTokens,
+    [keys.read]: usage.cacheReadInputTokens,
+    ...(keys.creation === undefined
+      ? {}
+      : { [keys.creation]: usage.cacheCreationInputTokens }),
+  };
+}
+
 /** Structural, so a caller can nest a model call under any observation it holds. */
 export interface GenerationParent {
   startObservation(
@@ -53,13 +78,7 @@ export async function traceModelCall(
         stopReason: response.stopReason,
         contentBlockCount: response.content.length,
       },
-      // Langfuse prices these four keys separately.
-      usageDetails: {
-        input: response.usage.inputTokens,
-        output: response.usage.outputTokens,
-        cache_read_input_tokens: response.usage.cacheReadInputTokens,
-        cache_creation_input_tokens: response.usage.cacheCreationInputTokens,
-      },
+      usageDetails: usageDetails(trace.provider, response.usage),
     });
     return response;
   } catch (error) {

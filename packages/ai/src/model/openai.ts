@@ -1,6 +1,7 @@
 /**
  * The OpenAI adapter for the neutral model seam, over Chat Completions.
- * A `baseUrl` also points it at any OpenAI-compatible endpoint.
+ * A `baseUrl` also points it at any OpenAI-compatible endpoint that
+ * accepts `max_completion_tokens`.
  */
 import OpenAI from "openai";
 
@@ -50,12 +51,13 @@ function toOpenAiMessages(
         continue;
       }
       for (const block of message.content) {
+        // The API rejects an empty tool message, and has no error flag on
+        // one, so both are spelled out in the content the model reads.
+        const content = block.content === "" ? "(empty)" : block.content;
         out.push({
           role: "tool",
           tool_call_id: block.toolUseId,
-          // The API has no error flag on a tool message, so a failure is
-          // labelled in the content the model reads.
-          content: block.isError === true ? `Error: ${block.content}` : block.content,
+          content: block.isError === true ? `Error: ${content}` : content,
         });
       }
       continue;
@@ -70,7 +72,13 @@ function toOpenAiMessages(
       .map((block) => ({
         id: block.id,
         type: "function" as const,
-        function: { name: block.name, arguments: JSON.stringify(block.input) },
+        function: {
+          name: block.name,
+          // A string input is the model's own unparseable arguments,
+          // replayed as it wrote them rather than re-encoded.
+          arguments:
+            typeof block.input === "string" ? block.input : JSON.stringify(block.input),
+        },
       }));
     out.push({
       role: "assistant",

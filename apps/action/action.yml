@@ -43,8 +43,9 @@ inputs:
   model-base-url:
     description: >-
       Overrides the provider's API host — point it at a gateway, a proxy, or
-      any endpoint compatible with the selected provider's API. Leave empty to
-      use the provider's own host.
+      any endpoint compatible with the selected provider's API (for openai,
+      one that accepts max_completion_tokens). Leave empty to use the
+      provider's own host.
     required: false
     default: ""
   agents:

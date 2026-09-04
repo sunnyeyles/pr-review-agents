@@ -178,6 +178,44 @@ describe("the OpenAI adapter's request mapping", () => {
     ]);
   });
 
+  it("stands in for an empty tool result, which the API rejects", async () => {
+    const { sdk, create } = stub();
+
+    await createOpenAiClient({ apiKey: "sk-test", sdk }).createMessage({
+      ...baseRequest,
+      messages: [
+        {
+          role: "user",
+          content: [{ type: "tool_result", toolUseId: "call_1", content: "" }],
+        },
+      ],
+    });
+
+    expect(create.mock.calls[0]?.[0]?.messages[1]).toEqual({
+      role: "tool",
+      tool_call_id: "call_1",
+      content: "(empty)",
+    });
+  });
+
+  it("replays unparseable tool arguments as the model wrote them", async () => {
+    const { sdk, create } = stub();
+
+    await createOpenAiClient({ apiKey: "sk-test", sdk }).createMessage({
+      ...baseRequest,
+      messages: [
+        {
+          role: "assistant",
+          content: [{ type: "tool_use", id: "call_1", name: "get_file", input: "{not json" }],
+        },
+      ],
+    });
+
+    expect(create.mock.calls[0]?.[0]?.messages[1]).toMatchObject({
+      tool_calls: [{ function: { name: "get_file", arguments: "{not json" } }],
+    });
+  });
+
   it("labels a failed tool result, which the API has no error flag for", async () => {
     const { sdk, create } = stub();
 

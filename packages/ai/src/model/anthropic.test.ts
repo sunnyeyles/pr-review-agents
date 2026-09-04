@@ -53,7 +53,7 @@ describe("the Anthropic adapter's request mapping", () => {
     expect(params?.messages).toEqual([{ role: "user", content: "review this" }]);
   });
 
-  it("marks the system prompt as a cache breakpoint only when asked", async () => {
+  it("marks the system prompt and the conversation tail as cache breakpoints only when asked", async () => {
     const { sdk, create } = stub();
     const client = createAnthropicClient({ apiKey: "sk-test", sdk });
 
@@ -67,9 +67,8 @@ describe("the Anthropic adapter's request mapping", () => {
     expect(create.mock.calls[1]?.[0]?.system).toEqual([
       { type: "text", text: "SYSTEM" },
     ]);
-    // A top-level marker would cache through the trailing tool result,
-    // which changes every turn.
-    expect(cached?.cache_control).toBeUndefined();
+    expect(cached?.cache_control).toEqual({ type: "ephemeral" });
+    expect(create.mock.calls[1]?.[0]?.cache_control).toBeUndefined();
   });
 
   it("renames the tool schema field the SDK spells differently", async () => {
@@ -165,12 +164,14 @@ describe("the Anthropic adapter's response mapping", () => {
     );
   });
 
-  it("returns text and tool_use blocks, dropping anything else", async () => {
+  it("returns text and tool_use blocks, keeping thinking as opaque provider state", async () => {
+    const thinking = { type: "thinking", thinking: "hmm", signature: "sig" };
     const { sdk } = stub(
       anthropicMessage({
         content: [
           { type: "text", text: "found one" },
-          { type: "thinking", thinking: "hmm", signature: "sig" },
+          thinking,
+          { type: "server_tool_use", id: "srvtoolu_1", name: "web_search", input: {} },
           { type: "tool_use", id: "toolu_1", name: "get_diff", input: { a: 1 } },
         ] as unknown as Anthropic.Messages.ContentBlock[],
       }),
@@ -183,8 +184,41 @@ describe("the Anthropic adapter's response mapping", () => {
 
     expect(response.content).toEqual([
       { type: "text", text: "found one" },
+      { type: "provider", provider: "anthropic", block: thinking },
       { type: "tool_use", id: "toolu_1", name: "get_diff", input: { a: 1 } },
     ]);
+  });
+
+  it("replays its own provider blocks verbatim and drops another provider's", async () => {
+    const thinking = { type: "thinking", thinking: "hmm", signature: "sig" };
+    const { sdk, create } = stub();
+
+    await createAnthropicClient({ apiKey: "sk-test", sdk }).createMessage({
+      ...baseRequest,
+      messages: [
+        { role: "user", content: "review this" },
+        {
+          role: "assistant",
+          content: [
+            { type: "provider", provider: "anthropic", block: thinking },
+            { type: "provider", provider: "openai", block: { type: "reasoning" } },
+            { type: "tool_use", id: "toolu_1", name: "get_diff", input: {} },
+          ],
+        },
+        {
+          role: "user",
+          content: [{ type: "tool_result", toolUseId: "toolu_1", content: "the diff" }],
+        },
+      ],
+    });
+
+    expect(create.mock.calls[0]?.[0]?.messages[1]).toEqual({
+      role: "assistant",
+      content: [
+        thinking,
+        { type: "tool_use", id: "toolu_1", name: "get_diff", input: {} },
+      ],
+    });
   });
 
   it("passes the stop reason through, and reports none as undefined", async () => {

@@ -32,10 +32,13 @@ jobs:
   review:
     runs-on: ubuntu-latest
     steps:
-      - uses: sunnyeyles/pr-review-action@v1
+      - uses: sunnyeyles/pr-review-action@v2
         with:
           api-key: ${{ secrets.ANTHROPIC_API_KEY }}
 ```
+
+Moving from `v1`: the `anthropic-api-key` input is now `api-key`, and
+`model-provider` selects Anthropic (the default) or OpenAI.
 
 No checkout step is needed. Everything — the pull request, the diff, and the
 agent configuration — is read through the GitHub API, never from a working
@@ -89,11 +92,11 @@ of this action's repository — copy it and edit.
 
 | Input | Required | Default | Purpose |
 | --- | --- | --- | --- |
-| `api-key` | yes | — | Key for the selected provider, which the agents and Synthesiser authenticate with. Store it as a secret. Falls back to that provider's own variable (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`) when left empty. |
+| `api-key` | yes, as the input or through `env` | — | Key for the selected provider, which the agents and Synthesiser authenticate with. Store it as a secret. Falls back to that provider's own variable (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`) when left empty. |
 | `model-provider` | no | `anthropic` | Which provider to call: `anthropic` or `openai`. An unknown name fails the step before any model call. |
 | `github-token` | no | `${{ github.token }}` | Token for the read-only tools, the review comments, and the check run. |
 | `model` | no | the provider's own | Model id, as the provider spells it: `claude-sonnet-5` on `anthropic`, `gpt-5` on `openai`. |
-| `model-base-url` | no | the provider's own host | Overrides the provider's API host — a gateway, a proxy, or a compatible endpoint. |
+| `model-base-url` | no | the provider's own host | Overrides the provider's API host — a gateway, a proxy, or a compatible endpoint (for `openai`, one that accepts `max_completion_tokens`). |
 | `agents` | no | `all` | Which of the configured agents run: `all`, or a comma-separated subset of their names. |
 | `agent-config` | no | `.github/pr-review-agents.yml` | Path to the YAML file defining this repository's agents, read from the pull request's base commit. The file itself is required — there is no built-in set, and a missing one fails the step. |
 | `langfuse-public-key` | no | — | Langfuse public key. Set this and the secret key to manage prompts and collect traces. |
@@ -117,7 +120,7 @@ spells it.
 `model-base-url` points the selected adapter somewhere else — an Azure
 deployment, a gateway, or a self-hosted server speaking that provider's API.
 
-Prompt caching is requested on every turn and honoured where the provider
+Prompt caching is requested on every agent turn and honoured where the provider
 supports it; the token counters report cache writes and reads separately, and a
 provider that reports neither leaves them at zero.
 

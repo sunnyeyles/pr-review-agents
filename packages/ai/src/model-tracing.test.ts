@@ -87,6 +87,22 @@ describe("traceModelCall", () => {
     expect(endCount()).toBe(1);
   });
 
+  it("spells the cache counters the way Langfuse prices OpenAI models", async () => {
+    const { parent, updates } = fakeParent();
+
+    await traceModelCall(
+      parent,
+      { provider: "openai", model: "m", input: {}, maxTokens: 1 },
+      () => Promise.resolve(response),
+    );
+
+    expect(updates[0]?.["usageDetails"]).toEqual({
+      input: 11,
+      output: 7,
+      input_cached_tokens: 9000,
+    });
+  });
+
   it("reports zero rather than null when a call touched no cache", async () => {
     const { parent, updates } = fakeParent();
     const uncached = message([textBlock("done")], "end_turn", {
