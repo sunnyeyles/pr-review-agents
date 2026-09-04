@@ -5,16 +5,6 @@
 import { reviewFindingSchema, type ReviewFinding } from "@pr-review/schemas";
 import { z } from "zod";
 
-import type { ModelContentBlock, ModelTextBlock } from "../model/types.js";
-
-/** The concatenated text of one message's content blocks. */
-export function messageText(content: readonly ModelContentBlock[]): string {
-  return content
-    .filter((block): block is ModelTextBlock => block.type === "text")
-    .map((block) => block.text)
-    .join("\n");
-}
-
 /** The only output an agent can produce: candidate findings. */
 export const agentOutputSchema = z.object({
   findings: z.array(reviewFindingSchema),

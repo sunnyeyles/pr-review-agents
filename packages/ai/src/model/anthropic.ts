@@ -31,8 +31,8 @@ export interface AnthropicClientConfig {
   sdk?: AnthropicSdkLike | undefined;
 }
 
-// Marks the cache breakpoints. Nothing above them may vary between
-// turns, or the cache stops hitting silently.
+// Marks the cache breakpoint. Nothing above it may vary between turns,
+// or the cache stops hitting silently.
 const CACHE_CONTROL = { type: "ephemeral" } as const;
 
 function toAnthropicMessages(
@@ -115,7 +115,8 @@ export function createAnthropicClient(
       const response = await sdk.messages.create({
         model: request.model,
         max_tokens: request.maxOutputTokens,
-        ...(cache ? { cache_control: CACHE_CONTROL } : {}),
+        // Tools are sent ahead of the system prompt, so one breakpoint on
+        // the system block caches both.
         system: [
           {
             type: "text",

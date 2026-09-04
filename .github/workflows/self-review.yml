@@ -30,8 +30,14 @@ jobs:
       - name: Check for a model provider key
         id: key
         env:
-          API_KEY: ${{ secrets.OPENAI_API_KEY || secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          MODEL_PROVIDER: ${{ vars.MODEL_PROVIDER || 'anthropic' }}
         run: |
+          case "$MODEL_PROVIDER" in
+            openai) API_KEY="$OPENAI_API_KEY" ;;
+            *) API_KEY="$ANTHROPIC_API_KEY" ;;
+          esac
           if [ -n "$API_KEY" ]; then
             echo "present=true" >> "$GITHUB_OUTPUT"
           else
@@ -67,11 +73,14 @@ jobs:
       - name: Review this pull request
         if: steps.key.outputs.present == 'true'
         uses: ./apps/action
+        # The action reads the selected provider's key from these, so the
+        # workflow never has to pick one.
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         with:
-          # Set vars.MODEL_PROVIDER to review with a different provider; the
-          # matching secret below is the one that gets used.
+          # Set vars.MODEL_PROVIDER to review with a different provider.
           model-provider: ${{ vars.MODEL_PROVIDER || 'anthropic' }}
-          api-key: ${{ secrets.OPENAI_API_KEY || secrets.ANTHROPIC_API_KEY }}
           # The agents come from .github/pr-review-agents.yml, read at the
           # pull request's base commit rather than from the checkout above.
           # Narrow the review from repository variables — set

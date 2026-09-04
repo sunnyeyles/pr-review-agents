@@ -89,7 +89,7 @@ of this action's repository — copy it and edit.
 
 | Input | Required | Default | Purpose |
 | --- | --- | --- | --- |
-| `api-key` | yes | — | Key for the selected provider, which the agents and Synthesiser authenticate with. Store it as a secret. |
+| `api-key` | yes | — | Key for the selected provider, which the agents and Synthesiser authenticate with. Store it as a secret. Falls back to that provider's own variable (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`) when left empty. |
 | `model-provider` | no | `anthropic` | Which provider to call: `anthropic` or `openai`. An unknown name fails the step before any model call. |
 | `github-token` | no | `${{ github.token }}` | Token for the read-only tools, the review comments, and the check run. |
 | `model` | no | the provider's own | Model id, as the provider spells it: `claude-sonnet-5` on `anthropic`, `gpt-5` on `openai`. |

@@ -53,8 +53,7 @@ export async function traceModelCall(
         stopReason: response.stopReason,
         contentBlockCount: response.content.length,
       },
-      // Four counters, not two: where a provider caches, `input` is only
-      // the uncached remainder, and Langfuse prices the cache keys separately.
+      // Langfuse prices these four keys separately.
       usageDetails: {
         input: response.usage.inputTokens,
         output: response.usage.outputTokens,

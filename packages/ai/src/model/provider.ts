@@ -1,29 +1,38 @@
 /**
  * Provider selection. The one place that knows which adapters exist, so
- * adding a provider is an entry here and nothing else.
+ * adding a provider is an entry in PROVIDERS and nothing else.
  */
 import { createAnthropicClient, ANTHROPIC_PROVIDER } from "./anthropic.js";
 import { createOpenAiClient, OPENAI_PROVIDER } from "./openai.js";
 import type { ModelClient } from "./types.js";
 
-export const MODEL_PROVIDERS = [ANTHROPIC_PROVIDER, OPENAI_PROVIDER] as const;
+interface ProviderEntry {
+  /** Used when configuration names no model. */
+  defaultModel: string;
+  /** Environment variable this provider's key conventionally arrives in. */
+  apiKeyEnv: string;
+  create(options: { apiKey: string; baseUrl?: string | undefined }): ModelClient;
+}
 
-export type ModelProvider = (typeof MODEL_PROVIDERS)[number];
+const PROVIDERS = {
+  [ANTHROPIC_PROVIDER]: {
+    defaultModel: "claude-sonnet-5",
+    apiKeyEnv: "ANTHROPIC_API_KEY",
+    create: createAnthropicClient,
+  },
+  [OPENAI_PROVIDER]: {
+    defaultModel: "gpt-5",
+    apiKeyEnv: "OPENAI_API_KEY",
+    create: createOpenAiClient,
+  },
+} as const satisfies Record<string, ProviderEntry>;
+
+export type ModelProvider = keyof typeof PROVIDERS;
+
+export const MODEL_PROVIDERS = Object.keys(PROVIDERS) as ModelProvider[];
 
 /** The provider used when configuration names none. */
 export const DEFAULT_MODEL_PROVIDER: ModelProvider = ANTHROPIC_PROVIDER;
-
-/** Per-provider default model id, used when configuration names none. */
-const DEFAULT_MODELS: Readonly<Record<ModelProvider, string>> = {
-  [ANTHROPIC_PROVIDER]: "claude-sonnet-5",
-  [OPENAI_PROVIDER]: "gpt-5",
-};
-
-/** Environment variable each provider's key conventionally arrives in. */
-export const PROVIDER_API_KEY_ENV: Readonly<Record<ModelProvider, string>> = {
-  [ANTHROPIC_PROVIDER]: "ANTHROPIC_API_KEY",
-  [OPENAI_PROVIDER]: "OPENAI_API_KEY",
-};
 
 /** An unusable provider selection, raised before any model call. */
 export class ModelProviderError extends Error {
@@ -33,23 +42,30 @@ export class ModelProviderError extends Error {
   }
 }
 
+function isModelProvider(name: string): name is ModelProvider {
+  return Object.hasOwn(PROVIDERS, name);
+}
+
 /** Empty selects the default; an unknown name throws rather than falling back. */
 export function resolveModelProvider(selection: string): ModelProvider {
   const name = selection.trim().toLowerCase();
   if (name === "") {
     return DEFAULT_MODEL_PROVIDER;
   }
-  const provider = MODEL_PROVIDERS.find((candidate) => candidate === name);
-  if (provider === undefined) {
+  if (!isModelProvider(name)) {
     throw new ModelProviderError(
       `Unknown model provider: ${selection.trim()}. Use one of ${MODEL_PROVIDERS.join(", ")}.`,
     );
   }
-  return provider;
+  return name;
 }
 
 export function defaultModelFor(provider: ModelProvider): string {
-  return DEFAULT_MODELS[provider];
+  return PROVIDERS[provider].defaultModel;
+}
+
+export function apiKeyEnvFor(provider: ModelProvider): string {
+  return PROVIDERS[provider].apiKeyEnv;
 }
 
 export interface ModelClientConfig {
@@ -61,11 +77,8 @@ export interface ModelClientConfig {
 
 /** Builds the ModelClient for a configured provider. */
 export function createModelClient(config: ModelClientConfig): ModelClient {
-  const options = { apiKey: config.apiKey, baseUrl: config.baseUrl };
-  switch (config.provider) {
-    case ANTHROPIC_PROVIDER:
-      return createAnthropicClient(options);
-    case OPENAI_PROVIDER:
-      return createOpenAiClient(options);
-  }
+  return PROVIDERS[config.provider].create({
+    apiKey: config.apiKey,
+    baseUrl: config.baseUrl,
+  });
 }

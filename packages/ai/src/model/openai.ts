@@ -4,6 +4,7 @@
  */
 import OpenAI from "openai";
 
+import { messageText } from "./types.js";
 import type {
   ModelClient,
   ModelContentBlock,
@@ -60,10 +61,7 @@ function toOpenAiMessages(
       continue;
     }
 
-    const text = message.content
-      .filter((block): block is { type: "text"; text: string } => block.type === "text")
-      .map((block) => block.text)
-      .join("\n");
+    const text = messageText(message.content);
     const toolCalls = message.content
       .filter(
         (block): block is Extract<ModelContentBlock, { type: "tool_use" }> =>
@@ -165,7 +163,7 @@ export function createOpenAiClient(config: OpenAiClientConfig): ModelClient {
       }
       return {
         content: fromOpenAiMessage(choice.message),
-        stopReason: choice.finish_reason ?? undefined,
+        stopReason: choice.finish_reason,
         usage: fromOpenAiUsage(completion.usage),
       } satisfies ModelResponse;
     },

@@ -19,6 +19,14 @@ export interface ModelToolUseBlock {
 /** What a model can produce. Providers map their own blocks onto these. */
 export type ModelContentBlock = ModelTextBlock | ModelToolUseBlock;
 
+/** The concatenated text of one message's content blocks. */
+export function messageText(content: readonly ModelContentBlock[]): string {
+  return content
+    .filter((block): block is ModelTextBlock => block.type === "text")
+    .map((block) => block.text)
+    .join("\n");
+}
+
 export interface ModelToolResultBlock {
   type: "tool_result";
   toolUseId: string;

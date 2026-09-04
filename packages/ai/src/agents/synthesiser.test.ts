@@ -1,7 +1,7 @@
 import type { ReviewFinding } from "@pr-review/schemas";
 import { describe, expect, it } from "vitest";
 
-import { repositoryAgents } from "../agent-test-support.js";
+import { finalFindingsJson, repositoryAgents } from "../agent-test-support.js";
 import type { ModelClient, ModelRequest } from "../model/types.js";
 import {
   SynthesisError,
@@ -64,7 +64,7 @@ type ScriptedResponse =
  * Each entry is the next response's text, or an Error to reject with.
  * Captures every create() params object for assertions.
  */
-function makeModel(script: readonly ScriptedResponse[]) {
+function makeTextModel(script: readonly ScriptedResponse[]) {
   const queue = [...script];
   const calls: CreateParams[] = [];
   const model: ModelClient = {
@@ -97,13 +97,9 @@ function makeModel(script: readonly ScriptedResponse[]) {
   return { model, calls };
 }
 
-function findingsJson(findings: readonly ReviewFinding[]): string {
-  return JSON.stringify({ findings });
-}
-
 describe("createSynthesiser", () => {
   it("combines duplicates across agents into the model's single refined finding", async () => {
-    const { model } = makeModel([findingsJson([combinedFinding])]);
+    const { model } = makeTextModel([finalFindingsJson([combinedFinding])]);
     const synthesiser = createSynthesiser({ model, modelId, agents: configuredAgents });
 
     const { findings } = await synthesiser.synthesise([
@@ -115,9 +111,9 @@ describe("createSynthesiser", () => {
   });
 
   it("reports the single model call's token usage on the result (spec §26)", async () => {
-    const { model } = makeModel([
+    const { model } = makeTextModel([
       {
-        text: findingsJson([combinedFinding]),
+        text: finalFindingsJson([combinedFinding]),
         inputTokens: 321,
         outputTokens: 45,
       },
@@ -138,7 +134,7 @@ describe("createSynthesiser", () => {
   });
 
   it("makes exactly one single-turn model call with no tools", async () => {
-    const { model, calls } = makeModel([findingsJson([combinedFinding])]);
+    const { model, calls } = makeTextModel([finalFindingsJson([combinedFinding])]);
     const synthesiser = createSynthesiser({ model, modelId, agents: configuredAgents });
 
     await synthesiser.synthesise([correctnessDuplicate, securityDuplicate]);
@@ -153,7 +149,7 @@ describe("createSynthesiser", () => {
   });
 
   it("sends every well-formed candidate to the model as untrusted data", async () => {
-    const { model, calls } = makeModel([findingsJson([combinedFinding])]);
+    const { model, calls } = makeTextModel([finalFindingsJson([combinedFinding])]);
     const synthesiser = createSynthesiser({ model, modelId, agents: configuredAgents });
 
     await synthesiser.synthesise([correctnessDuplicate, securityDuplicate]);
@@ -170,7 +166,7 @@ describe("createSynthesiser", () => {
   });
 
   it("excludes malformed candidates from the synthesis input", async () => {
-    const { model, calls } = makeModel([findingsJson([combinedFinding])]);
+    const { model, calls } = makeTextModel([finalFindingsJson([combinedFinding])]);
     const synthesiser = createSynthesiser({ model, modelId, agents: configuredAgents });
 
     await synthesiser.synthesise([
@@ -191,7 +187,7 @@ describe("createSynthesiser", () => {
       title: "Possible unclear naming in the admin check",
       confidence: 0.72,
     });
-    const { model } = makeModel([findingsJson([strong])]);
+    const { model } = makeTextModel([finalFindingsJson([strong])]);
     const synthesiser = createSynthesiser({ model, modelId, agents: configuredAgents });
 
     const { findings } = await synthesiser.synthesise([strong, weak]);
@@ -202,7 +198,7 @@ describe("createSynthesiser", () => {
   it("propagates the model's severity corrections", async () => {
     const overstated = makeFinding({ severity: "high" });
     const corrected = makeFinding({ severity: "medium" });
-    const { model } = makeModel([findingsJson([corrected])]);
+    const { model } = makeTextModel([finalFindingsJson([corrected])]);
     const synthesiser = createSynthesiser({ model, modelId, agents: configuredAgents });
 
     const { findings } = await synthesiser.synthesise([overstated]);
@@ -212,7 +208,7 @@ describe("createSynthesiser", () => {
   });
 
   it("skips the model call entirely when there are no candidates, reporting zero usage", async () => {
-    const { model, calls } = makeModel([]);
+    const { model, calls } = makeTextModel([]);
     const synthesiser = createSynthesiser({ model, modelId, agents: configuredAgents });
 
     const result = await synthesiser.synthesise([]);
@@ -230,7 +226,7 @@ describe("createSynthesiser", () => {
   });
 
   it("skips the model call when no candidate is well-formed", async () => {
-    const { model, calls } = makeModel([]);
+    const { model, calls } = makeTextModel([]);
     const synthesiser = createSynthesiser({ model, modelId, agents: configuredAgents });
 
     const result = await synthesiser.synthesise([
@@ -251,7 +247,7 @@ describe("createSynthesiser", () => {
   });
 
   it("rejects with SynthesisError when the model output contains no JSON", async () => {
-    const { model } = makeModel(["I refined the findings for you."]);
+    const { model } = makeTextModel(["I refined the findings for you."]);
     const synthesiser = createSynthesiser({ model, modelId, agents: configuredAgents });
 
     await expect(
@@ -260,7 +256,7 @@ describe("createSynthesiser", () => {
   });
 
   it("rejects with SynthesisError when the model output fails schema validation", async () => {
-    const { model } = makeModel([
+    const { model } = makeTextModel([
       JSON.stringify({ findings: [{ file: "", confidence: 2 }] }),
     ]);
     const synthesiser = createSynthesiser({ model, modelId, agents: configuredAgents });
@@ -271,7 +267,7 @@ describe("createSynthesiser", () => {
   });
 
   it("propagates model API errors to the caller", async () => {
-    const { model } = makeModel([new Error("model provider unavailable")]);
+    const { model } = makeTextModel([new Error("model provider unavailable")]);
     const synthesiser = createSynthesiser({ model, modelId, agents: configuredAgents });
 
     await expect(
@@ -358,7 +354,7 @@ describe("buildSynthesisMessage", () => {
 describe("a pre-resolved synthesis prompt", () => {
   it("is used in place of the in-code prompt", async () => {
     const injected = "INJECTED SYNTHESIS SYSTEM PROMPT";
-    const { model, calls } = makeModel([findingsJson([combinedFinding])]);
+    const { model, calls } = makeTextModel([finalFindingsJson([combinedFinding])]);
     const synthesiser = createSynthesiser({
       model,
       modelId,

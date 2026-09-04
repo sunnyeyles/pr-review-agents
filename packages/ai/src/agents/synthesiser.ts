@@ -4,8 +4,8 @@
  * still untrusted and still passes through that chain.
  */
 import { startObservation } from "@langfuse/tracing";
-import { extractAgentOutput, messageText } from "./output.js";
-import type { ModelClient } from "../model/types.js";
+import { extractAgentOutput } from "./output.js";
+import { messageText, type ModelClient } from "../model/types.js";
 import { traceModelCall } from "../model-tracing.js";
 import { addTokenUsage, emptyTokenUsage, type TokenUsage } from "../usage.js";
 import { errorMessage } from "@pr-review/logging";

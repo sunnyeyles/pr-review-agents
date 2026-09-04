@@ -12,6 +12,7 @@ import {
   SYNTHESIS_PROMPT_ID,
   createLangfusePromptClient,
   createReviewAgents,
+  apiKeyEnvFor,
   createModelClient,
   createSynthesiser,
   defaultModelFor,
@@ -183,19 +184,19 @@ export interface ModelInputs {
   modelId: string;
 }
 
-/**
- * Builds the run's model client. `anthropic-api-key` is the pre-provider
- * spelling of `api-key` and still works, but only for the Anthropic provider.
- */
+/** Builds the run's model client. */
 export function resolveModelInputs(
   env: Record<string, string | undefined>,
   environment: Pick<ActionEnvironment, "createModelClient">,
 ): ModelInputs {
   const provider = resolveModelProvider(getInput(env, "model-provider"));
-  const apiKey = getInput(env, "api-key") || getInput(env, "anthropic-api-key");
+  const keyEnv = apiKeyEnvFor(provider);
+  // The provider's own variable is the fallback, so a workflow can pass each
+  // provider's secret through `env` rather than picking one in YAML.
+  const apiKey = getInput(env, "api-key") || (env[keyEnv] ?? "").trim();
   if (apiKey === "") {
     throw new Error(
-      `Missing required action input: api-key (the ${provider} API key)`,
+      `Missing required action input: api-key (or the ${keyEnv} environment variable)`,
     );
   }
   const baseUrl = getInput(env, "model-base-url");

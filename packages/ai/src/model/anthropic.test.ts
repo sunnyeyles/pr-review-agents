@@ -61,11 +61,15 @@ describe("the Anthropic adapter's request mapping", () => {
     await client.createMessage(baseRequest);
 
     const cached = create.mock.calls[0]?.[0];
-    expect(cached?.cache_control).toEqual({ type: "ephemeral" });
     expect(cached?.system).toEqual([
       { type: "text", text: "SYSTEM", cache_control: { type: "ephemeral" } },
     ]);
-    expect(create.mock.calls[1]?.[0]?.cache_control).toBeUndefined();
+    expect(create.mock.calls[1]?.[0]?.system).toEqual([
+      { type: "text", text: "SYSTEM" },
+    ]);
+    // A top-level marker would cache through the trailing tool result,
+    // which changes every turn.
+    expect(cached?.cache_control).toBeUndefined();
   });
 
   it("renames the tool schema field the SDK spells differently", async () => {

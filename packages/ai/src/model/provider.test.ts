@@ -5,7 +5,7 @@ import {
   DEFAULT_MODEL_PROVIDER,
   MODEL_PROVIDERS,
   ModelProviderError,
-  PROVIDER_API_KEY_ENV,
+  apiKeyEnvFor,
   createModelClient,
   defaultModelFor,
   resolveModelProvider,
@@ -34,7 +34,7 @@ describe("per-provider defaults", () => {
   it("gives every supported provider a default model and key variable", () => {
     for (const provider of MODEL_PROVIDERS) {
       expect(defaultModelFor(provider)).not.toBe("");
-      expect(PROVIDER_API_KEY_ENV[provider]).toMatch(/_API_KEY$/);
+      expect(apiKeyEnvFor(provider)).toMatch(/_API_KEY$/);
     }
   });
 });

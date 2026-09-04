@@ -20,14 +20,9 @@ inputs:
   api-key:
     description: >-
       API key for the selected provider. Store it as a repository or
-      organisation secret; never inline it. Required unless the deprecated
-      anthropic-api-key input is used instead.
-    required: false
-    default: ""
-  anthropic-api-key:
-    description: >-
-      Deprecated alias for api-key, kept so existing workflows on the
-      Anthropic provider keep working. Prefer api-key.
+      organisation secret; never inline it. Defaults to the provider's
+      conventional environment variable (ANTHROPIC_API_KEY, OPENAI_API_KEY)
+      when left empty, so a workflow can pass the key through `env` instead.
     required: false
     default: ""
   github-token:

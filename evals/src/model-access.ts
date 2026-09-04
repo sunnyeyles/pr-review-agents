@@ -5,7 +5,7 @@
 import {
   DEFAULT_MODEL_PROVIDER,
   MODEL_PROVIDERS,
-  PROVIDER_API_KEY_ENV,
+  apiKeyEnvFor,
   defaultModelFor,
   resolveModelProvider,
   type ModelProvider,
@@ -33,7 +33,7 @@ export interface ModelAccess {
 
 /** The actionable message shown when the provider's API key is absent. */
 export function missingApiKeyMessage(provider: ModelProvider): string {
-  const keyEnv = PROVIDER_API_KEY_ENV[provider];
+  const keyEnv = apiKeyEnvFor(provider);
   return [
     `${keyEnv} is not set, so the agent evaluations cannot run against ${provider}.`,
     "",
@@ -58,7 +58,7 @@ export function requireModelAccess(
   env: Record<string, string | undefined>,
 ): ModelAccess {
   const provider = resolveModelProvider(env[PROVIDER_ENV]?.trim() ?? "");
-  const apiKey = env[PROVIDER_API_KEY_ENV[provider]]?.trim() ?? "";
+  const apiKey = env[apiKeyEnvFor(provider)]?.trim() ?? "";
   if (apiKey === "") {
     throw new Error(missingApiKeyMessage(provider));
   }

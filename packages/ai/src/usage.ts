@@ -1,8 +1,4 @@
-/**
- * Token-usage accounting for model calls. Four counters, not two: where a
- * provider caches, `inputTokens` is only the uncached remainder and the
- * three input counters bill differently.
- */
+/** Token-usage accounting for model calls; the counters are ModelUsage's. */
 import type { ModelUsage } from "./model/types.js";
 
 /** Aggregated token usage of one model-calling unit of work. */

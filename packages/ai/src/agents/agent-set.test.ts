@@ -5,7 +5,7 @@
  */
 import { createCapturingLogger } from "@pr-review/logging";
 import type { FindingCategory } from "@pr-review/schemas";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { ALL_AGENTS, buildReviewSystemPrompt } from "./definition.js";
 import { createReviewAgents, resolveAgentDefinitions } from "./agent-set.js";
@@ -16,12 +16,13 @@ import {
   finalFindingsJson,
   makeFinding,
   makeGithub,
+  makeModel,
   message,
   repositoryAgent,
   repositoryAgents,
   textBlock,
 } from "../agent-test-support.js";
-import type { ModelRequest, ModelResponse } from "../model/types.js";
+import type { ModelResponse } from "../model/types.js";
 
 const configuredAgents = repositoryAgents();
 const correctnessAgent = repositoryAgent("correctness");
@@ -38,21 +39,14 @@ const SIX_TOOL_NAMES = [
 ];
 
 function makeDeps(responses: ModelResponse[]) {
-  const queue = [...responses];
-  const create = vi.fn(async (_request: ModelRequest) => {
-    const next = queue.shift();
-    if (!next) {
-      throw new Error("fake model client ran out of scripted responses");
-    }
-    return next;
-  });
+  const { model, createMessage } = makeModel(responses);
   const deps: ReviewAgentDeps = {
-    model: { provider: "test-provider", createMessage: create },
+    model,
     modelId: "test-model",
     github: makeGithub(),
     logger: createCapturingLogger().logger,
   };
-  return { deps, create };
+  return { deps, create: createMessage };
 }
 
 /**

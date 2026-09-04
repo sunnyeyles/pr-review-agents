@@ -43,7 +43,7 @@ afterAll(() => {
 });
 
 const validInputs = {
-  "INPUT_ANTHROPIC-API-KEY": "sk-test-key",
+  "INPUT_API-KEY": "sk-test-key",
   INPUT_MODEL: "claude-test-model",
   "INPUT_GITHUB-TOKEN": "ghs-test-token",
 };
@@ -226,9 +226,7 @@ const reviewEnv = {
 
 describe("getInput", () => {
   it("uppercases the input name and preserves dashes", () => {
-    expect(getInput({ "INPUT_ANTHROPIC-API-KEY": "sk-1" }, "anthropic-api-key")).toBe(
-      "sk-1",
-    );
+    expect(getInput({ "INPUT_MODEL-BASE-URL": "u" }, "model-base-url")).toBe("u");
   });
 
   it("replaces spaces with underscores", () => {
@@ -366,13 +364,31 @@ describe("runAction", () => {
     );
   });
 
-  it("fails when no API key input is set, naming the selected provider", async () => {
+  it("fails when neither the API key input nor the provider's variable is set", async () => {
     const env: Record<string, string | undefined> = { ...reviewEnv };
-    delete env["INPUT_ANTHROPIC-API-KEY"];
+    delete env["INPUT_API-KEY"];
     const { environment } = harness(env);
     await expect(runAction(environment)).rejects.toThrow(
-      "Missing required action input: api-key (the anthropic API key)",
+      "Missing required action input: api-key (or the ANTHROPIC_API_KEY environment variable)",
     );
+  });
+
+  it("falls back to the selected provider's own key variable", async () => {
+    const env: Record<string, string | undefined> = { ...reviewEnv };
+    delete env["INPUT_API-KEY"];
+    const { environment, modelConfigs } = harness({
+      ...env,
+      "INPUT_MODEL-PROVIDER": "openai",
+      ANTHROPIC_API_KEY: "sk-anthropic-key",
+      OPENAI_API_KEY: "sk-openai-key",
+    });
+
+    await expect(runAction(environment)).resolves.toBeUndefined();
+
+    expect(modelConfigs[0]).toMatchObject({
+      provider: "openai",
+      apiKey: "sk-openai-key",
+    });
   });
 
   it("defaults the model id when the model input is empty", async () => {

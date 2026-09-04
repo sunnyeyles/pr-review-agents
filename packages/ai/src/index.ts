@@ -10,18 +10,11 @@ export {
   DEFAULT_MODEL_PROVIDER,
   MODEL_PROVIDERS,
   ModelProviderError,
-  PROVIDER_API_KEY_ENV,
+  apiKeyEnvFor,
   type ModelClientConfig,
   type ModelProvider,
 } from "./model/provider.js";
-export {
-  createAnthropicClient,
-  type AnthropicClientConfig,
-} from "./model/anthropic.js";
-export {
-  createOpenAiClient,
-  type OpenAiClientConfig,
-} from "./model/openai.js";
+export { messageText } from "./model/types.js";
 export type {
   ModelClient,
   ModelContentBlock,
@@ -36,7 +29,6 @@ export type {
 } from "./model/types.js";
 export {
   extractAgentOutput,
-  messageText,
   type AgentOutputResult,
 } from "./agents/output.js";
 export type { ReviewAgent, ReviewContext } from "./agent-contract.js";

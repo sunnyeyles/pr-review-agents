@@ -13,7 +13,8 @@ import {
 } from "@pr-review/logging";
 
 import { buildReviewSystemPrompt, type AgentDefinition } from "./definition.js";
-import { extractAgentOutput, messageText } from "./output.js";
+import { extractAgentOutput } from "./output.js";
+import { messageText } from "../model/types.js";
 import type {
   ModelClient,
   ModelContentBlock,

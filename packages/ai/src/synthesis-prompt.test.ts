@@ -3,39 +3,28 @@
  * the contract guard, and on into the model call that uses it.
  */
 import { createCapturingLogger } from "@pr-review/logging";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import {
+  finalFindingsJson,
+  makeModel,
+  message,
   repositoryAgents,
+  textBlock,
   validRemoteSynthesisPrompt,
 } from "./agent-test-support.js";
 import {
   buildSynthesisSystemPrompt,
   createSynthesiser,
 } from "./agents/synthesiser.js";
-import type { ModelClient, ModelRequest } from "./model/types.js";
 import { loadManagedPrompts, type LangfusePromptClient } from "./prompts.js";
 
 const configuredAgents = repositoryAgents();
 const SYNTHESIS_SYSTEM_PROMPT = buildSynthesisSystemPrompt(configuredAgents);
 
 /** Records what reached the model and answers with an empty result. */
-function recordingModel(): { model: ModelClient; calls: ModelRequest[] } {
-  const calls: ModelRequest[] = [];
-  const createMessage = vi.fn((request: ModelRequest) => {
-    calls.push(request);
-    return Promise.resolve({
-      content: [{ type: "text" as const, text: JSON.stringify({ findings: [] }) }],
-      stopReason: "end_turn",
-      usage: {
-        inputTokens: 1,
-        outputTokens: 1,
-        cacheCreationInputTokens: 0,
-        cacheReadInputTokens: 0,
-      },
-    });
-  });
-  return { model: { provider: "test-provider", createMessage }, calls };
+function recordingModel() {
+  return makeModel([message([textBlock(finalFindingsJson([]))], "end_turn")]);
 }
 
 function clientReturning(text: string): LangfusePromptClient {
@@ -73,7 +62,7 @@ describe("resolving the synthesis prompt", () => {
     );
     expect(sources.synthesis).toBe("langfuse");
 
-    const { model, calls } = recordingModel();
+    const { model, requests } = recordingModel();
     const synthesiser = createSynthesiser({
       model,
       modelId: "test-model",
@@ -94,7 +83,7 @@ describe("resolving the synthesis prompt", () => {
       },
     ]);
 
-    expect(calls[0]?.system).toBe(remote);
+    expect(requests[0]?.system).toBe(remote);
   });
 
   it("hands the in-code prompt to the synthesiser when the fetch fails", async () => {
