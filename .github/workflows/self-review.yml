@@ -67,7 +67,8 @@ jobs:
         uses: ./apps/action
         with:
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
-          # The agents come from .github/pr-review-agents.yml, checked out above.
+          # The agents come from .github/pr-review-agents.yml, read at the
+          # pull request's base commit rather than from the checkout above.
           # Narrow the review from repository variables — set
           # vars.REVIEW_AGENTS to e.g. `architecture` to iterate on one
           # agent without paying for the others on every push.
