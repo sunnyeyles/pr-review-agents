@@ -40,6 +40,11 @@ export function findingMarker(finding: ReviewFinding): string {
 
 const MARKER = /<!-- pr-review-finding: (.*?) -->/;
 
+/** The finding key a posted comment carries; undefined for a comment this system did not post. */
+export function parseFindingMarker(body: string): string | undefined {
+  return MARKER.exec(body)?.[1];
+}
+
 /** What the feedback collector needs to score a comment's reactions. */
 export interface FeedbackMeta {
   /** The review run's Langfuse trace; absent when the run was not traced. */
@@ -60,7 +65,7 @@ export function feedbackMarker(meta: FeedbackMeta): string {
   return `<!-- pr-review-meta: ${pairs.join(" ")} -->`;
 }
 
-const META_MARKER = /<!-- pr-review-meta: (.*?) -->/;
+const META_MARKER = /<!-- pr-review-meta: category=(\S+)(?: trace=(\S+))? -->/;
 
 /** undefined for a comment this system did not post, or one from before the marker existed. */
 export function parseFeedbackMarker(body: string): FeedbackMeta | undefined {
@@ -68,21 +73,10 @@ export function parseFeedbackMarker(body: string): FeedbackMeta | undefined {
   if (match?.[1] === undefined) {
     return undefined;
   }
-  const fields = new Map<string, string>();
-  for (const pair of match[1].split(/\s+/)) {
-    const separator = pair.indexOf("=");
-    if (separator > 0) {
-      fields.set(pair.slice(0, separator), pair.slice(separator + 1));
-    }
-  }
-  const category = fields.get("category");
-  if (category === undefined || category === "") {
-    return undefined;
-  }
-  const traceId = fields.get("trace");
+  const trace = match[2];
   return {
-    category,
-    ...(traceId !== undefined && TRACE_ID.test(traceId) ? { traceId } : {}),
+    category: match[1],
+    traceId: trace !== undefined && TRACE_ID.test(trace) ? trace : undefined,
   };
 }
 
@@ -92,9 +86,9 @@ export function postedFindingKeys(
 ): Set<string> {
   const keys = new Set<string>();
   for (const comment of comments) {
-    const match = MARKER.exec(comment.body);
-    if (match?.[1] !== undefined) {
-      keys.add(match[1]);
+    const key = parseFindingMarker(comment.body);
+    if (key !== undefined) {
+      keys.add(key);
     }
   }
   return keys;

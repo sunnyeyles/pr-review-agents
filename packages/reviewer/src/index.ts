@@ -12,6 +12,7 @@ export { renderCheckRun, type RenderedCheckRun } from "./render-check-run.js";
 export {
   feedbackMarker,
   parseFeedbackMarker,
+  parseFindingMarker,
   renderReview,
   type FeedbackMeta,
   type RenderReviewOptions,

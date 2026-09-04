@@ -4,6 +4,7 @@
  */
 import {
   emptyTokenUsage,
+  traceReview,
   type ReviewAgent,
   type ReviewContext,
   type Synthesiser,
@@ -12,7 +13,6 @@ import {
 import { errorMessage, errorName } from "@pr-review/logging";
 import type { ReviewFinding } from "@pr-review/schemas";
 import { Annotation, END, START, StateGraph } from "@langchain/langgraph";
-import { startActiveObservation, type LangfuseChain } from "@langfuse/tracing";
 
 import { validateFindings } from "./validate-findings.js";
 
@@ -249,73 +249,54 @@ export interface ReviewPipelineResult {
   synthesisDurationMs?: number;
   /** The final, deterministically validated findings. */
   findings: ReviewFinding[];
-  /**
-   * The Langfuse trace every agent and synthesis span of this run nests
-   * under. Unset when no tracer is registered, so nothing can score it.
-   */
-  traceId?: string;
-}
-
-/** A recording span's trace id; the no-op tracer yields an all-zero one. */
-function exportedTraceId(span: LangfuseChain): string | undefined {
-  if (!span.otelSpan.isRecording() || /^0+$/.test(span.traceId)) {
-    return undefined;
-  }
-  return span.traceId;
+  /** The trace every agent and synthesis span of this run nests under. */
+  traceId?: string | undefined;
 }
 
 /**
  * Throws when every agent failed; a synthesis failure never throws.
- * The whole run is one root span, so the agents' and synthesiser's own
- * observations share a trace, and human feedback on a finding can be
+ * The whole run is one trace, so human feedback on a finding can be
  * scored against the run that produced it.
  */
-export function runReviewPipeline(
+export async function runReviewPipeline(
   agents: readonly ReviewAgent[],
   synthesiser: Synthesiser,
   context: ReviewContext,
 ): Promise<ReviewPipelineResult> {
-  return startActiveObservation(
-    "review-pull-request",
-    async (span) => {
-      span.update({
-        input: {
-          repository: `${context.owner}/${context.repo}`,
-          pullRequestNumber: context.pullRequest.number,
-          headSha: context.pullRequest.headSha,
-          agents: agents.map((agent) => agent.name),
-        },
-      });
-
-      const graph = buildReviewGraph(agents, synthesiser);
-      const { joined, synthesis, findings } = await graph.invoke({ context });
-      span.update({
-        output: {
-          findingCount: findings.length,
-          synthesisOutcome: synthesis.outcome,
-        },
-      });
-
-      const traceId = exportedTraceId(span);
-      return {
-        candidates: joined.candidates,
-        agentFailures: joined.agentFailures,
-        synthesisedCandidateCount: synthesis.candidates.length,
+  const graph = buildReviewGraph(agents, synthesiser);
+  const { result, traceId } = await traceReview(
+    {
+      input: {
+        repository: `${context.owner}/${context.repo}`,
+        pullRequestNumber: context.pullRequest.number,
+        headSha: context.pullRequest.headSha,
+        agents: agents.map((agent) => agent.name),
+      },
+      output: ({ synthesis, findings }) => ({
+        findingCount: findings.length,
         synthesisOutcome: synthesis.outcome,
-        synthesisUsage: synthesis.usage,
-        ...(synthesis.outcome === "failed"
-          ? {
-              synthesisError: synthesis.error,
-              synthesisErrorName: synthesis.errorName,
-            }
-          : {}),
-        ...(synthesis.outcome === "skipped"
-          ? {}
-          : { synthesisDurationMs: synthesis.durationMs }),
-        findings,
-        ...(traceId === undefined ? {} : { traceId }),
-      };
+      }),
     },
-    { asType: "chain" },
+    () => graph.invoke({ context }),
   );
+  const { joined, synthesis, findings } = result;
+
+  return {
+    candidates: joined.candidates,
+    agentFailures: joined.agentFailures,
+    synthesisedCandidateCount: synthesis.candidates.length,
+    synthesisOutcome: synthesis.outcome,
+    synthesisUsage: synthesis.usage,
+    ...(synthesis.outcome === "failed"
+      ? {
+          synthesisError: synthesis.error,
+          synthesisErrorName: synthesis.errorName,
+        }
+      : {}),
+    ...(synthesis.outcome === "skipped"
+      ? {}
+      : { synthesisDurationMs: synthesis.durationMs }),
+    findings,
+    traceId,
+  };
 }

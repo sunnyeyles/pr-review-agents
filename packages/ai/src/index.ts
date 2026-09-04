@@ -77,6 +77,12 @@ export {
   type ModelCallTrace,
 } from "./model-tracing.js";
 export {
+  REVIEW_TRACE_NAME,
+  traceReview,
+  type ReviewTraceOptions,
+  type TracedReview,
+} from "./review-tracing.js";
+export {
   FEEDBACK_SCORE_NAME,
   createLangfuseScoreSink,
   type FeedbackScore,
