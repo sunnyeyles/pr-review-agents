@@ -345,6 +345,45 @@ makes no network calls and runs in under two seconds.
 pnpm test
 ```
 
+### Evaluating review quality
+
+`pnpm eval` runs the model-backed suite in `evals/`: three fixture repositories
+(a planted correctness bug, a planted cross-tenant leak, and correct code that
+must come back clean) driven through the real pipeline, with only GitHub
+faked. It calls the model and costs tokens, so it is kept out of `pnpm test`
+and needs `ANTHROPIC_API_KEY`.
+
+Each fixture declares expectations in `evals/src/cases.ts`:
+
+| Kind | Asserts |
+| --- | --- |
+| `agents-completed` | every configured agent finished; a failure makes the rest unmeasurable |
+| `finding` | a finding of one category landed inside a marker-anchored region |
+| `no-findings` | the clean fixture produced nothing — the false-positive check |
+| `reads-file` | an agent opened a given file, optionally among its first N |
+
+### What the agents actually read
+
+Every tool call an agent makes is logged as one `agent.tool` event carrying
+`agent`, `tool`, `target` (the path or query), `turn`, and a per-agent
+`sequence` — so retrieval order survives the agents running concurrently.
+`pnpm eval` turns those events into a per-agent read trace: the run report
+prints which file each agent opened first and the full ordered call list, and
+every read is appended to `evals/.traces/<run>.jsonl` for diffing one run
+against another.
+
+```
+first file:    correctness: src/routes/admin-audit.ts, security: src/data/customers.ts
+read order:
+  correctness (3 call(s)):
+    1. get_file src/routes/admin-audit.ts (2104 chars)
+    2. search_repository requireAdmin
+    3. get_file src/auth/session.ts (1533 chars)
+```
+
+Set `EVAL_TRACE_DIR` to write the trace elsewhere, or `EVAL_TRACE=0` to skip
+it.
+
 ---
 
 ## Publishing the Action
@@ -370,13 +409,18 @@ Required repository configuration for the release workflow:
 
 Structured single-line JSON logs land in the workflow run's own log stream,
 under lifecycle event names: `review.skipped`, `review.started`,
-`review.loaded`, `agent.started`, `agent.completed`, `agent.failed`,
+`review.loaded`, `agent.started`, `agent.tool`, `agent.completed`, `agent.failed`,
 `synthesis.started`, `synthesis.skipped`, `synthesis.completed`,
 `synthesis.failed`, `findings.validated`, `review.published`,
 `review.published.degraded`, and `review.failed`. Events carry the repository, PR
 number, head SHA, agent name, duration, finding count, and token usage (four
 counters: `inputTokens`, `cacheCreationInputTokens`, `cacheReadInputTokens`,
 `outputTokens`), so a single review is greppable end to end by `headSha`.
+
+`agent.tool` is one line per repository read, with the tool, its `target`, the
+`turn` it was requested on, and a per-agent `sequence`. Filtering a run's logs
+to that event reconstructs exactly what each agent looked at and in what
+order — the same trace `pnpm eval` reports on the fixtures.
 
 ---
 

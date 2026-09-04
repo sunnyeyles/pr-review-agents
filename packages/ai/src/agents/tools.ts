@@ -226,6 +226,27 @@ export const reviewTools: readonly ReviewTool[] = [
   }),
 ];
 
+/** A logged target is bounded; the model chooses it. */
+const MAX_TARGET_CHARS = 512;
+
+/**
+ * What a tool call was aimed at — a path, a search query — for logs.
+ * Undefined for the whole-pull-request tools, which take no input.
+ */
+export function reviewToolTarget(input: unknown): string | undefined {
+  if (typeof input !== "object" || input === null) {
+    return undefined;
+  }
+  const record = input as Record<string, unknown>;
+  for (const key of ["path", "query"]) {
+    const value = record[key];
+    if (typeof value === "string" && value.length > 0) {
+      return value.slice(0, MAX_TARGET_CHARS);
+    }
+  }
+  return undefined;
+}
+
 /** Never throws: every failure comes back as `{ ok: false }` for the agent loop. */
 export async function dispatchReviewTool(
   github: GithubInstallationClient,

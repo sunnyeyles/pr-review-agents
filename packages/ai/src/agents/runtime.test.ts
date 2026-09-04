@@ -342,18 +342,68 @@ describe("lifecycle events (spec §26)", () => {
 
     expect(entries.map((entry) => entry.event)).toEqual([
       "agent.started",
+      "agent.tool",
       "agent.completed",
     ]);
-    const completed = entries[1];
+    const completed = entries[2];
     expect(completed).toMatchObject({
       level: "info",
       event: "agent.completed",
       ...correlation,
       inputTokens: 350,
       outputTokens: 35,
+      toolCallCount: 1,
       findingCount: 1,
     });
     expect(typeof completed?.["durationMs"]).toBe("number");
+  });
+
+  it("emits one agent.tool per call, numbered in the order the agent made them", async () => {
+    const { agent, entries } = makeAgent([
+      message(
+        [
+          toolUseBlock("toolu_1", "get_file", { path: "src/sessions.ts" }),
+          toolUseBlock("toolu_2", "search_repository", { query: "isAdmin" }),
+        ],
+        "tool_use",
+      ),
+      message([toolUseBlock("toolu_3", "get_diff", {})], "tool_use"),
+      message([textBlock(finalJson)], "end_turn"),
+    ]);
+
+    await agent.run(context);
+
+    const reads = entries.filter((entry) => entry.event === "agent.tool");
+    expect(
+      reads.map((entry) => [entry["sequence"], entry["turn"], entry["tool"], entry["target"]]),
+    ).toEqual([
+      [1, 1, "get_file", "src/sessions.ts"],
+      [2, 1, "search_repository", "isAdmin"],
+      [3, 2, "get_diff", undefined],
+    ]);
+    expect(reads[0]).toMatchObject({ level: "info", ...correlation, ok: true });
+    expect(typeof reads[0]?.["durationMs"]).toBe("number");
+    expect(typeof reads[0]?.["resultChars"]).toBe("number");
+  });
+
+  it("emits agent.tool with the error for a call the tool layer rejected", async () => {
+    const { agent, entries } = makeAgent([
+      message(
+        [toolUseBlock("toolu_1", "get_file", { path: "../../etc/passwd" })],
+        "tool_use",
+      ),
+      message([textBlock(finalJson)], "end_turn"),
+    ]);
+
+    await agent.run(context);
+
+    const read = entries.find((entry) => entry.event === "agent.tool");
+    expect(read).toMatchObject({
+      tool: "get_file",
+      target: "../../etc/passwd",
+      ok: false,
+    });
+    expect(read?.["error"]).toMatch(/traversal/i);
   });
 
   it("emits agent.failed with the error and usage so far when the final output is invalid", async () => {
@@ -427,10 +477,11 @@ describe("lifecycle events (spec §26)", () => {
 
     await expect(agent.run(context)).rejects.toThrow("529 overloaded");
 
-    expect(entries[1]).toMatchObject({
+    expect(entries.find((entry) => entry.event === "agent.failed")).toMatchObject({
       event: "agent.failed",
       inputTokens: 40,
       outputTokens: 4,
+      toolCallCount: 1,
     });
   });
 
@@ -446,7 +497,7 @@ describe("lifecycle events (spec §26)", () => {
 
     await expect(agent.run(context)).rejects.toThrow(/turn/i);
 
-    const failed = entries[1];
+    const failed = entries.find((entry) => entry.event === "agent.failed");
     expect(failed).toMatchObject({
       level: "error",
       event: "agent.failed",
@@ -531,7 +582,7 @@ describe("prompt caching", () => {
 
     await agent.run(context);
 
-    expect(entries[1]).toMatchObject({
+    expect(entries.find((entry) => entry.event === "agent.completed")).toMatchObject({
       event: "agent.completed",
       inputTokens: 20,
       cacheCreationInputTokens: 4_300,

@@ -27,6 +27,14 @@ export const evalCases: EvalCase[] = [
     expectations: [
       agentsCompleted,
       {
+        kind: "reads-file",
+        description:
+          "the correctness agent opens the changed route before judging it",
+        agent: "correctness",
+        file: "src/routes/admin-audit.ts",
+        withinFirst: 3,
+      },
+      {
         kind: "finding",
         description:
           "reports a correctness finding on the admin check that assigns instead of comparing",
@@ -44,6 +52,13 @@ export const evalCases: EvalCase[] = [
     fixture: "security-tenant-scope",
     expectations: [
       agentsCompleted,
+      {
+        kind: "reads-file",
+        description:
+          "the security agent follows the route into the data layer it calls",
+        agent: "security",
+        file: "src/data/customers.ts",
+      },
       {
         kind: "finding",
         description:

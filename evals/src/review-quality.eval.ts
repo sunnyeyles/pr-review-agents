@@ -21,6 +21,7 @@ import {
   runFixtureReview,
   type FixtureReview,
 } from "./run-fixture-review.js";
+import { createTraceWriter } from "./trace-file.js";
 
 // The console logger tees lifecycle events to the terminal as they
 // happen: a full review takes minutes, and silence looks like a hang.
@@ -31,6 +32,7 @@ const deps = modelBackedDeps(
 );
 
 const reports: string[] = [];
+const traceWriter = createTraceWriter(process.env);
 
 for (const evalCase of evalCases) {
   const fixture = loadFixture(evalCase.fixture);
@@ -41,6 +43,7 @@ for (const evalCase of evalCases) {
     beforeAll(async () => {
       review = await runFixtureReview(fixture, deps);
       reports.push(formatReviewReport(review));
+      traceWriter.write(fixture.name, review.readTrace);
     });
 
     for (const expectation of evalCase.expectations) {
@@ -58,5 +61,8 @@ for (const evalCase of evalCases) {
 afterAll(() => {
   if (reports.length > 0) {
     console.log(formatRunReport(reports));
+  }
+  if (traceWriter.path !== undefined) {
+    console.log(`read trace written to ${traceWriter.path}`);
   }
 });

@@ -21,6 +21,7 @@ export {
   type ReviewAgentDeps,
   type ReviewSystemPrompts,
 } from "./agents/runtime.js";
+export { reviewToolTarget } from "./agents/tools.js";
 export {
   ALL_AGENTS,
   SYNTHESIS_PROMPT_ID,

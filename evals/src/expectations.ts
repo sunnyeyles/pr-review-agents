@@ -6,6 +6,7 @@
 import type { FindingCategory, ReviewFinding } from "@pr-review/schemas";
 
 import type { LoadedFixture } from "./fixture.js";
+import { filesRead, type AgentReadTrace } from "./read-trace.js";
 import type { FixtureReview } from "./run-fixture-review.js";
 
 /**
@@ -27,7 +28,17 @@ export type FixtureExpectation =
       anchors: FindingAnchor[];
     }
   | { kind: "no-findings"; description: string }
-  | { kind: "agents-completed"; description: string };
+  | { kind: "agents-completed"; description: string }
+  | {
+      /** The agents opened the file the planted problem needs context from. */
+      kind: "reads-file";
+      description: string;
+      file: string;
+      /** Only this agent's reads count; any agent's when absent. */
+      agent?: string;
+      /** The read must be among the agent's first N distinct files. */
+      withinFirst?: number;
+    };
 
 /** The judgement of one expectation against one fixture review. */
 export interface ExpectationOutcome {
@@ -112,6 +123,59 @@ export function describeFindings(findings: readonly ReviewFinding[]): string {
   return findings.map((finding) => `  ${describeFinding(finding)}`).join("\n");
 }
 
+/** What every agent read, in order, rendered for a failure message. */
+function describeReads(traces: readonly AgentReadTrace[]): string {
+  if (traces.length === 0) {
+    return "  (no agent read a file)";
+  }
+  return traces
+    .map((trace) => {
+      const files = filesRead(trace);
+      return `  ${trace.agent} read, in order: ${files.length === 0 ? "(no file)" : files.join(" -> ")}`;
+    })
+    .join("\n");
+}
+
+/** Judges a reads-file expectation against the run's read trace. */
+function evaluateReadsFile(
+  review: FixtureReview,
+  expectation: Extract<FixtureExpectation, { kind: "reads-file" }>,
+): ExpectationOutcome {
+  const traces =
+    expectation.agent === undefined
+      ? review.readTrace
+      : review.readTrace.filter((trace) => trace.agent === expectation.agent);
+  const rendered = `The run's reads were:\n${describeReads(review.readTrace)}`;
+
+  if (expectation.agent !== undefined && traces.length === 0) {
+    return {
+      passed: false,
+      detail: `no agent named "${expectation.agent}" made any tool call.\n\n${rendered}`,
+    };
+  }
+
+  const limit = expectation.withinFirst;
+  const matched = traces.filter((trace) => {
+    const files = filesRead(trace);
+    const position = files.indexOf(expectation.file);
+    return position >= 0 && (limit === undefined || position < limit);
+  });
+  if (matched.length > 0) {
+    return {
+      passed: true,
+      detail: `${matched.map((trace) => trace.agent).join(", ")} read ${expectation.file}`,
+    };
+  }
+
+  const within =
+    limit === undefined ? "" : ` among its first ${limit} distinct file read(s)`;
+  const who = expectation.agent ?? "no agent";
+  return {
+    passed: false,
+    detail: `${who} read ${expectation.file}${within}.\n\n${rendered}`,
+  };
+}
+
 /** Judges one expectation against one fixture review. */
 export function evaluateExpectation(
   review: FixtureReview,
@@ -131,6 +195,10 @@ export function evaluateExpectation(
               .map((failure) => `  - ${failure.agent}: ${failure.error}`)
               .join("\n")}`,
     };
+  }
+
+  if (expectation.kind === "reads-file") {
+    return evaluateReadsFile(review, expectation);
   }
 
   if (expectation.kind === "no-findings") {

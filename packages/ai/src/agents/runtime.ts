@@ -18,7 +18,12 @@ import { extractAgentOutput, messageText } from "./output.js";
 import type { AnthropicLike } from "../anthropic.js";
 import { traceModelCall } from "../model-tracing.js";
 import type { ReviewAgent, ReviewContext } from "../agent-contract.js";
-import { dispatchReviewTool, reviewTools, type ReviewToolScope } from "./tools.js";
+import {
+  dispatchReviewTool,
+  reviewTools,
+  reviewToolTarget,
+  type ReviewToolScope,
+} from "./tools.js";
 import { addTokenUsage, emptyTokenUsage } from "../usage.js";
 
 /** An agent-level failure (bad final output, turn cap, ...). */
@@ -174,6 +179,9 @@ export function createReviewAgent(
         { asType: "agent" },
       );
       const startedAt = Date.now();
+      // Counts this agent's tool calls, so `sequence` says which
+      // context it reached for first when agents run concurrently.
+      let toolCallCount = 0;
       const messages: Anthropic.Messages.MessageParam[] = [
         { role: "user", content: buildOpeningMessage(context) },
       ];
@@ -215,6 +223,7 @@ export function createReviewAgent(
       /** Dispatches every requested tool into one user turn of results. */
       const answerToolUses = async (
         toolUses: readonly Anthropic.Messages.ToolUseBlock[],
+        turn: number,
       ): Promise<Anthropic.Messages.ToolResultBlockParam[]> => {
         const results: Anthropic.Messages.ToolResultBlockParam[] = [];
         for (const toolUse of toolUses) {
@@ -223,12 +232,25 @@ export function createReviewAgent(
             { input: toolUse.input, metadata: { toolUseId: toolUse.id } },
             { asType: "tool" },
           );
+          const toolStartedAt = Date.now();
           const outcome = await dispatchReviewTool(
             deps.github,
             scope,
             toolUse.name,
             toolUse.input,
           );
+          toolCallCount += 1;
+          logger.info("agent.tool", {
+            ...eventFields,
+            turn,
+            sequence: toolCallCount,
+            tool: toolUse.name,
+            target: reviewToolTarget(toolUse.input),
+            ok: outcome.ok,
+            durationMs: Date.now() - toolStartedAt,
+            resultChars: outcome.ok ? outcome.content.length : undefined,
+            error: outcome.ok ? undefined : outcome.error,
+          });
           // A failed tool is reported to the model rather than thrown.
           toolObservation
             .update(
@@ -278,7 +300,7 @@ export function createReviewAgent(
           messages.push({ role: "assistant", content: response.content });
           messages.push({
             role: "user",
-            content: await answerToolUses(toolUses),
+            content: await answerToolUses(toolUses, turn),
           });
         }
 
@@ -298,6 +320,7 @@ export function createReviewAgent(
           ...eventFields,
           durationMs: Date.now() - startedAt,
           ...usage,
+          toolCallCount,
           findingCount: findings.length,
         });
         agentObservation
@@ -314,6 +337,7 @@ export function createReviewAgent(
           ...eventFields,
           durationMs: Date.now() - startedAt,
           ...usage,
+          toolCallCount,
           error: errorMessage(error),
           errorName: errorName(error),
         });

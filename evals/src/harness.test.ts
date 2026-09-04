@@ -10,7 +10,7 @@ import {
   type ReviewAgent,
 } from "@pr-review/ai";
 import type { ChangedFile, GithubInstallationClient } from "@pr-review/github";
-import { createCapturingLogger } from "@pr-review/logging";
+import type { StructuredLogger } from "@pr-review/logging";
 import { validateFindings } from "@pr-review/reviewer";
 import type { ReviewFinding } from "@pr-review/schemas";
 import { describe, expect, it } from "vitest";
@@ -22,6 +22,7 @@ import {
   message,
   repositoryAgents,
   textBlock,
+  toolUseBlock,
 } from "../../packages/ai/src/agent-test-support.js";
 import { evalCases } from "./cases.js";
 import {
@@ -41,6 +42,7 @@ import {
   MODEL_ENV,
   requireModelAccess,
 } from "./model-access.js";
+import { filesRead } from "./read-trace.js";
 import {
   runFixtureReview,
   type FixtureReviewDeps,
@@ -48,6 +50,9 @@ import {
 import { buildPatch, diffOps, toLines } from "./unified-diff.js";
 
 const MODEL = "harness-test-model";
+
+/** One scripted model response, without depending on the SDK types here. */
+type ScriptedTurn = ReturnType<typeof message>;
 
 const configuredAgents = repositoryAgents();
 
@@ -96,24 +101,43 @@ function findingExpectationFor(fixtureName: string): FixtureExpectation {
   return expectation;
 }
 
+/**
+ * The turns one scripted agent takes: a get_file per path it is told to
+ * read, then its findings. Reading first is what a real agent does, and
+ * what the reads-file expectations are judged against.
+ */
+function agentTurns(
+  findings: readonly ReviewFinding[],
+  reads: readonly string[],
+): ScriptedTurn[] {
+  const turns = reads.map((path, index) =>
+    message([toolUseBlock(`toolu_${index + 1}`, "get_file", { path })], "tool_use"),
+  );
+  return [...turns, message([textBlock(finalFindingsJson(findings))], "end_turn")];
+}
+
 /** Real agents and Synthesiser, with only the Anthropic client scripted. */
 function scriptedDeps(
   byCategory: Record<string, ReviewFinding[]>,
+  readsByCategory: Record<string, string[]> = {},
 ): FixtureReviewDeps {
   const synthesised = Object.values(byCategory).flat();
   return {
-    createAgents: (github: GithubInstallationClient): ReviewAgent[] =>
+    createAgents: (
+      github: GithubInstallationClient,
+      logger: StructuredLogger,
+    ): ReviewAgent[] =>
       configuredAgents.map((agent) =>
         createReviewAgent(agent, {
-          anthropic: makeAnthropic([
-            message(
-              [textBlock(finalFindingsJson(byCategory[agent.category] ?? []))],
-              "end_turn",
+          anthropic: makeAnthropic(
+            agentTurns(
+              byCategory[agent.category] ?? [],
+              readsByCategory[agent.category] ?? [],
             ),
-          ]).anthropic,
+          ).anthropic,
           model: MODEL,
           github,
-          logger: createCapturingLogger().logger,
+          logger,
         }),
       ),
     synthesiser: createSynthesiser({
@@ -148,6 +172,28 @@ describe("fixtures", () => {
           const resolved = resolveAnchor(fixture, anchor);
           expect(resolved.to).toBeGreaterThanOrEqual(resolved.from);
         }
+      }
+    }
+  });
+
+  it("names a file the fixture contains in every reads-file expectation", () => {
+    for (const evalCase of evalCases) {
+      const fixture = loadFixture(evalCase.fixture);
+      for (const expectation of evalCase.expectations) {
+        if (expectation.kind !== "reads-file") {
+          continue;
+        }
+        expect(
+          fixture.headFiles.has(expectation.file),
+          `${fixture.name} has no ${expectation.file}`,
+        ).toBe(true);
+        expect(
+          expectation.agent === undefined ||
+            configuredAgents.some(
+              (agent) => agent.category === expectation.agent,
+            ),
+          `no agent named "${expectation.agent}" is configured`,
+        ).toBe(true);
       }
     }
   });
@@ -309,7 +355,9 @@ describe("the full pipeline against a fixture", () => {
             title: "The admin check assigns instead of comparing",
           }),
         ],
-      }),
+      },
+        { correctness: ["src/routes/admin-audit.ts"] },
+      ),
     );
 
     expect(review.result.agentFailures).toEqual([]);
@@ -420,6 +468,100 @@ describe("the full pipeline against a fixture", () => {
     });
     expect(outcome.passed).toBe(false);
     expect(outcome.detail).toContain("correctness: model overloaded");
+  });
+});
+
+describe("the read trace", () => {
+  /**
+   * The correctness agent reads two files before answering; the others
+   * answer straight away. Concurrent agents make the attribution real.
+   */
+  function readingDeps(): FixtureReviewDeps {
+    const scripts: Record<string, ScriptedTurn[]> = {
+      correctness: [
+        message(
+          [
+            toolUseBlock("toolu_1", "get_file", {
+              path: "src/routes/customer-detail.ts",
+            }),
+            toolUseBlock("toolu_2", "search_repository", { query: "tenantId" }),
+          ],
+          "tool_use",
+        ),
+        message(
+          [toolUseBlock("toolu_3", "get_file", { path: "src/data/customers.ts" })],
+          "tool_use",
+        ),
+        message([textBlock(finalFindingsJson([]))], "end_turn"),
+      ],
+    };
+    return {
+      createAgents: (github, logger) =>
+        configuredAgents.map((agent) =>
+          createReviewAgent(agent, {
+            anthropic: makeAnthropic(
+              scripts[agent.category] ?? [
+                message([textBlock(finalFindingsJson([]))], "end_turn"),
+              ],
+            ).anthropic,
+            model: MODEL,
+            github,
+            logger,
+          }),
+        ),
+      synthesiser: createSynthesiser({
+        anthropic: makeAnthropic([
+          message([textBlock(finalFindingsJson([]))], "end_turn"),
+        ]).anthropic,
+        model: MODEL,
+        agents: configuredAgents,
+      }),
+    };
+  }
+
+  it("attributes every read to the agent that made it, in that agent's order", async () => {
+    const fixture = loadFixture("security-tenant-scope");
+
+    const review = await runFixtureReview(fixture, readingDeps());
+
+    const correctness = review.readTrace.find(
+      (trace) => trace.agent === "correctness",
+    );
+    expect(correctness?.steps.map((step) => [step.tool, step.target])).toEqual([
+      ["get_file", "src/routes/customer-detail.ts"],
+      ["search_repository", "tenantId"],
+      ["get_file", "src/data/customers.ts"],
+    ]);
+    expect(filesRead(correctness!)).toEqual([
+      "src/routes/customer-detail.ts",
+      "src/data/customers.ts",
+    ]);
+    // The agents that never called a tool leave no trace at all.
+    expect(review.readTrace.map((trace) => trace.agent)).toEqual(["correctness"]);
+  });
+
+  it("judges a reads-file expectation against the pipeline's own reads", async () => {
+    const fixture = loadFixture("security-tenant-scope");
+    const review = await runFixtureReview(fixture, readingDeps());
+
+    expect(
+      evaluateExpectation(review, {
+        kind: "reads-file",
+        description: "reads the route first",
+        agent: "correctness",
+        file: "src/routes/customer-detail.ts",
+        withinFirst: 1,
+      }).passed,
+    ).toBe(true);
+    expect(
+      evaluateExpectation(review, {
+        kind: "reads-file",
+        description: "reads the data layer first",
+        agent: "correctness",
+        file: "src/data/customers.ts",
+        withinFirst: 1,
+      }).passed,
+    ).toBe(false);
   });
 });
 

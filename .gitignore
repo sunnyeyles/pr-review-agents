@@ -3,3 +3,4 @@ dist/
 .env
 .claude/worktrees/
 .env.local
+evals/.traces/

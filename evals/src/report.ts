@@ -5,6 +5,7 @@
 import type { CapturedLogEvent } from "@pr-review/logging";
 
 import { describeFindings } from "./expectations.js";
+import { filesRead, formatReadTrace } from "./read-trace.js";
 import type { FixtureReview } from "./run-fixture-review.js";
 
 /** The four token counters, summed across a run's completed units. */
@@ -61,6 +62,18 @@ function toolSummary(review: FixtureReview): string {
     .join(", ");
 }
 
+/** Which file each agent opened first — the clearest signal of its strategy. */
+function firstFileLine(review: FixtureReview): string {
+  const entries = review.readTrace.map((trace) => {
+    const [first] = filesRead(trace);
+    return `${trace.agent}: ${first ?? "(read no file)"}`;
+  });
+  if (entries.length === 0) {
+    return "  first file:    (no agent read a file)";
+  }
+  return `  first file:    ${entries.join(", ")}`;
+}
+
 /** One fixture's review, rendered as a block for the run report. */
 export function formatReviewReport(review: FixtureReview): string {
   const { result, fixture } = review;
@@ -79,6 +92,8 @@ export function formatReviewReport(review: FixtureReview): string {
       (result.synthesisError === undefined ? "" : ` (${result.synthesisError})`),
     `  validated:     ${result.findings.length} finding(s), check run conclusion "${review.rendered.conclusion}"`,
     `  repository reads: ${toolSummary(review)}`,
+    firstFileLine(review),
+    formatReadTrace(review.readTrace),
     `  tokens:        ${usage.inputTokens} in / ${usage.outputTokens} out, ${Math.round(review.durationMs / 1000)}s`,
     `  prompt cache:  ${usage.cacheCreationInputTokens} written / ` +
       `${usage.cacheReadInputTokens} read (${cacheHitRate(usage)} of input served from cache)`,

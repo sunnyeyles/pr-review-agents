@@ -27,6 +27,7 @@ import {
 import { createFixtureClient, type FixtureCall } from "./fixture-client.js";
 import type { LoadedFixture } from "./fixture.js";
 import type { ModelAccess } from "./model-access.js";
+import { buildReadTrace, type AgentReadTrace } from "./read-trace.js";
 
 /** The model-facing half of a review; the harness's own tests inject scripted agents. */
 export interface FixtureReviewDeps {
@@ -49,6 +50,8 @@ export interface FixtureReview {
   rendered: RenderedCheckRun;
   /** Every repository read the agents made through their tools. */
   calls: readonly FixtureCall[];
+  /** The same reads, attributed to an agent and ordered within its run. */
+  readTrace: readonly AgentReadTrace[];
   /** The lifecycle events the review emitted. */
   events: readonly CapturedLogEvent[];
   durationMs: number;
@@ -142,6 +145,7 @@ export async function runFixtureReview(
     result,
     rendered,
     calls,
+    readTrace: buildReadTrace(captured.entries),
     events: captured.entries,
     durationMs,
   };
