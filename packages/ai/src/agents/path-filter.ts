@@ -1,7 +1,6 @@
 /**
- * An agent's `paths`: the changed files that wake it. Matching is POSIX
- * only, because the GitHub API always spells a filename with forward
- * slashes and the host platform must not change which agents run.
+ * An agent's `paths`: the changed files that wake it. POSIX-only matching,
+ * since the GitHub API always uses forward slashes.
  */
 import picomatch, { type PicomatchOptions } from "picomatch";
 import { z } from "zod";
@@ -56,9 +55,8 @@ export const agentPathsSchema = z
 export type PathFilter = (filename: string) => boolean;
 
 /**
- * Compiles the positive and `!`-negated patterns separately so negation
- * subtracts. picomatch's own array form ORs every pattern, which would
- * let a test file through a positive pattern that a negation excludes.
+ * Positive and `!`-negated patterns compile separately so negation subtracts.
+ * picomatch's array form ORs them, letting an excluded file through.
  */
 export function compilePathFilter(patterns: readonly string[]): PathFilter {
   const included = patterns.filter((pattern) => !pattern.startsWith("!"));
@@ -69,9 +67,8 @@ export function compilePathFilter(patterns: readonly string[]): PathFilter {
   if (included.length === 0) {
     return () => false;
   }
-  // Wrapped rather than returned bare: picomatch's matcher reads a second
-  // argument, and a non-match returns a truthy state object when it is set.
-  // An array callback would supply the index there.
+  // Wrapped, not bare: with a second argument set, picomatch returns a truthy
+  // state object on a non-match, and an array callback supplies the index.
   const isIncluded = picomatch(included, MATCH_OPTIONS);
   if (excluded.length === 0) {
     return (filename) => isIncluded(filename);

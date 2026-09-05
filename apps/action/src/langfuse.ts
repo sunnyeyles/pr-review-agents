@@ -1,9 +1,6 @@
 /**
- * Langfuse tracing for one action run. Only a tracer provider is
- * registered, not the full OpenTelemetry Node SDK, whose unused
- * exporters would ship in the committed bundle. Spans are batched and
- * flushed once at the end. With no Langfuse inputs, nothing is built
- * and every observation degrades to a no-op.
+ * Langfuse tracing for one action run. Only a tracer provider is registered:
+ * the full OpenTelemetry Node SDK would ship unused exporters in the bundle.
  */
 import { LangfuseSpanProcessor } from "@langfuse/otel";
 import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";

@@ -1,9 +1,8 @@
 import { z } from "zod";
 
 /**
- * A category names one review agent, and the set of agents is
- * configurable — so the shape is constrained here and membership is
- * checked against the agents a given run was configured with.
+ * A category names one review agent, and the agent set is configurable — the
+ * shape is constrained here, membership against the run's agents.
  */
 export const findingCategorySchema = z
   .string()
@@ -36,9 +35,8 @@ export function categoryLabel(category: string): string {
 }
 
 /**
- * Keeps only candidates matching the finding contract. Shared by the
- * Synthesiser and the validation chain, which must agree. Dropping
- * silently is deliberate: malformed model output is an ordinary outcome.
+ * Keeps only candidates matching the finding contract. Dropping silently is
+ * deliberate: malformed model output is an ordinary outcome.
  */
 export function wellFormedFindings(
   candidates: readonly unknown[],

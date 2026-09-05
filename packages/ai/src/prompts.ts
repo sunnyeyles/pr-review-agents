@@ -22,9 +22,8 @@ import { buildSynthesisSystemPrompt } from "./agents/synthesiser.js";
 type PromptSource = "langfuse" | "fallback";
 
 /**
- * System prompts keyed by managed-prompt id — an agent category, or
- * SYNTHESIS_PROMPT_ID. inCodePrompts decides the set, and its keys are
- * the only place the ids are enumerated.
+ * System prompts keyed by managed-prompt id. inCodePrompts decides the set,
+ * and its keys are the only place the ids are enumerated.
  */
 export type ManagedPrompts = Record<string, string>;
 
@@ -68,9 +67,8 @@ export function createLangfuseClient(
 }
 
 /**
- * One uncached prompt fetch at a label. `cacheTtlSeconds: 0` matters:
- * the loader caches for the process lifetime, and the seeder must see
- * what Langfuse holds right now.
+ * One uncached prompt fetch at a label. `cacheTtlSeconds: 0` matters: the
+ * loader caches for the process lifetime, and the seeder needs live data.
  */
 export function fetchTextPrompt(
   client: LangfuseClient,
@@ -121,9 +119,8 @@ function sharedPromptProblems(text: string): string[] {
 }
 
 /**
- * The invariants a review-agent system prompt must satisfy. A prompt that
- * loses its output contract fails silently — the runtime discards
- * findings whose category is not the agent's own.
+ * The invariants a review-agent system prompt must satisfy. Losing the output
+ * contract fails silently: the runtime discards off-category findings.
  */
 export function reviewPromptContractProblems(
   text: string,
@@ -161,9 +158,8 @@ export function promptContractProblems(id: string, text: string): string[] {
 }
 
 /**
- * The prompts one agent set implies, as this build defines them: both the
- * loader's fallback and the seeder's baseline, so the two can never
- * disagree.
+ * The prompts one agent set implies: both the loader's fallback and the
+ * seeder's baseline, so the two cannot disagree.
  */
 export function inCodePrompts(agents: readonly AgentDefinition[]): ManagedPrompts {
   const prompts: ManagedPrompts = {};

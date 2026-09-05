@@ -1,7 +1,6 @@
 /**
- * One review, end to end: load PR -> runReviewPipeline -> renderCheckRun
- * -> publish. The side-effect boundary is enforced here, once, rather
- * than in each delivery-path wrapper.
+ * One review, end to end. The side-effect boundary is enforced here, once,
+ * rather than in each delivery-path wrapper.
  */
 import {
   emptyTokenUsage,
@@ -49,10 +48,8 @@ export type PublishReview = (
 ) => Promise<void>;
 
 /**
- * Delivers the inline review comments, reporting whether they landed.
- * A false return is not an error: the findings are still published on
- * the check run, which keeps its annotations precisely because the
- * comments did not appear.
+ * Delivers the inline review comments, reporting whether they landed. A false
+ * return is not an error: the check run keeps its annotations instead.
  */
 type PublishReviewComments = (
   target: ReviewTarget,
@@ -105,10 +102,8 @@ export function createCheckRunPublisher(
 }
 
 /**
- * The default delivery for inline comments: one advisory review on the
- * head SHA. A failure is swallowed — publishing comments needs
- * `pull-requests: write`, which a fork's token lacks, and the check run
- * must still be published.
+ * The default delivery for inline comments: one advisory review on the head
+ * SHA. Failure is swallowed — a fork's token lacks `pull-requests: write`.
  */
 function createReviewCommentPublisher(
   client: GithubInstallationClient,
@@ -126,9 +121,8 @@ function createReviewCommentPublisher(
       });
       return true;
     } catch (error) {
-      // Only a permission error degrades: a fork's token cannot post
-      // comments. Anything else is rethrown, so a real bug here fails
-      // the run instead of silently falling back forever.
+      // Only a permission error degrades. Anything else is rethrown, so a real
+      // bug fails the run instead of falling back forever.
       if (!isPermissionError(error)) {
         throw error;
       }

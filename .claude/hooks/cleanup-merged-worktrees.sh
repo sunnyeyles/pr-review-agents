@@ -1,56 +1,18 @@
 #!/usr/bin/env bash
 #
-# SessionEnd hook — garbage-collect the worktrees whose work is already published.
+# SessionEnd hook — remove worktrees under .claude/worktrees/ whose every commit
+# exists elsewhere: on the default branch, a remote ref, or a PR head.
 #
-# Claude Code leaves a worktree under .claude/worktrees/ behind whenever a
-# session is kept rather than discarded, so they accumulate long after the work
-# they held has been reviewed and merged. This removes such a worktree and its
-# local branch once every commit it holds exists somewhere else.
+# An unpushed commit, uncommitted changes, a live claude process or an
+# unreachable GitHub all mean keep. Evidence ladder and rationale: CLAUDE.md.
 #
-# "Somewhere else" is the whole of the safety argument, so it is worth being
-# precise about it. A commit is published when it is contained in the default
-# branch, when some remote-tracking ref contains it, or when it is the head of a
-# pull request GitHub still knows about. Any one of those means the work can be
-# got back after this script deletes it. An unpushed commit satisfies none of
-# them, and it is the only thing here that cannot be got back — so it is the one
-# thing this script must never destroy.
-#
-# The evidence is graded, because not all of it means the same thing:
-#
-#   * STRONG — a pull request sits on exactly this commit. Merged is the obvious
-#     case; open counts too, since a review is answered from a fresh
-#     `gh pr checkout` and holding the original checkout open buys nothing.
-#     Collected immediately.
-#   * WEAK — the tip is merely contained in the default branch, or merely on
-#     some remote ref. True of a brand-new worktree that has not been committed
-#     to yet, which sits at the default branch tip and is therefore trivially
-#     "published" while being exactly the thing you are about to work in. Weak
-#     evidence collects only after WORKTREE_CLEANUP_MIN_IDLE_HOURS of inactivity.
-#
-# Idleness is read from the mtime of .git/worktrees/<id>/index, not from the
-# admin directory, whose mtime `git worktree list` touches on every run.
-#
-# Beyond that it refuses a worktree a live claude process holds, one with
-# uncommitted changes, and one whose state it could not determine at all —
-# being unable to reach GitHub is a reason to keep, never a reason to remove.
-#
-# The pull-request index is keyed by head SHA as well as by head-ref name, and
-# that is load-bearing rather than a nicety. A local branch name and the head-ref
-# name of its pull request are not always equal, so a name-only lookup leaves
-# such a worktree immortal. And because this repo squash-merges (RELEASING.md),
-# a merged branch's tip is never an ancestor of the default branch; once the
-# upstream branch is deleted and `fetch --prune` drops its remote-tracking ref,
-# the pull request's head SHA is the *only* surviving evidence that the work
-# reached GitHub. Never reduce the gate to the two local checks.
-#
-# Everything it decides — keep or remove — is logged with a reason.
+# The PR index is keyed by head SHA as well as head-ref name. Squash merges mean
+# a merged tip is never an ancestor, so never reduce the gate to local checks.
 #
 # Log:   ~/.claude/worktree-cleanup.log  (override with WORKTREE_CLEANUP_LOG)
 # Tests: .claude/hooks/cleanup-merged-worktrees.test.sh
 #
-# Options, as flags for a manual run or environment variables for the hook path
-# (settings.json invokes this with no arguments, so flags alone are unreachable
-# there):
+# Options, as flags for a manual run or environment variables for the hook path:
 #
 #   --dry-run       WORKTREE_CLEANUP_DRY_RUN=1        log decisions, remove nothing
 #   --no-fetch      WORKTREE_CLEANUP_NO_FETCH=1       skip the pre-pass fetch

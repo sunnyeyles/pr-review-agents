@@ -1,7 +1,6 @@
 /**
- * Path-pattern matching. A pattern that silently matches nothing would
- * retire an agent without a word, so the rejections matter as much as
- * the matches.
+ * Path-pattern matching. Rejections matter as much as matches: a pattern that
+ * matches nothing retires an agent without a word.
  */
 import { describe, expect, it } from "vitest";
 

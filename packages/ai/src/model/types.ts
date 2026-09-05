@@ -1,7 +1,6 @@
 /**
- * The provider-neutral model seam. Everything above it — the agent tool
- * loop, the synthesiser, tracing, usage accounting — speaks these types
- * only, so a new provider is one adapter and no changes anywhere else.
+ * The provider-neutral model seam. Everything above it speaks these types only,
+ * so a new provider is one adapter and no other changes.
  */
 
 export interface ModelTextBlock {
@@ -66,9 +65,8 @@ export interface ModelRequest {
 }
 
 /**
- * Four counters, not two: where a provider caches, `inputTokens` is only
- * the uncached remainder and the three input counters bill differently.
- * A provider that reports no cache detail leaves those two at zero.
+ * Four counters, not two: where a provider caches, `inputTokens` is only the
+ * uncached remainder and the three input counters bill differently.
  */
 export interface ModelUsage {
   /** Input tokens processed at full price — the uncached remainder. */

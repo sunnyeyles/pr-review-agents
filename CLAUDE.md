@@ -62,15 +62,9 @@ Worktrees outside `.claude/worktrees/` are never touched.
 
 ## Comments
 
-Keep code comments minimal: 1–2 lines at most, only when the code isn't self-explanatory. No long explanatory blocks, no ticket references (PROD-XXXX, #issue) in comments.
-
-Inline comments should be concise. Use them for important, non-obvious facts about the code at hand. Avoid comments that:
-
-- restate the code, repeat a type signature, or describe a general API contract;
-- document old behavior, rejected alternatives, or the history of the change (that belongs in the PR body or commit message);
-- explain API usage that belongs with the API definition instead of this call site.
-
-Rewrite a stale comment instead of adding a new one beside it. If a fact applies generally, document it at the definition.
+Hard cap: 2 lines. One is better. None is best. Enforced by
+`.claude/hooks/comment-length.sh`, which rejects any longer comment block you
+add. See `.claude/rules/comments.md`.
 
 ## Commands
 

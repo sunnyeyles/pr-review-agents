@@ -1,7 +1,6 @@
 /**
- * The three evaluation fixtures and what each must produce. The clean
- * fixture is what separates a reviewer that finds problems from one
- * that manufactures them.
+ * The evaluation fixtures and what each must produce. The clean fixture
+ * separates a reviewer that finds problems from one that invents them.
  */
 import type { FixtureExpectation } from "./expectations.js";
 
