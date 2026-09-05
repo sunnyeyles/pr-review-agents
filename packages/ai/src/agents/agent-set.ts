@@ -7,29 +7,14 @@ import { compilePathFilter } from "./path-filter.js";
 import { createReviewAgent, type ReviewAgentDeps } from "./runtime.js";
 import type { ReviewAgent } from "../agent-contract.js";
 
-/** The non-empty, normalised names in a comma-separated selection. */
-function selectionNames(selection: string): string[] {
-  return selection
-    .split(",")
-    .map((part) => part.trim().toLowerCase())
-    .filter((name) => name !== "");
-}
-
-/**
- * True when the selection named agents rather than taking `all`. Such a
- * run is someone asking for those agents specifically, so path filters
- * do not then decide the answer for them.
- */
-export function selectsSpecificAgents(selection: string): boolean {
-  const names = selectionNames(selection);
-  return names.length > 0 && !names.includes(ALL_AGENTS);
-}
-
 /**
  * Narrows an agent set by name — comma-separated categories, with `all`
  * selecting every agent wherever it appears. Always in `available` order,
  * since agent order decides the order findings reach the synthesiser. An
  * unknown name throws rather than quietly running a narrower review.
+ *
+ * A named agent comes back without its `paths`: asking for an agent by
+ * name is asking for it, so its gate no longer decides.
  */
 export function resolveAgentDefinitions(
   selection: string,
@@ -38,7 +23,10 @@ export function resolveAgentDefinitions(
   if (selection.trim() === "") {
     return [...available];
   }
-  const names = selectionNames(selection);
+  const names = selection
+    .split(",")
+    .map((part) => part.trim().toLowerCase())
+    .filter((name) => name !== "");
 
   const known = new Set<string>(available.map((agent) => agent.category));
   const choices =
@@ -65,7 +53,9 @@ export function resolveAgentDefinitions(
   if (requested.size === 0) {
     throw new Error(`No review agents selected. ${choices}`);
   }
-  return available.filter((agent) => requested.has(agent.category));
+  return available
+    .filter((agent) => requested.has(agent.category))
+    .map(({ paths: _gate, ...agent }) => agent);
 }
 
 /** One agent that did not run, and the patterns nothing matched. */
@@ -97,8 +87,7 @@ export function gateAgentsByPaths(
       active.push(agent);
       continue;
     }
-    const filter = compilePathFilter(paths);
-    if (changedFiles.some((file) => filter.matches(file))) {
+    if (changedFiles.some(compilePathFilter(paths))) {
       active.push(agent);
     } else {
       skipped.push({ agent: agent.category, paths });

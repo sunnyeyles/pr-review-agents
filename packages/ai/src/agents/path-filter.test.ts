@@ -9,8 +9,7 @@ import { agentPathsSchema, compilePathFilter } from "./path-filter.js";
 
 /** The files a pattern list matches, out of one fixed changed-file set. */
 function matched(patterns: string[], files: string[]): string[] {
-  const filter = compilePathFilter(patterns);
-  return files.filter((file) => filter.matches(file));
+  return files.filter(compilePathFilter(patterns));
 }
 
 describe("compilePathFilter", () => {

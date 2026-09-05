@@ -116,7 +116,6 @@ function makeAgent(
 
 interface DepsOptions {
   agents?: readonly AgentDefinition[];
-  applyPathFilters?: boolean;
   publishReview?: PublishReview;
 }
 
@@ -225,10 +224,7 @@ describe("reviewPullRequest", () => {
     const review = reviewResult({ candidates: [finding] });
     const { deps } = makeDeps(review);
 
-    await expect(reviewPullRequest(target, deps)).resolves.toEqual({
-      ...review,
-      skippedAgents: [],
-    });
+    await expect(reviewPullRequest(target, deps)).resolves.toBe(review);
   });
 
   it("emits the lifecycle events for one review (spec §26)", async () => {
@@ -452,17 +448,6 @@ describe("reviewPullRequest: path filters", () => {
     expect(runReviewPipeline.mock.calls[0]?.[2]).toEqual([matching]);
   });
 
-  it("runs every agent when the caller named them explicitly", async () => {
-    const { deps, runReviewPipeline } = makeDeps(reviewResult(), {
-      agents: [ungated, gated],
-      applyPathFilters: false,
-    });
-
-    await reviewPullRequest(target, deps);
-
-    expect(runReviewPipeline.mock.calls[0]?.[2]).toEqual([ungated, gated]);
-  });
-
   it("logs each skipped agent with the paths it waited for", async () => {
     const { deps, entries } = makeDeps(reviewResult(), {
       agents: [ungated, gated],
@@ -536,7 +521,6 @@ describe("reviewPullRequest: path filters", () => {
         candidates: [],
         agentFailures: [],
         synthesisOutcome: "skipped",
-        skippedAgents: [{ agent: "security", paths: ["packages/**"] }],
       });
     });
 

@@ -14,8 +14,6 @@ export interface ActionHandlerDeps {
   client: GithubInstallationClient;
   /** The run's agent set, already narrowed by the `agents` input. */
   agents: readonly AgentDefinition[];
-  /** False when the `agents` input named agents explicitly. */
-  applyPathFilters?: boolean | undefined;
   /** Throws when every agent failed, so the workflow step fails and can be re-run. */
   runReviewPipeline: (
     client: GithubInstallationClient,
@@ -40,7 +38,6 @@ export type ActionHandler = (
 export function createActionHandler({
   client,
   agents,
-  applyPathFilters,
   runReviewPipeline,
   publishReview,
   logger = createConsoleLogger(),
@@ -50,7 +47,6 @@ export function createActionHandler({
     await reviewPullRequest(target, {
       client,
       agents,
-      applyPathFilters,
       runReviewPipeline,
       publishReview,
       logger,

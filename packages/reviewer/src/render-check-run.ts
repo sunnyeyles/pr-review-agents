@@ -15,8 +15,8 @@ import type { SkippedAgent } from "@pr-review/ai";
 import { categoryLabel, type ReviewFinding } from "@pr-review/schemas";
 
 import {
+  countLabel,
   failureNotes,
-  findingCountLabel,
   pathList,
   skipNotes,
   summarise,
@@ -71,17 +71,20 @@ function annotate(finding: ReviewFinding, line: number): CheckRunAnnotation {
 
 /**
  * Names the files nobody reviewed, so the reason a gate held is legible
- * without opening the pull request.
+ * without opening the pull request. Empty for a pull request that
+ * changed nothing, like the other note builders.
  */
-export function changedFilesNote(changedFiles: readonly string[]): string {
+function changedFilesNote(changedFiles: readonly string[]): string[] {
   if (changedFiles.length === 0) {
-    return "";
+    return [];
   }
   const listed = pathList(changedFiles.slice(0, MAX_LISTED_CHANGED_FILES));
   const remaining = changedFiles.length - MAX_LISTED_CHANGED_FILES;
-  return remaining > 0
-    ? `Changed: ${listed}, and ${remaining} more.`
-    : `Changed: ${listed}.`;
+  return [
+    remaining > 0
+      ? `Changed: ${listed}, and ${remaining} more.`
+      : `Changed: ${listed}.`,
+  ];
 }
 
 /**
@@ -93,22 +96,18 @@ export function renderNoAgentMatched(
   skippedAgents: readonly SkippedAgent[],
   changedFiles: readonly string[],
 ): RenderedCheckRun {
-  const agentCount = skippedAgents.length;
-  const fileCount = changedFiles.length;
   return {
     conclusion: "neutral",
     output: {
       title: "No agent reviewed this pull request",
       summary: [
-        `None of the ${agentCount} configured ${agentCount === 1 ? "agent" : "agents"} matched the ${fileCount} changed ${fileCount === 1 ? "file" : "files"}, so this pull request was not reviewed.`,
+        `None of the ${countLabel(skippedAgents.length, "configured agent")} matched the ${countLabel(changedFiles.length, "changed file")}, so this pull request was not reviewed.`,
         ...skippedAgents.map(
           (skipped) =>
             `- ${categoryLabel(skipped.agent)} — waiting on ${pathList(skipped.paths)}`,
         ),
-        changedFilesNote(changedFiles),
-      ]
-        .filter((section) => section !== "")
-        .join("\n\n"),
+        ...changedFilesNote(changedFiles),
+      ].join("\n\n"),
     },
   };
 }
@@ -135,7 +134,7 @@ export function renderCheckRun(
   }
 
   const ordered = [...findings].sort(compareFindingStrength);
-  const title = findingCountLabel(findings.length);
+  const title = countLabel(findings.length, "finding");
   const summary = [
     `**${title}**`,
     "",

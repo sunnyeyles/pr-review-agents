@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 
 import {
   MAX_ANNOTATIONS_PER_REQUEST,
-  changedFilesNote,
   renderCheckRun,
   renderNoAgentMatched,
 } from "./render-check-run.js";
@@ -316,15 +315,5 @@ describe("renderNoAgentMatched", () => {
 
     expect(summary).not.toContain("Changed:");
     expect(summary).toContain("the 0 changed files");
-  });
-});
-
-describe("changedFilesNote", () => {
-  it("is empty for no files", () => {
-    expect(changedFilesNote([])).toBe("");
-  });
-
-  it("lists every file up to the cap", () => {
-    expect(changedFilesNote(["a.ts", "b.ts"])).toBe("Changed: `a.ts`, `b.ts`.");
   });
 });

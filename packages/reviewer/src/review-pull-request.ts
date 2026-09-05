@@ -65,11 +65,6 @@ export interface ReviewPullRequestDeps {
   client: GithubInstallationClient;
   /** The run's agent set, already narrowed by the `agents` input. */
   agents: readonly AgentDefinition[];
-  /**
-   * Whether an agent's `paths` decide if it runs. Defaults to true; the
-   * caller sets it false when someone named the agents explicitly.
-   */
-  applyPathFilters?: boolean | undefined;
   /** Throws only when every agent failed; a synthesis failure is reported on the result. */
   runReviewPipeline: (
     client: GithubInstallationClient,
@@ -203,13 +198,8 @@ function logSynthesisOutcome(
   });
 }
 
-/** A review's pipeline result, plus the agents the path gate held back. */
-export interface ReviewOutcome extends ReviewPipelineResult {
-  skippedAgents: SkippedAgent[];
-}
-
 /** The result of a review that never reached the pipeline. */
-function unreviewed(skippedAgents: SkippedAgent[]): ReviewOutcome {
+function unreviewed(): ReviewPipelineResult {
   return {
     candidates: [],
     agentFailures: [],
@@ -217,7 +207,6 @@ function unreviewed(skippedAgents: SkippedAgent[]): ReviewOutcome {
     synthesisOutcome: "skipped",
     synthesisUsage: emptyTokenUsage(),
     findings: [],
-    skippedAgents,
   };
 }
 
@@ -227,13 +216,12 @@ export async function reviewPullRequest(
   {
     client,
     agents,
-    applyPathFilters = true,
     runReviewPipeline,
     publishReview,
     publishReviewComments,
     logger = createConsoleLogger(),
   }: ReviewPullRequestDeps,
-): Promise<ReviewOutcome> {
+): Promise<ReviewPipelineResult> {
   const fields = reviewCorrelation(target);
   const ref = {
     owner: target.owner,
@@ -245,20 +233,14 @@ export async function reviewPullRequest(
     client.listChangedFiles(ref),
     client.getDiff(ref),
   ]);
+  const filenames = changedFiles.map((file) => file.filename);
   logger.info("review.loaded", {
     ...fields,
     changedFileCount: changedFiles.length,
     diffLength: diff.length,
   });
 
-  // A gate, not a narrowing: the agents this wakes still review the
-  // whole pull request, on the same context and the same prompts.
-  const { active, skipped } = applyPathFilters
-    ? gateAgentsByPaths(
-        agents,
-        changedFiles.map((file) => file.filename),
-      )
-    : { active: [...agents], skipped: [] };
+  const { active, skipped } = gateAgentsByPaths(agents, filenames);
   const skippedNames = skipped.map((skip) => skip.agent);
   for (const skip of skipped) {
     logger.info("agent.skipped", {
@@ -271,21 +253,13 @@ export async function reviewPullRequest(
 
   const publish = publishReview ?? createCheckRunPublisher(client);
   if (active.length === 0) {
-    // Publishing is not optional here. An unreviewed pull request with
-    // no check run at all is the silent narrowing this must never be.
     logger.info("review.no_agents_matched", {
       ...fields,
       changedFileCount: changedFiles.length,
       skippedAgents: skippedNames,
     });
-    await publish(
-      target,
-      renderNoAgentMatched(
-        skipped,
-        changedFiles.map((file) => file.filename),
-      ),
-    );
-    return unreviewed(skipped);
+    await publish(target, renderNoAgentMatched(skipped, filenames));
+    return unreviewed();
   }
 
   // The AI boundary: only the validate node's output reaches GitHub.
@@ -344,5 +318,5 @@ export async function reviewPullRequest(
     skippedAgents: skippedNames,
   });
 
-  return { ...review, skippedAgents: skipped };
+  return review;
 }

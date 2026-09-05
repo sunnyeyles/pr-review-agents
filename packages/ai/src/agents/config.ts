@@ -72,17 +72,12 @@ function resolveAgentEntry(
   index: number,
   path: string,
 ): AgentDefinition {
-  if (typeof entry === "string") {
-    const name = entry.trim();
-    const builtIn = findBuiltInAgent(name);
-    if (builtIn === undefined) {
-      throw new AgentConfigError(unknownBuiltInMessage(name, path));
-    }
-    return builtIn;
-  }
-
-  if (namesBuiltIn(entry)) {
-    const named = builtInEntrySchema.safeParse(entry);
+  // A bare name is the `agent:` form without the paths, so both spellings
+  // resolve down one branch.
+  if (typeof entry === "string" || namesBuiltIn(entry)) {
+    const named = builtInEntrySchema.safeParse(
+      typeof entry === "string" ? { agent: entry } : entry,
+    );
     if (!named.success) {
       throw new AgentConfigError(
         `${path} agents[${index}] is invalid — ${issueList(named.error)}`,

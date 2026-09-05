@@ -49,7 +49,6 @@ export {
   createReviewAgents,
   gateAgentsByPaths,
   resolveAgentDefinitions,
-  selectsSpecificAgents,
   type GatedAgents,
   type SkippedAgent,
 } from "./agents/agent-set.js";

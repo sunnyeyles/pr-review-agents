@@ -19,7 +19,6 @@ import {
   loadAgentDefinitions,
   loadManagedPrompts,
   resolveAgentDefinitions,
-  selectsSpecificAgents,
   resolveModelProvider,
   type LangfusePromptClient,
   type LangfusePromptClientConfig,
@@ -273,16 +272,13 @@ export async function runAction(
   });
   const selection = getInput(env, "agents");
   const agents = resolveAgentDefinitions(selection, configured);
-  // Naming agents is someone asking for those agents, so their `paths`
-  // no longer decide; `all` leaves the configured gating in place.
-  const applyPathFilters = !selectsSpecificAgents(selection);
   logger.info("review.agents_selected", {
     agents: agents.map((agent) => agent.category),
     configuredAgents: configured.map((agent) => agent.category),
+    // Empty when the `agents` input named agents: naming one drops its gate.
     pathFilteredAgents: agents
       .filter((agent) => agent.paths !== undefined)
       .map((agent) => agent.category),
-    applyPathFilters,
   });
 
   const { model, modelId } = resolveModelInputs(env, environment);
@@ -321,7 +317,6 @@ export async function runAction(
     const handler = createActionHandler({
       client,
       agents,
-      applyPathFilters,
       // `activeAgents` is the subset the path gate woke, decided once the
       // changed files are known.
       runReviewPipeline: (reviewClient, context, activeAgents) =>

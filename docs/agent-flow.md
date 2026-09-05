@@ -159,8 +159,9 @@ Every skipped agent is logged as `agent.skipped` and named in the check-run
 summary. When `active` is empty the pipeline is never built — `buildReviewGraph`
 throws on an empty set, and more to the point a review that ran nothing must
 publish `renderNoAgentMatched`'s neutral check rather than a clean bill of
-health. The `agents` input overrides the gate: naming agents is asking for
-those agents.
+health. The `agents` input overrides the gate at the point it is read:
+`resolveAgentDefinitions` returns a named agent without its `paths`, so by the
+time the gate runs there is nothing left to hold it back.
 
 ### 4 · The graph
 

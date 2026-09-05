@@ -21,7 +21,6 @@ export {
   reviewPullRequest,
   type PublishReview,
   type PublishReviewComments,
-  type ReviewOutcome,
   type ReviewPullRequestDeps,
   type ReviewTarget,
 } from "./review-pull-request.js";

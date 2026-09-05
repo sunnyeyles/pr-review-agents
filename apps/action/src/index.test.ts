@@ -559,7 +559,6 @@ describe("agent selection", () => {
       agents: ["correctness", "security", "architecture"],
       configuredAgents: ["correctness", "security", "architecture"],
       pathFilteredAgents: [],
-      applyPathFilters: true,
     });
   });
 
@@ -577,8 +576,6 @@ describe("agent selection", () => {
       agents: ["correctness", "architecture"],
       configuredAgents: ["correctness", "security", "architecture"],
       pathFilteredAgents: [],
-      // Naming agents is asking for them, so their paths no longer decide.
-      applyPathFilters: false,
     });
     expect(modelCalls()).toBe(2);
   });

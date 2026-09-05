@@ -9,8 +9,8 @@ import type { ReviewComment } from "@pr-review/github";
 import type { ReviewFinding } from "@pr-review/schemas";
 
 import {
+  countLabel,
   failureNotes,
-  findingCountLabel,
   heading,
   skipNotes,
   summarise,
@@ -100,7 +100,7 @@ export function renderReview(
     });
   }
 
-  const sections = [`**AI PR Review — ${findingCountLabel(fresh.length)}**`];
+  const sections = [`**AI PR Review — ${countLabel(fresh.length, "finding")}**`];
   if (fresh.length < findings.length) {
     sections.push(
       `${findings.length - fresh.length} further finding(s) were reported on an earlier commit and are not repeated here.`,

@@ -16,7 +16,6 @@ import {
   createReviewAgents,
   gateAgentsByPaths,
   resolveAgentDefinitions,
-  selectsSpecificAgents,
 } from "./agent-set.js";
 import { createReviewAgent, type ReviewAgentDeps } from "./runtime.js";
 import { reviewPromptContractProblems } from "../prompts.js";
@@ -173,6 +172,26 @@ describe("resolveAgentDefinitions", () => {
 
   it("rejects a selection that names nothing at all", () => {
     expect(() => resolveAgentDefinitions(",", configuredAgents)).toThrow(/No review agents selected/);
+  });
+
+  it("drops the paths of an agent named explicitly, so its gate cannot hold", () => {
+    const gated = [
+      correctnessAgent,
+      { ...securityAgent, paths: ["packages/github/**"] },
+    ];
+
+    expect(resolveAgentDefinitions("security", gated)).toEqual([securityAgent]);
+  });
+
+  it("keeps the paths of every agent when the selection is `all`", () => {
+    const security = { ...securityAgent, paths: ["packages/github/**"] };
+
+    for (const selection of ["", ALL_AGENTS, "all,security"]) {
+      expect(
+        resolveAgentDefinitions(selection, [correctnessAgent, security]),
+        selection,
+      ).toEqual([correctnessAgent, security]);
+    }
   });
 });
 
@@ -353,23 +372,5 @@ describe("gateAgentsByPaths", () => {
 
     expect(gated.active).toEqual([]);
     expect(gated.skipped.map((one) => one.agent)).toEqual(["security"]);
-  });
-});
-
-describe("selectsSpecificAgents", () => {
-  it("is false for the default, which leaves path filters deciding", () => {
-    for (const selection of ["", "   ", "all", "ALL", " all , "]) {
-      expect(selectsSpecificAgents(selection), selection).toBe(false);
-    }
-  });
-
-  it("is true when the input names agents", () => {
-    for (const selection of ["security", "architecture,correctness", " SECURITY "]) {
-      expect(selectsSpecificAgents(selection), selection).toBe(true);
-    }
-  });
-
-  it("treats `all` beside a name as `all`, so gating still applies", () => {
-    expect(selectsSpecificAgents("all,security")).toBe(false);
   });
 });

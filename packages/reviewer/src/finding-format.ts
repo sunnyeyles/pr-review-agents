@@ -44,7 +44,7 @@ export function failureNotes(
   );
 }
 
-/** The patterns an agent waited for, as the summary spells them. */
+/** Paths — changed files or an agent's patterns — as inline code spans. */
 export function pathList(paths: readonly string[]): string {
   return paths.map((path) => `\`${path}\``).join(", ");
 }
@@ -61,7 +61,7 @@ export function skipNotes(skippedAgents: readonly SkippedAgent[]): string[] {
   );
 }
 
-/** "1 finding" / "N findings". */
-export function findingCountLabel(count: number): string {
-  return count === 1 ? "1 finding" : `${count} findings`;
+/** "1 finding" / "3 agents". Pluralised by adding an "s". */
+export function countLabel(count: number, noun: string): string {
+  return count === 1 ? `1 ${noun}` : `${count} ${noun}s`;
 }

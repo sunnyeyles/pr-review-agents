@@ -3,20 +3,17 @@
  * only, because the GitHub API always spells a filename with forward
  * slashes and the host platform must not change which agents run.
  */
-import picomatch from "picomatch";
+import picomatch, { type PicomatchOptions } from "picomatch";
 import { z } from "zod";
 
-/** picomatch 4 accepts `windows`; @types/picomatch 4.0.3 omits it. */
-type MatchOptions = NonNullable<Parameters<typeof picomatch>[1]> & {
-  windows?: boolean;
-};
-
 /**
- * Dotfiles match, so a `.github` pattern reads the way it is written.
- * `windows: false` pins the separator: picomatch otherwise defaults to
- * the host platform, and these filenames come from the GitHub API.
+ * `windows: false` pins the separator, which picomatch otherwise takes
+ * from the host platform. picomatch 4 accepts it; its types do not.
  */
-const MATCH_OPTIONS: MatchOptions = { dot: true, windows: false };
+const MATCH_OPTIONS: PicomatchOptions & { windows?: boolean } = {
+  dot: true,
+  windows: false,
+};
 
 /** Rejects a pattern that could never match a changed file. */
 function patternIssue(pattern: string): string | undefined {
@@ -55,36 +52,30 @@ export const agentPathsSchema = z
     }
   });
 
-export interface CompiledPathFilter {
-  matches(filename: string): boolean;
-}
+/** True for a changed file the agent declaring these patterns cares about. */
+export type PathFilter = (filename: string) => boolean;
 
 /**
  * Compiles the positive and `!`-negated patterns separately so negation
  * subtracts. picomatch's own array form ORs every pattern, which would
  * let a test file through a positive pattern that a negation excludes.
  */
-export function compilePathFilter(
-  patterns: readonly string[],
-): CompiledPathFilter {
-  const included: string[] = [];
-  const excluded: string[] = [];
-  for (const pattern of patterns) {
-    if (pattern.startsWith("!")) {
-      excluded.push(pattern.slice(1));
-    } else {
-      included.push(pattern);
-    }
-  }
+export function compilePathFilter(patterns: readonly string[]): PathFilter {
+  const included = patterns.filter((pattern) => !pattern.startsWith("!"));
+  const excluded = patterns
+    .filter((pattern) => pattern.startsWith("!"))
+    .map((pattern) => pattern.slice(1));
 
   if (included.length === 0) {
-    return { matches: () => false };
+    return () => false;
   }
+  // Wrapped rather than returned bare: picomatch's matcher reads a second
+  // argument, and a non-match returns a truthy state object when it is set.
+  // An array callback would supply the index there.
   const isIncluded = picomatch(included, MATCH_OPTIONS);
-  const isExcluded =
-    excluded.length === 0 ? undefined : picomatch(excluded, MATCH_OPTIONS);
-  return {
-    matches: (filename) =>
-      isIncluded(filename) && isExcluded?.(filename) !== true,
-  };
+  if (excluded.length === 0) {
+    return (filename) => isIncluded(filename);
+  }
+  const isExcluded = picomatch(excluded, MATCH_OPTIONS);
+  return (filename) => isIncluded(filename) && !isExcluded(filename);
 }
