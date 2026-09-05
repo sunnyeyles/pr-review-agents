@@ -1,9 +1,11 @@
-# The review agents for this repository. There is no default set: the action
+# The review agents for this repository. Nothing runs by default: the action
 # reviews with exactly the agents listed here, and fails if this file is
 # missing. Copy it as a starting point and edit freely — add an agent, drop
 # one, or rewrite a focus.
 #
-# Each entry needs:
+# An entry is either the name of a built-in specialist — see
+# packages/ai/src/agents/specialists/ for the ones this action ships — or an
+# agent written out in full, which needs:
 #   category  the agent's name, and the one finding category it may report
 #             (lowercase kebab-case; `synthesis` and `all` are reserved)
 #   role      how the agent is addressed in its system prompt
@@ -31,20 +33,7 @@ agents:
       - incorrect state changes
       Do NOT report formatting, style, naming preferences, or architectural opinions — those are out of scope for you and will be discarded.
 
-  - category: security
-    role: Security reviewer
-    focus: |
-      Review the pull request ONLY for security problems:
-      - authentication issues (missing, weakened, or bypassable checks)
-      - authorisation issues (missing ownership or role checks)
-      - cross-tenant access (data reachable across tenant boundaries)
-      - injection (SQL/NoSQL, command, path, template, or header injection)
-      - secret leakage (credentials, tokens, or keys exposed in code, configuration, or responses)
-      - unsafe handling of user input (unvalidated, unsanitised, or blindly trusted input)
-      - sensitive data written to logs (credentials, tokens, personal data)
-      - privilege issues (privilege escalation, over-broad permissions)
-      Do NOT report correctness bugs, formatting, style, or architectural opinions — those are out of scope for you and will be discarded.
-      A security finding is a serious accusation. Report one ONLY when the code in front of you demonstrates the problem: prefer NO finding over a speculative one.
+  - security
 
   - category: architecture
     role: Architecture reviewer
