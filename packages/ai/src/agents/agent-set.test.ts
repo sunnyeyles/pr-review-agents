@@ -1,7 +1,6 @@
 /**
- * Agent selection, and this repository's configured agents over the shared
- * agent runtime. There is no built-in agent set, so the fixtures here come
- * from .github/pr-review-agents.yml. Model calls are scripted fakes.
+ * Agent selection over the shared runtime. There is no built-in agent set, so
+ * fixtures come from .github/pr-review-agents.yml.
  */
 import { createCapturingLogger } from "@pr-review/logging";
 import type { FindingCategory } from "@pr-review/schemas";

@@ -1,7 +1,6 @@
 /**
  * Serves a fixture repository through the real GithubInstallationClient
- * interface, so the agents get their real tool surface. Nothing talks to
- * GitHub, and both write methods throw.
+ * interface. Nothing talks to GitHub, and both write methods throw.
  */
 import type {
   ChangedFile,

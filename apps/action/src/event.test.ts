@@ -105,10 +105,8 @@ describe("inspectEvent", () => {
       }),
       "pull_request",
     );
-    // A null head.repo (a deleted fork) leaves the origin unknown.
-    // isFork is a logging field only — the publisher reacts to the real
-    // permission error — so an unknown origin reports false rather than
-    // failing the review.
+    // A null head.repo (a deleted fork) leaves the origin unknown. isFork is
+    // a logging field only, so an unknown origin reports false.
     expect(inspection).toMatchObject({ review: true, isFork: false });
   });
 

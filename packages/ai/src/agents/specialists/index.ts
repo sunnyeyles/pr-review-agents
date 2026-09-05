@@ -1,7 +1,6 @@
 /**
- * The specialists this action ships. None of them run on their own: a
- * repository opts in by naming one in its agent configuration, so a run
- * still carries exactly the agents it was configured with.
+ * The specialists this action ships. None run unless a repository names one in
+ * its agent configuration.
  */
 import type { AgentDefinition } from "../definition.js";
 import { DOCS_DRIFT_AGENT } from "./docs-drift-agent.js";

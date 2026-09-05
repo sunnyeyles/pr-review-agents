@@ -1,7 +1,6 @@
 /**
- * The Synthesiser: one model call, no tools and no loop, between the raw
- * agent candidates and the deterministic validation chain. Its output is
- * still untrusted and still passes through that chain.
+ * The Synthesiser: one model call, no tools, no loop. Its output is still
+ * untrusted and still passes through the validation chain.
  */
 import { startObservation } from "@langfuse/tracing";
 import { extractAgentOutput } from "./output.js";
@@ -37,9 +36,8 @@ function listAgentNames(agents: readonly AgentDefinition[]): string {
 }
 
 /**
- * Finding texts originate from repository content, so they get the same
- * hardening. The agent names and the category contract are derived from
- * the run's agent set, never hard-coded.
+ * Finding texts come from repository content, so they get the same hardening.
+ * Agent names and the category contract come from the run's agent set.
  */
 export function buildSynthesisSystemPrompt(
   agents: readonly AgentDefinition[],

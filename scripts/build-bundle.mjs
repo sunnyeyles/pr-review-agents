@@ -1,14 +1,6 @@
 /**
- * Bundles an app into a single self-contained ESM file for Node 22+.
- *
- * Run from an app directory via its `build` script: bundles src/index.ts
- * into dist/index.mjs, compiling workspace packages (consumed as
- * TypeScript source) into the bundle.
- *
- * apps/action is the only consumer today: `node ../../scripts/build-bundle.mjs`.
- *
- * The esbuild settings themselves live in scripts/lib/bundle.mjs,
- * shared with the prompt seeder.
+ * Bundles src/index.ts into dist/index.mjs, a self-contained ESM file for Node
+ * 22+. Run from an app directory via its `build` script.
  */
 import { rm } from "node:fs/promises";
 import path from "node:path";

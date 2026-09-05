@@ -1,8 +1,6 @@
 /**
- * The evaluation harness's own tests: the same pipeline the evaluations
- * drive, with the model boundary filled by scripted fakes so it can run
- * in CI. Findings are planted where a good reviewer would put them, and
- * where a bad one would.
+ * The evaluation harness's own tests, with scripted fakes at the model
+ * boundary so they run in CI.
  */
 import {
   createReviewAgent,

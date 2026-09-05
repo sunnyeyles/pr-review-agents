@@ -1,26 +1,10 @@
 #!/usr/bin/env bash
 #
-# SessionStart hook — install node_modules in a fresh worktree.
+# SessionStart hook — pnpm install --frozen-lockfile the first time a session
+# opens in a worktree under .claude/worktrees/ that has no node_modules.
 #
-# A worktree carries only tracked files, and node_modules is gitignored, so a
-# newly created worktree has no dependencies at all. Nothing in this repo runs
-# without them: vitest, tsc and the workspace's own bin scripts all resolve out
-# of node_modules, so the first command in a fresh worktree fails in a way that
-# reads like a broken checkout rather than a missing install.
-#
-# .worktreeinclude handles the other half of this problem (.env.local, which is
-# gitignored too) — but the copier only moves files, so dependencies need an
-# actual install. This runs one, exactly once per worktree.
-#
-# It acts only when:
-#   * the session's cwd is inside a worktree under .claude/worktrees/ (never the
-#     main checkout, never a worktree added by hand elsewhere), and
-#   * that worktree has no node_modules of its own.
-#
-# --frozen-lockfile is deliberate: pnpm-lock.yaml is tracked, so it arrives in
-# the worktree intact, and a worktree is never the place to resolve new
-# versions. A drifted lockfile should fail loudly here rather than be silently
-# rewritten in a checkout nobody is watching.
+# --frozen-lockfile is deliberate: a drifted lockfile should fail loudly rather
+# than be rewritten in a checkout nobody is watching.
 #
 # WORKTREE_INSTALL_SKIP=1 disables this entirely.
 

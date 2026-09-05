@@ -1,7 +1,6 @@
 /**
- * One review, end to end: load PR -> runReviewPipeline -> deliverReview.
- * The side-effect boundary is enforced here, once, rather than in each
- * delivery-path wrapper.
+ * One review, end to end. The side-effect boundary is enforced here, once,
+ * rather than in each delivery-path wrapper.
  */
 import {
   gateAgentsByPaths,

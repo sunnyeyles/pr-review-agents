@@ -1,7 +1,6 @@
 /**
- * The seeding command's wiring: argument parsing, credential handling,
- * exit codes, and that the text handed to Langfuse is byte-for-byte
- * what a review would have fallen back to.
+ * The seeding command's wiring, and that the text handed to Langfuse is
+ * byte-for-byte what a review would have fallen back to.
  */
 
 import {

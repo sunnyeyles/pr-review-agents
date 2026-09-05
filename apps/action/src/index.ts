@@ -212,10 +212,8 @@ function resolveModelInputs(
 }
 
 /**
- * Reads repository files at one commit. The agent configuration defines
- * the agents' system prompts, so it is read at the pull request's base
- * commit rather than from the workspace: a checkout of the head or merge
- * ref would let the branch under review rewrite its own reviewers.
+ * Reads repository files at one commit. The agent configuration is read at the
+ * base commit, so the branch under review cannot rewrite its own reviewers.
  */
 export function readAtCommit(
   client: GithubInstallationClient,
@@ -264,9 +262,8 @@ export async function runAction(
     token: requireInput(env, "github-token"),
   });
 
-  // Resolved before the model client is built, so a missing config or a
-  // typo'd agent name fails the step rather than producing a review that
-  // looks clean.
+  // Resolved before the model client is built, so a bad config fails the step
+  // rather than producing a review that looks clean.
   const configured = await loadAgentDefinitions({
     readFile: readAtCommit(client, target, baseSha),
     path: getInput(env, "agent-config") || DEFAULT_AGENT_CONFIG_PATH,

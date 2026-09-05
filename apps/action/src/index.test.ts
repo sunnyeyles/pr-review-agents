@@ -1,7 +1,6 @@
 /**
- * The composition root: input mapping, event loading, and the entrypoint
- * guard. GITHUB_ACTIONS is cleared before import because importing the
- * module under test evaluates the guard.
+ * The composition root: input mapping, event loading, entrypoint guard.
+ * GITHUB_ACTIONS is cleared before import, which evaluates the guard.
  */
 import {
   baseSha,
@@ -517,9 +516,8 @@ describe("runAction", () => {
 });
 
 /**
- * Where the agent configuration comes from. It becomes the agents' system
- * prompts, so reading it from the pull request's own head or merge ref
- * would let the branch under review rewrite its reviewers.
+ * Where the agent configuration comes from. Reading it from the head or merge
+ * ref would let the branch under review rewrite its own reviewers.
  */
 describe("agent configuration", () => {
   it("reads it from the pull request's base commit", async () => {
@@ -563,10 +561,8 @@ describe("agent configuration", () => {
 });
 
 /**
- * Selecting which agents run. Selection itself is pinned in
- * @pr-review/ai's agents.test.ts; what belongs here is the wiring —
- * that the input reaches the parser, that the run always records which
- * agents it chose, and that a bad value costs nothing.
+ * Selecting which agents run — the wiring only. Selection itself is pinned in
+ * @pr-review/ai's agents.test.ts.
  */
 describe("agent selection", () => {
   /** The `review.agents_selected` entry, which every reviewed run emits. */

@@ -1,8 +1,6 @@
 /**
- * Token-authenticated GitHub client: the workflow token is the whole
- * credential. Its permissions come from the workflow's `permissions:`
- * block — reads need `contents`/`pull-requests`, the check run needs
- * `checks: write`, which a fork workflow's read-only token lacks.
+ * Token-authenticated GitHub client. Permissions come from the workflow's
+ * `permissions:` block, which a fork's read-only token cannot satisfy.
  */
 import { Octokit } from "@octokit/rest";
 

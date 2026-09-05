@@ -1,8 +1,6 @@
 /**
- * Delivery: one review, across two GitHub surfaces. Inline comments go
- * first, and the check run annotates only what no comment carries. The
- * ordering, the annotate decision and the comment permission fallback
- * live here so no renderer has to know whether a network call succeeded.
+ * Delivery across two GitHub surfaces: inline comments go first, and the
+ * check run annotates only what no comment carries.
  */
 import type { SkippedAgent } from "@pr-review/ai";
 import {
@@ -75,10 +73,8 @@ export function createCheckRunPublisher(
 }
 
 /**
- * The default delivery for inline comments: one advisory review on the
- * head SHA. A failure is swallowed — publishing comments needs
- * `pull-requests: write`, which a fork's token lacks, and the check run
- * must still be published.
+ * The default delivery for inline comments: one advisory review on the head
+ * SHA. Failure is swallowed — a fork's token lacks `pull-requests: write`.
  */
 export function createReviewCommentPublisher(
   client: GithubInstallationClient,
@@ -96,9 +92,8 @@ export function createReviewCommentPublisher(
       });
       return "posted";
     } catch (error) {
-      // Only a permission error degrades: a fork's token cannot post
-      // comments. Anything else is rethrown, so a real bug here fails
-      // the run instead of silently falling back forever.
+      // Only a permission error degrades. Anything else is rethrown, so a real
+      // bug fails the run instead of falling back forever.
       if (!isPermissionError(error)) {
         throw error;
       }

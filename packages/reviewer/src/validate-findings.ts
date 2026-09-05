@@ -1,8 +1,6 @@
 /**
- * The deterministic validation chain. Every candidate must survive, in
- * order: schema, category, changed file, added line, confidence,
- * duplicate removal, then the MAX_FINDINGS cap. Dedupe runs first so
- * duplicates cannot consume cap slots and leave the review short.
+ * The validation chain, in order: schema, category, changed file, added line,
+ * confidence, dedupe, cap. Dedupe runs first so it cannot waste cap slots.
  */
 import type { ChangedFile } from "@pr-review/github";
 import { wellFormedFindings, type ReviewFinding } from "@pr-review/schemas";
@@ -22,9 +20,8 @@ const severityRank: Record<ReviewFinding["severity"], number> = {
 };
 
 /**
- * Orders findings strongest first: severity rank, then confidence,
- * both descending. Ties preserve the caller's order when used with a
- * stable sort (Array.prototype.sort is stable).
+ * Orders findings strongest first: severity rank, then confidence, descending.
+ * Ties keep the caller's order, since Array.prototype.sort is stable.
  */
 export function compareFindingStrength(
   a: ReviewFinding,
@@ -51,9 +48,8 @@ function duplicateKeys(finding: ReviewFinding): [string, string] {
 }
 
 /**
- * Runs raw candidate findings through the deterministic validation
- * chain against the PR's changed files. Pure: no I/O, no mutation of
- * its inputs. Returns the surviving findings, strongest first.
+ * Runs raw candidates through the validation chain. Pure: no I/O, no mutation.
+ * Returns the survivors, strongest first.
  */
 export function validateFindings(
   candidates: readonly unknown[],

@@ -1,9 +1,6 @@
 /**
- * One way in, one client out: createTokenClient wraps the workflow token
- * and returns a GithubInstallationClient.
- *
- * A name reaches this barrel when something outside the package imports
- * it; everything else stays reachable by its own module path.
+ * One way in, one client out: createTokenClient wraps the workflow token and
+ * returns a GithubInstallationClient.
  */
 export { httpStatus, isPermissionError } from "./errors.js";
 export { createTokenClient, type GithubTokenConfig } from "./token.js";

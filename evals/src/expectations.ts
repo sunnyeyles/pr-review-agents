@@ -1,7 +1,6 @@
 /**
- * What each fixture must produce. An expectation pins down the category
- * and location, never the wording. Locations anchor to source markers,
- * so a marker that stops matching exactly one line fails loudly.
+ * What each fixture must produce: category and location, never wording.
+ * Locations anchor to source markers, which must match exactly one line.
  */
 import type { FindingCategory, ReviewFinding } from "@pr-review/schemas";
 

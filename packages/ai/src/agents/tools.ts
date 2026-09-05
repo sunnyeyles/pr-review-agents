@@ -1,7 +1,6 @@
 /**
- * The six read-only, repository-scoped tools a review agent gets — there
- * is no write tool in this package. Inputs are Zod-validated before they
- * reach GitHub, and the repository scope comes from the job, not the model.
+ * The read-only, repository-scoped tools a review agent gets; there is no write
+ * tool here. Repository scope comes from the job, not the model.
  */
 import type { GithubInstallationClient } from "@pr-review/github";
 import { errorMessage } from "@pr-review/logging";

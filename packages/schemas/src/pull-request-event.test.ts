@@ -1,8 +1,6 @@
 /**
- * The review trigger contract: which pull_request actions start a
- * review. The payload schema itself lives with the app that parses the
- * event (apps/action/src/event.ts); what is shared — and asserted here
- * — is the action list.
+ * The review trigger contract: which pull_request actions start a review.
+ * The payload schema lives with apps/action/src/event.ts.
  */
 import { describe, expect, it } from "vitest";
 

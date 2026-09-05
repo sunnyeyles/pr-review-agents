@@ -1,9 +1,6 @@
 /**
- * The review pipeline: agent fan-out, join, deterministic validation,
- * and check-run rendering. The synthesiser lives in @pr-review/ai.
- *
- * A name reaches this barrel when something outside the package imports
- * it; everything else stays reachable by its own module path.
+ * The review pipeline: agent fan-out, join, deterministic validation, and
+ * check-run rendering. The synthesiser lives in @pr-review/ai.
  */
 export {
   runReviewPipeline,
