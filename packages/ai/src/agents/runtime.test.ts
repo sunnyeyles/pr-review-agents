@@ -149,7 +149,7 @@ describe("the Correctness agent", () => {
     expect(opening).toContain("user.isAdmin = true");
   });
 
-  it("exposes exactly the seven read-only review tools to the model", async () => {
+  it("exposes exactly the eight read-only review tools to the model", async () => {
     const { agent, calls } = makeAgent([
       message([textBlock(finalJson)], "end_turn"),
     ]);
@@ -157,6 +157,7 @@ describe("the Correctness agent", () => {
     await agent.run(context);
 
     expect(toolNamesOf(calls[0])).toEqual([
+      "find_co_changed_files",
       "find_importers",
       "get_base_file",
       "get_diff",

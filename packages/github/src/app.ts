@@ -7,6 +7,8 @@ import {
   type CheckRunAnnotation,
   type CodeSearchRequest,
   type CodeSearchResult,
+  type CommitFilesRequest,
+  type CommitHistoryRequest,
   type CreateCheckRunInput,
   type CreateReviewInput,
   type ExistingReviewComment,
@@ -64,6 +66,17 @@ export interface OctokitLike {
         owner: string;
         repo: string;
         path: string;
+        ref: string;
+      }): Promise<{ data: unknown }>;
+      listCommits(params: {
+        owner: string;
+        repo: string;
+        path: string;
+        per_page: number;
+      }): Promise<{ data: unknown }>;
+      getCommit(params: {
+        owner: string;
+        repo: string;
         ref: string;
       }): Promise<{ data: unknown }>;
     };
@@ -143,6 +156,13 @@ const textMatchesSchema = z
     }),
   )
   .optional();
+
+const commitListSchema = z.array(z.object({ sha: z.string() }));
+
+/** An empty commit (a merge with no conflicts) carries no files array. */
+const commitFilesSchema = z.object({
+  files: z.array(z.object({ filename: z.string() })).optional(),
+});
 
 const codeSearchSchema = z.object({
   total_count: z.number(),
@@ -275,6 +295,28 @@ export function createInstallationClient(
         totalCount: data.total_count,
         incompleteResults: data.incomplete_results,
       };
+    },
+
+    async listCommitShas(request: CommitHistoryRequest): Promise<string[]> {
+      const response = await octokit.rest.repos.listCommits({
+        owner: request.owner,
+        repo: request.repo,
+        path: request.path,
+        per_page: request.limit,
+      });
+      return commitListSchema
+        .parse(response.data)
+        .map((commit) => commit.sha);
+    },
+
+    async listCommitFiles(request: CommitFilesRequest): Promise<string[]> {
+      const response = await octokit.rest.repos.getCommit({
+        owner: request.owner,
+        repo: request.repo,
+        ref: request.sha,
+      });
+      const data = commitFilesSchema.parse(response.data);
+      return (data.files ?? []).map((file) => file.filename);
     },
 
     async createCheckRun(input: CreateCheckRunInput): Promise<CheckRun> {

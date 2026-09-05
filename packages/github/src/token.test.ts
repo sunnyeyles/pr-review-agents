@@ -104,6 +104,22 @@ function oneItemSearchResponse(extra: Record<string, unknown>) {
   };
 }
 
+/** A repos.listCommits response, with fields the client must ignore. */
+const commitListResponse = [
+  { sha: "aaa111", commit: { message: "Rate limit sessions" } },
+  { sha: "bbb222", commit: { message: "Document the sessions endpoint" } },
+];
+
+/** A repos.getCommit response; only filenames are mapped. */
+const commitResponse = {
+  sha: "aaa111",
+  stats: { total: 4 },
+  files: [
+    { filename: "src/sessions.ts", additions: 3, deletions: 1 },
+    { filename: "docs/sessions.md", additions: 1, deletions: 0 },
+  ],
+};
+
 interface StubOptions {
   filePages?: unknown[][];
   pullData?: unknown;
@@ -112,6 +128,8 @@ interface StubOptions {
   searchData?: unknown;
   reviewData?: unknown;
   reviewCommentPages?: unknown[][];
+  commitListData?: unknown;
+  commitData?: unknown;
 }
 
 function makeOctokit(options: StubOptions = {}) {
@@ -157,6 +175,16 @@ function makeOctokit(options: StubOptions = {}) {
         getContent: vi.fn(
           async (_params: { owner: string; repo: string; path: string; ref: string }) => ({
             data: options.contentData ?? fileContentsResponse,
+          }),
+        ),
+        listCommits: vi.fn(
+          async (_params: Parameters<OctokitLike["rest"]["repos"]["listCommits"]>[0]) => ({
+            data: options.commitListData ?? commitListResponse,
+          }),
+        ),
+        getCommit: vi.fn(
+          async (_params: Parameters<OctokitLike["rest"]["repos"]["getCommit"]>[0]) => ({
+            data: options.commitData ?? commitResponse,
           }),
         ),
       },
@@ -416,6 +444,71 @@ describe("getFileContents", () => {
         ref: headSha,
       }),
     ).rejects.toThrow(/encoding/i);
+  });
+});
+
+describe("listCommitShas", () => {
+  it("asks for the path's commits and returns their SHAs alone", async () => {
+    const { octokit, client } = makeClient();
+
+    const shas = await client.listCommitShas({
+      owner: "octo-org",
+      repo: "example-service",
+      path: "src/sessions.ts",
+      limit: 10,
+    });
+
+    expect(octokit.rest.repos.listCommits).toHaveBeenCalledExactlyOnceWith({
+      owner: "octo-org",
+      repo: "example-service",
+      path: "src/sessions.ts",
+      per_page: 10,
+    });
+    expect(shas).toEqual(["aaa111", "bbb222"]);
+  });
+
+  it("returns nothing for a path with no history", async () => {
+    const { client } = makeClient({ commitListData: [] });
+
+    await expect(
+      client.listCommitShas({
+        owner: "octo-org",
+        repo: "example-service",
+        path: "src/new.ts",
+        limit: 10,
+      }),
+    ).resolves.toEqual([]);
+  });
+});
+
+describe("listCommitFiles", () => {
+  it("returns one commit's filenames", async () => {
+    const { octokit, client } = makeClient();
+
+    const files = await client.listCommitFiles({
+      owner: "octo-org",
+      repo: "example-service",
+      sha: "aaa111",
+    });
+
+    expect(octokit.rest.repos.getCommit).toHaveBeenCalledExactlyOnceWith({
+      owner: "octo-org",
+      repo: "example-service",
+      ref: "aaa111",
+    });
+    expect(files).toEqual(["src/sessions.ts", "docs/sessions.md"]);
+  });
+
+  it("returns nothing for a commit that carries no files array", async () => {
+    const { client } = makeClient({ commitData: { sha: "aaa111" } });
+
+    await expect(
+      client.listCommitFiles({
+        owner: "octo-org",
+        repo: "example-service",
+        sha: "aaa111",
+      }),
+    ).resolves.toEqual([]);
   });
 });
 

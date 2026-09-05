@@ -225,16 +225,17 @@ anywhere in the package:
 | `get_base_file` | One file at the **base** SHA |
 | `search_repository` | Code search with matching snippets, scoped to this repo |
 | `find_importers` | Files mentioning one file's name — a proxy for its importers |
+| `find_co_changed_files` | Files edited in the same commits as one file — correlation, not dependency |
 
-The last two read GitHub's code search index, which covers the **default
-branch** only. Their results and snippets do not reflect this pull request, and
-snippets carry no line numbers, so a claim about a changed file still needs
-`get_file`. The tool descriptions say so; the caps on snippet size live in
-`tools.ts`, applied before serialisation so the JSON is never truncated
-mid-string.
+The last three read the **default branch** — the first two through GitHub's
+code search index, the third through commit history. Their results do not
+reflect this pull request, and snippets carry no line numbers, so a claim about
+a changed file still needs `get_file`. The tool descriptions say so; the caps on
+snippet size live in `tools.ts`, applied before serialisation so the JSON is
+never truncated mid-string.
 
 Every input is Zod-validated before it touches the GitHub client, and
-`dispatchReviewTool` (line 359) **never throws** — failures come back as
+`dispatchReviewTool` (line 455) **never throws** — failures come back as
 `{ ok: false }` and are handed to the model as an error `tool_result` so the
 loop keeps going.
 

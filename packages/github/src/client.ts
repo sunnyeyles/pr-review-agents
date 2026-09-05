@@ -65,6 +65,23 @@ export interface CodeSearchResult {
   incompleteResults: boolean;
 }
 
+/** A request for the commits that touched one path, newest first. */
+export interface CommitHistoryRequest {
+  owner: string;
+  repo: string;
+  /** Repository-relative path; only commits touching it are returned. */
+  path: string;
+  /** Commits to return. GitHub caps a page at 100. */
+  limit: number;
+}
+
+/** A request for the files one commit changed. */
+export interface CommitFilesRequest {
+  owner: string;
+  repo: string;
+  sha: string;
+}
+
 /** One changed file in a PR; patch is absent for e.g. binary files. */
 export interface ChangedFile {
   filename: string;
@@ -150,6 +167,16 @@ export interface GithubInstallationClient {
   getFileContents(request: FileContentsRequest): Promise<string>;
   /** Searches code within the single named repository. Read-only. */
   searchCode(request: CodeSearchRequest): Promise<CodeSearchResult>;
+  /**
+   * SHAs of the default branch's commits that touched one path, newest
+   * first. A path added by an unmerged pull request has no history.
+   */
+  listCommitShas(request: CommitHistoryRequest): Promise<string[]>;
+  /**
+   * Repository-relative paths one commit changed. GitHub returns at most
+   * 300 of them, so a sweeping commit comes back silently short.
+   */
+  listCommitFiles(request: CommitFilesRequest): Promise<string[]>;
   /** Every inline review comment already on the pull request. */
   listReviewComments(ref: PullRequestRef): Promise<ExistingReviewComment[]>;
   createCheckRun(input: CreateCheckRunInput): Promise<CheckRun>;

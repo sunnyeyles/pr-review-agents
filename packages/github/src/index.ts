@@ -13,6 +13,8 @@ export {
   type CheckRunOutput,
   type CodeSearchMatch,
   type CodeSearchResult,
+  type CommitFilesRequest,
+  type CommitHistoryRequest,
   type CreateCheckRunInput,
   type CreateReviewInput,
   type ExistingReviewComment,

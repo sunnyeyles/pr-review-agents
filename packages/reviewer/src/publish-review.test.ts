@@ -29,6 +29,8 @@ function makeClient() {
       totalCount: 0,
       incompleteResults: false,
     })),
+    listCommitShas: vi.fn(async () => []),
+    listCommitFiles: vi.fn(async () => []),
     listReviewComments: vi.fn(async (): Promise<ExistingReviewComment[]> => []),
     createCheckRun: vi.fn(async (_input: CreateCheckRunInput) => ({ id: 987 })),
     createReview: vi.fn(async (_input: CreateReviewInput) => ({ id: 654 })),

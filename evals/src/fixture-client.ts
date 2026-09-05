@@ -154,6 +154,20 @@ export function createFixtureClient(fixture: LoadedFixture): FixtureClient {
       };
     },
 
+    // A fixture is a file tree, not a repository with commits. Reporting
+    // no history is the honest answer, and the one find_co_changed_files
+    // already documents; fabricating commits would make the eval lie.
+    async listCommitShas(request): Promise<string[]> {
+      record("listCommitShas", request.path);
+      return [];
+    },
+
+    async listCommitFiles(request): Promise<string[]> {
+      throw new FixtureNotFoundError(
+        `fixture ${fixture.name} has no commit history, so ${request.sha} does not exist`,
+      );
+    },
+
     async listReviewComments(ref): Promise<ExistingReviewComment[]> {
       checkRef(ref);
       // A fixture pull request carries no prior review, so every

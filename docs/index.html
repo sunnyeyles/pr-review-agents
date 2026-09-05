@@ -925,15 +925,17 @@ html { scroll-behavior: smooth; }
             <tr><td><code>get_base_file</code></td><td>One file at the <strong>base</strong> SHA — before this PR</td></tr>
             <tr><td><code>search_repository</code></td><td>Code search with matching snippets, always scoped to this repository</td></tr>
             <tr><td><code>find_importers</code></td><td>Files mentioning one file's name — a proxy for its importers</td></tr>
+            <tr><td><code>find_co_changed_files</code></td><td>Files edited in the same commits as one file — correlation, not dependency</td></tr>
           </tbody>
         </table>
       </div>
       <div class="prose" style="margin-top:1.1rem">
         <p>
-          The last two read GitHub's code search index, which covers the
-          <strong>default branch</strong> only. Their results do not reflect this
-          pull request, and their snippets carry no line numbers — so a claim
-          about a changed file still needs <code>get_file</code>.
+          The last three read the <strong>default branch</strong> — the first two
+          through GitHub's code search index, the third through commit history.
+          Their results do not reflect this pull request, and their snippets carry
+          no line numbers — so a claim about a changed file still needs
+          <code>get_file</code>.
         </p>
       </div>
       <div class="prose" style="margin-top:1.1rem">

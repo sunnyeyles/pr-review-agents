@@ -149,6 +149,36 @@ function importerSearchStem(path: string): string {
   );
 }
 
+// Each sampled commit costs its own API call, so this is the request budget.
+const MAX_HISTORY_COMMITS = 10;
+
+// A commit past this size is a sweep, not a related edit, so it is dropped.
+const MAX_SWEEP_COMMIT_FILES = 40;
+
+/** Co-changed files reported; the rows bound the payload, not `truncate`. */
+const MAX_CO_CHANGED_FILES = 20;
+
+/** Counts appearances per path across the examined commits, subject excluded. */
+function tallyCoChanges(
+  commits: readonly (readonly string[])[],
+  subject: string,
+): { counts: Map<string, number>; skipped: number } {
+  const counts = new Map<string, number>();
+  let skipped = 0;
+  for (const files of commits) {
+    if (files.length > MAX_SWEEP_COMMIT_FILES) {
+      skipped += 1;
+      continue;
+    }
+    for (const file of new Set(files)) {
+      if (file !== subject) {
+        counts.set(file, (counts.get(file) ?? 0) + 1);
+      }
+    }
+  }
+  return { counts, skipped };
+}
+
 const emptyInputSchema = z.strictObject({});
 
 function pullRef(scope: ReviewToolScope) {
@@ -159,7 +189,7 @@ function pullRef(scope: ReviewToolScope) {
   };
 }
 
-/** Exactly the seven read-only tools, bound to one pull request. */
+/** Exactly the eight read-only tools, bound to one pull request. */
 export function createReviewTools(
   github: GithubInstallationClient,
   scope: ReviewToolScope,
@@ -269,6 +299,54 @@ export function createReviewTools(
             ),
           },
           stem,
+        );
+      },
+    }),
+    find_co_changed_files: tool({
+      description:
+        "Find files that were edited in the same commits as this file, from the DEFAULT branch's " +
+        "history. This is CORRELATION, not a dependency: files co-change because one commit did " +
+        "two unrelated things as often as because they belong together, and genuinely related " +
+        "files that were never edited together do not appear at all. It samples the " +
+        `${MAX_HISTORY_COMMITS} most recent commits touching the path and ignores any that ` +
+        `touched more than ${MAX_SWEEP_COMMIT_FILES} files, since those are sweeps, and reports at ` +
+        `most ${MAX_CO_CHANGED_FILES} files. Each result's commits count is out of commitsExamined; ` +
+        "a file in only one of them is noise. An empty result means the path has no history on the " +
+        "default branch, which is always true of a file this pull request adds.",
+      inputSchema: z.strictObject({ path: repositoryPathSchema }),
+      async execute({ path }) {
+        const shas = await github.listCommitShas({
+          owner: scope.owner,
+          repo: scope.repo,
+          path,
+          limit: MAX_HISTORY_COMMITS,
+        });
+        const commits = await Promise.all(
+          shas.map((sha) =>
+            github.listCommitFiles({
+              owner: scope.owner,
+              repo: scope.repo,
+              sha,
+            }),
+          ),
+        );
+        const { counts, skipped } = tallyCoChanges(commits, path);
+        const coChanged = [...counts]
+          // Ties break on path so the same history always renders the same.
+          .sort(([pathA, a], [pathB, b]) =>
+            a === b ? pathA.localeCompare(pathB) : b - a,
+          )
+          .slice(0, MAX_CO_CHANGED_FILES)
+          .map(([file, commitCount]) => ({ path: file, commits: commitCount }));
+        return JSON.stringify(
+          {
+            path,
+            commitsExamined: commits.length - skipped,
+            commitsSkippedAsSweeps: skipped,
+            coChanged,
+          },
+          null,
+          2,
         );
       },
     }),

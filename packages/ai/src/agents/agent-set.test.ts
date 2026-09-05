@@ -36,6 +36,7 @@ const securityAgent = repositoryAgent("security");
 const architectureAgent = repositoryAgent("architecture");
 
 const REVIEW_TOOL_NAMES = [
+  "find_co_changed_files",
   "find_importers",
   "get_base_file",
   "get_diff",

@@ -197,6 +197,8 @@ export function makeGithub() {
       totalCount: 1,
       incompleteResults: false,
     })),
+    listCommitShas: vi.fn(async () => ["c0ffee1"]),
+    listCommitFiles: vi.fn(async () => ["src/sessions.ts", "docs/sessions.md"]),
     listReviewComments: vi.fn(async () => []),
     createCheckRun: vi.fn(async () => ({ id: 987 })),
     createReview: vi.fn(async () => ({ id: 654 })),

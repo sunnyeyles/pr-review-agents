@@ -55,6 +55,8 @@ function makeGithub() {
       totalCount: 1,
       incompleteResults: false,
     })),
+    listCommitShas: vi.fn(async () => ["c0ffee1", "c0ffee2"]),
+    listCommitFiles: vi.fn(async () => ["src/sessions.ts", "docs/sessions.md"]),
     listReviewComments: vi.fn(async () => []),
     createCheckRun: vi.fn(async () => ({ id: 987 })),
     createReview: vi.fn(async () => ({ id: 654 })),
@@ -81,8 +83,9 @@ function run(tools: ToolSet, name: string, input: unknown): Promise<unknown> {
 }
 
 describe("createReviewTools", () => {
-  it("exposes exactly the seven read-only tools from the spec", () => {
+  it("exposes exactly the eight read-only tools from the spec", () => {
     expect(Object.keys(createReviewTools(makeGithub(), scope)).sort()).toEqual([
+      "find_co_changed_files",
       "find_importers",
       "get_base_file",
       "get_diff",
@@ -105,6 +108,7 @@ describe("createReviewTools", () => {
     ["get_base_file", "path"],
     ["search_repository", "query"],
     ["find_importers", "path"],
+    ["find_co_changed_files", "path"],
   ])("describes %s's %s parameter", (name, parameter) => {
     const tools = createReviewTools(makeGithub(), scope);
     const shape = (
@@ -329,6 +333,106 @@ describe("review tool execution", () => {
   ])("rejects find_importers input with %s", (_label, input) => {
     const tools = createReviewTools(makeGithub(), scope);
     expect(schemaOf(tools, "find_importers").safeParse(input).success).toBe(false);
+  });
+
+  it("ranks co-changed files by commit count and excludes the subject file", async () => {
+    const github = makeGithub();
+    github.listCommitShas.mockResolvedValueOnce(["c1", "c2", "c3"]);
+    github.listCommitFiles
+      .mockResolvedValueOnce(["src/sessions.ts", "docs/sessions.md"])
+      .mockResolvedValueOnce(["src/sessions.ts", "docs/sessions.md", "src/rate.ts"])
+      .mockResolvedValueOnce(["src/sessions.ts", "docs/sessions.md"]);
+
+    const result = (await run(
+      createReviewTools(github, scope),
+      "find_co_changed_files",
+      { path: "src/sessions.ts" },
+    )) as string;
+
+    expect(github.listCommitShas).toHaveBeenCalledExactlyOnceWith({
+      owner: scope.owner,
+      repo: scope.repo,
+      path: "src/sessions.ts",
+      limit: 10,
+    });
+    expect(github.listCommitFiles).toHaveBeenCalledTimes(3);
+    expect(JSON.parse(result)).toEqual({
+      path: "src/sessions.ts",
+      commitsExamined: 3,
+      commitsSkippedAsSweeps: 0,
+      coChanged: [
+        { path: "docs/sessions.md", commits: 3 },
+        { path: "src/rate.ts", commits: 1 },
+      ],
+    });
+  });
+
+  it("skips sweeping commits rather than counting their files", async () => {
+    const github = makeGithub();
+    const sweep = Array.from({ length: 41 }, (_unused, index) => `src/file-${index}.ts`);
+    github.listCommitShas.mockResolvedValueOnce(["c1", "c2"]);
+    github.listCommitFiles
+      .mockResolvedValueOnce(sweep)
+      .mockResolvedValueOnce(["src/sessions.ts", "docs/sessions.md"]);
+
+    const result = (await run(
+      createReviewTools(github, scope),
+      "find_co_changed_files",
+      { path: "src/sessions.ts" },
+    )) as string;
+
+    expect(JSON.parse(result)).toEqual({
+      path: "src/sessions.ts",
+      commitsExamined: 1,
+      commitsSkippedAsSweeps: 1,
+      coChanged: [{ path: "docs/sessions.md", commits: 1 }],
+    });
+  });
+
+  it("reports an empty history without reading any commit", async () => {
+    const github = makeGithub();
+    github.listCommitShas.mockResolvedValueOnce([]);
+
+    const result = (await run(
+      createReviewTools(github, scope),
+      "find_co_changed_files",
+      { path: "src/added-by-this-pr.ts" },
+    )) as string;
+
+    expect(github.listCommitFiles).not.toHaveBeenCalled();
+    expect(JSON.parse(result)).toEqual({
+      path: "src/added-by-this-pr.ts",
+      commitsExamined: 0,
+      commitsSkippedAsSweeps: 0,
+      coChanged: [],
+    });
+  });
+
+  it("caps the co-changed files it reports", async () => {
+    const github = makeGithub();
+    github.listCommitShas.mockResolvedValueOnce(["c1"]);
+    github.listCommitFiles.mockResolvedValueOnce(
+      Array.from({ length: 40 }, (_unused, index) => `src/file-${index}.ts`),
+    );
+
+    const result = (await run(
+      createReviewTools(github, scope),
+      "find_co_changed_files",
+      { path: "src/sessions.ts" },
+    )) as string;
+
+    expect(JSON.parse(result).coChanged).toHaveLength(20);
+  });
+
+  it.each([
+    ["path traversal", { path: "../../secrets/config.yml" }],
+    ["absolute path", { path: "/etc/passwd" }],
+    ["extra properties", { path: "src/sessions.ts", ref: "deadbeef" }],
+  ])("rejects find_co_changed_files input with %s", (_label, input) => {
+    const tools = createReviewTools(makeGithub(), scope);
+    expect(schemaOf(tools, "find_co_changed_files").safeParse(input).success).toBe(
+      false,
+    );
   });
 
   it("truncates oversized tool results", async () => {
