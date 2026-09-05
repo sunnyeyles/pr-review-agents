@@ -8,7 +8,6 @@ import {
   gateAgentsByPaths,
   type AgentDefinition,
   type ReviewContext,
-  type SkippedAgent,
 } from "@pr-review/ai";
 import {
   httpStatus,
@@ -55,12 +54,12 @@ export type PublishReview = (
  * the check run, which keeps its annotations precisely because the
  * comments did not appear.
  */
-export type PublishReviewComments = (
+type PublishReviewComments = (
   target: ReviewTarget,
   rendered: RenderedReview,
 ) => Promise<boolean>;
 
-export interface ReviewPullRequestDeps {
+interface ReviewPullRequestDeps {
   /** Authenticated read-only GitHub client for this repository. */
   client: GithubInstallationClient;
   /** The run's agent set, already narrowed by the `agents` input. */
@@ -111,7 +110,7 @@ export function createCheckRunPublisher(
  * `pull-requests: write`, which a fork's token lacks, and the check run
  * must still be published.
  */
-export function createReviewCommentPublisher(
+function createReviewCommentPublisher(
   client: GithubInstallationClient,
   logger: StructuredLogger,
 ): PublishReviewComments {

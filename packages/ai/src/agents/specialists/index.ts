@@ -8,7 +8,7 @@ import { DOCS_DRIFT_AGENT } from "./docs-drift-agent.js";
 import { SECURITY_AGENT } from "./security-agent.js";
 
 /** Listing order is what an error message offers; it is not a run order. */
-export const BUILT_IN_AGENTS: readonly AgentDefinition[] = [
+const BUILT_IN_AGENTS: readonly AgentDefinition[] = [
   SECURITY_AGENT,
   DOCS_DRIFT_AGENT,
 ];

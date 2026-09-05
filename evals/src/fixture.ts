@@ -14,7 +14,7 @@ import { z } from "zod";
 import { buildFileDiff, buildPatch } from "./unified-diff.js";
 
 /** The directory holding every fixture, one subdirectory each. */
-export const FIXTURES_DIR = resolve(
+const FIXTURES_DIR = resolve(
   dirname(fileURLToPath(import.meta.url)),
   "..",
   "fixtures",
@@ -47,7 +47,7 @@ const manifestSchema = z.object({
     .min(1),
 });
 
-export type FixtureManifest = z.infer<typeof manifestSchema>;
+type FixtureManifest = z.infer<typeof manifestSchema>;
 
 /** A fixture repository loaded into everything the pipeline consumes. */
 export interface LoadedFixture {

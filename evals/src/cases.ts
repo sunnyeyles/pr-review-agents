@@ -6,7 +6,7 @@
 import type { FixtureExpectation } from "./expectations.js";
 
 /** One fixture and the expectations its review must satisfy. */
-export interface EvalCase {
+interface EvalCase {
   /** Fixture directory name under evals/fixtures. */
   fixture: string;
   expectations: FixtureExpectation[];

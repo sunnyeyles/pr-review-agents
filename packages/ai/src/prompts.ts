@@ -19,7 +19,7 @@ import {
 import { buildSynthesisSystemPrompt } from "./agents/synthesiser.js";
 
 /** Where a resolved prompt came from. */
-export type PromptSource = "langfuse" | "fallback";
+type PromptSource = "langfuse" | "fallback";
 
 /**
  * System prompts keyed by managed-prompt id — an agent category, or
@@ -28,7 +28,7 @@ export type PromptSource = "langfuse" | "fallback";
  */
 export type ManagedPrompts = Record<string, string>;
 
-export interface LoadPromptsResult {
+interface LoadPromptsResult {
   prompts: ManagedPrompts;
   sources: Record<string, PromptSource>;
 }
@@ -40,7 +40,7 @@ export const DEFAULT_PROMPT_LABEL = "production";
 export const DEFAULT_LANGFUSE_BASE_URL = "https://cloud.langfuse.com";
 
 /** How long one prompt fetch may take before it is abandoned. */
-export const DEFAULT_PROMPT_TIMEOUT_MS = 5_000;
+const DEFAULT_PROMPT_TIMEOUT_MS = 5_000;
 
 /** Injectable seam over prompt retrieval. Empty content is an error, not a result. */
 export interface LangfusePromptClient {
@@ -174,7 +174,7 @@ export function inCodePrompts(agents: readonly AgentDefinition[]): ManagedPrompt
   return prompts;
 }
 
-export interface LoadManagedPromptsOptions {
+interface LoadManagedPromptsOptions {
   /** The run's agent set; decides which prompts are fetched. */
   agents: readonly AgentDefinition[];
   /** Label to fetch. Defaults to DEFAULT_PROMPT_LABEL. */

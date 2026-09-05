@@ -10,7 +10,7 @@ export const agentOutputSchema = z.object({
   findings: z.array(reviewFindingSchema),
 });
 
-export type AgentOutputResult =
+type AgentOutputResult =
   | { ok: true; findings: ReviewFinding[] }
   | { ok: false; error: string };
 

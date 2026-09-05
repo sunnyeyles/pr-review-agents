@@ -28,7 +28,7 @@ export interface FixtureCall {
   detail: string;
 }
 
-export interface FixtureClient {
+interface FixtureClient {
   client: GithubInstallationClient;
   /** Every read the agents performed, in order. */
   calls: FixtureCall[];

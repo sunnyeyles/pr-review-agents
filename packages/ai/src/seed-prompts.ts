@@ -86,14 +86,14 @@ function isNotFound(error: unknown): boolean {
 }
 
 /** What one seed run did to one prompt. `rejected` means it failed the contract guard. */
-export type SeedOutcome =
+type SeedOutcome =
   | "created"
   | "updated"
   | "unchanged"
   | "rejected"
   | "failed";
 
-export interface SeedManagedPromptsOptions {
+interface SeedManagedPromptsOptions {
   /** The prompts to publish, from inCodePrompts(agents); its keys decide what is seeded. */
   prompts: ManagedPrompts;
   /** Deployment label to point at the published versions. */
@@ -103,7 +103,7 @@ export interface SeedManagedPromptsOptions {
   logger?: StructuredLogger | undefined;
 }
 
-export type SeedReport = Record<string, SeedOutcome>;
+type SeedReport = Record<string, SeedOutcome>;
 
 /**
  * Publishes each managed prompt Langfuse does not already hold at this

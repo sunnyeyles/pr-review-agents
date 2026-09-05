@@ -9,13 +9,13 @@ import { createHash } from "node:crypto";
 const CONTEXT_LINES = 3;
 
 /** One line of a diff, tagged with which side(s) it appears on. */
-export interface DiffOp {
+interface DiffOp {
   kind: "context" | "add" | "remove";
   text: string;
 }
 
 /** One hunk: its old/new-side extents and its prefixed lines. */
-export interface DiffHunk {
+interface DiffHunk {
   baseStart: number;
   baseCount: number;
   headStart: number;
@@ -97,7 +97,7 @@ const PREFIX: Record<DiffOp["kind"], string> = {
 };
 
 /** Runs of changes closer than twice the context window share one hunk. */
-export function buildHunks(ops: readonly DiffOp[]): DiffHunk[] {
+function buildHunks(ops: readonly DiffOp[]): DiffHunk[] {
   // The old/new-side line number each operation starts at.
   const baseLineAt: number[] = [];
   const headLineAt: number[] = [];

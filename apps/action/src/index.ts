@@ -111,7 +111,7 @@ export function requireInput(
 }
 
 /** The Langfuse settings one run needs, once they are known to be usable. */
-export interface LangfuseInputs {
+interface LangfuseInputs {
   publicKey: string;
   secretKey: string;
   baseUrl: string;
@@ -122,7 +122,7 @@ export interface LangfuseInputs {
  * undefined means the review runs on in-code prompts and exports no
  * traces. Both keys are needed: the two features authenticate the same way.
  */
-export function resolveLangfuseInputs(
+function resolveLangfuseInputs(
   env: Record<string, string | undefined>,
   logger: StructuredLogger,
 ): LangfuseInputs | undefined {
@@ -179,13 +179,13 @@ async function resolveManagedPrompts(
 }
 
 /** The model client for this run, and the model id to call it with. */
-export interface ModelInputs {
+interface ModelInputs {
   model: ModelClient;
   modelId: string;
 }
 
 /** Builds the run's model client. */
-export function resolveModelInputs(
+function resolveModelInputs(
   env: Record<string, string | undefined>,
   environment: Pick<ActionEnvironment, "createModelClient">,
 ): ModelInputs {

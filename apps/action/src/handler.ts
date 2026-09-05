@@ -9,7 +9,7 @@ import {
   type ReviewTarget,
 } from "@pr-review/reviewer";
 
-export interface ActionHandlerDeps {
+interface ActionHandlerDeps {
   /** Token-authenticated read-only client for this repository. */
   client: GithubInstallationClient;
   /** The run's agent set, already narrowed by the `agents` input. */
@@ -25,7 +25,7 @@ export interface ActionHandlerDeps {
   logger?: StructuredLogger | undefined;
 }
 
-export type ActionHandler = (
+type ActionHandler = (
   target: ReviewTarget,
   isFork: boolean,
 ) => Promise<void>;

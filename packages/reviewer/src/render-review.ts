@@ -31,7 +31,7 @@ export interface RenderedReview {
  * push shifts line numbers, and the same finding at a new line is still
  * the same finding.
  */
-export function findingKey(finding: ReviewFinding): string {
+function findingKey(finding: ReviewFinding): string {
   return `${finding.file}|${normaliseTitle(finding.title)}`;
 }
 

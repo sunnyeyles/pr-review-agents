@@ -35,7 +35,7 @@ export interface RenderedCheckRun {
   output: CheckRunOutput;
 }
 
-export interface RenderCheckRunOptions {
+interface RenderCheckRunOptions {
   /**
    * Whether line-anchored findings also become inline annotations.
    * Defaults to true; set false once the review comments carry them.

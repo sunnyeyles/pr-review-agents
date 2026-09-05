@@ -3,10 +3,10 @@
  * single-line JSON object. Fields must be JSON-serialisable and must
  * never contain secrets.
  */
-export type LogLevel = "info" | "error";
+type LogLevel = "info" | "error";
 
 /** Extra structured fields on one log line. Never include secrets. */
-export type LogFields = Record<string, unknown>;
+type LogFields = Record<string, unknown>;
 
 /** The structured logger every pipeline stage receives. */
 export interface StructuredLogger {
@@ -37,7 +37,7 @@ export interface CapturedLogEvent extends LogFields {
   event: string;
 }
 
-export interface CapturingLogger {
+interface CapturingLogger {
   logger: StructuredLogger;
   /** Every event logged so far, in emission order. */
   entries: CapturedLogEvent[];

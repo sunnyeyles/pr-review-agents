@@ -10,7 +10,6 @@ import type {
   ModelClient,
   ModelContentBlock,
   ModelMessage,
-  ModelRequest,
   ModelResponse,
   ModelUsage,
 } from "./types.js";
@@ -28,7 +27,7 @@ export interface OpenAiSdkLike {
   };
 }
 
-export interface OpenAiClientConfig {
+interface OpenAiClientConfig {
   apiKey: string;
   /** Points the SDK at Azure, a gateway, or any OpenAI-compatible server. */
   baseUrl?: string | undefined;
