@@ -71,6 +71,11 @@ export type SynthesisState =
       durationMs: number;
     };
 
+/** The outcome of a synthesise step that never ran. */
+export function skippedSynthesis(): SynthesisState {
+  return { outcome: "skipped", candidates: [], usage: emptyTokenUsage() };
+}
+
 /** The graph's channels, one per node that writes it. */
 const ReviewGraphState = Annotation.Root({
   /** Set once at invoke; the single source of truth for the PR's changed files. */
@@ -81,11 +86,7 @@ const ReviewGraphState = Annotation.Root({
     candidates: [],
     agentFailures: [],
   })),
-  synthesis: lastWins<SynthesisState>(() => ({
-    outcome: "skipped",
-    candidates: [],
-    usage: emptyTokenUsage(),
-  })),
+  synthesis: lastWins<SynthesisState>(skippedSynthesis),
   /** The final, deterministically validated findings. */
   findings: lastWins<ReviewFinding[]>(() => []),
 });
@@ -148,13 +149,7 @@ function makeSynthesiseNode(synthesiser: Synthesiser) {
   return async (state: ReviewGraphStateT): Promise<ReviewGraphUpdate> => {
     const { candidates } = state.joined;
     if (candidates.length === 0) {
-      return {
-        synthesis: {
-          outcome: "skipped",
-          candidates: [],
-          usage: emptyTokenUsage(),
-        },
-      };
+      return { synthesis: skippedSynthesis() };
     }
 
     const startedAt = Date.now();

@@ -59,15 +59,6 @@ export interface ReviewDeliveryDeps {
   logger: StructuredLogger;
 }
 
-/** What one review's delivery actually did. */
-export interface ReviewDelivery {
-  comments: CommentsOutcome;
-  /** Inline comments in the review that was posted; 0 otherwise. */
-  commentCount: number;
-  /** Whether the check run repeated the findings as annotations. */
-  annotated: boolean;
-}
-
 /** The default delivery: an "AI PR Review" check run on the head SHA. */
 export function createCheckRunPublisher(
   client: GithubInstallationClient,
@@ -121,20 +112,12 @@ export function createReviewCommentPublisher(
   };
 }
 
-/**
- * Annotations are the fallback surface: only when no comment carries the
- * finding. An earlier commit's comments still carry it.
- */
-function annotates(comments: CommentsOutcome): boolean {
-  return comments === "unavailable";
-}
-
 /** Comments first; the check run annotates only what nothing else carries. */
 export async function deliverReview(
   target: ReviewTarget,
   input: ReviewDeliveryInput,
   deps: ReviewDeliveryDeps,
-): Promise<ReviewDelivery> {
+): Promise<void> {
   const fields = reviewCorrelation(target);
   const review = renderReview(
     input.findings,
@@ -143,23 +126,25 @@ export async function deliverReview(
     input.skippedAgents,
   );
 
-  const comments: CommentsOutcome =
-    review === undefined
-      ? input.findings.length === 0
-        ? "nothing-to-post"
-        : "already-posted"
-      : await deps.publishComments(target, review);
-
-  const commentCount = comments === "posted" ? (review?.comments.length ?? 0) : 0;
-  if (comments === "posted") {
-    deps.logger.info("review.comments.published", {
-      ...fields,
-      commentCount,
-      carriedInBodyCount: input.findings.length - commentCount,
-    });
+  let comments: CommentsOutcome;
+  if (review === undefined) {
+    comments =
+      input.findings.length === 0 ? "nothing-to-post" : "already-posted";
+  } else {
+    comments = await deps.publishComments(target, review);
+    if (comments === "posted") {
+      const commentCount = review.comments.length;
+      deps.logger.info("review.comments.published", {
+        ...fields,
+        commentCount,
+        carriedInBodyCount: input.findings.length - commentCount,
+      });
+    }
   }
 
-  const annotated = annotates(comments);
+  // Annotations are the fallback surface: they repeat a finding only when no
+  // comment carries it. An earlier commit's comments still carry it.
+  const annotated = comments === "unavailable";
   await deps.publishCheckRun(
     target,
     renderCheckRun(input.findings, input.agentFailures, {
@@ -175,6 +160,4 @@ export async function deliverReview(
     comments,
     annotated,
   });
-
-  return { comments, commentCount, annotated };
 }

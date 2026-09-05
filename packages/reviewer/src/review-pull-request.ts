@@ -4,7 +4,6 @@
  * delivery-path wrapper.
  */
 import {
-  emptyTokenUsage,
   gateAgentsByPaths,
   type AgentDefinition,
   type ReviewContext,
@@ -29,7 +28,10 @@ import {
 } from "./publish-review.js";
 import { renderNoAgentMatched } from "./render-check-run.js";
 import { postedFindingKeys } from "./render-review.js";
-import type { ReviewPipelineResult } from "./review-graph.js";
+import {
+  skippedSynthesis,
+  type ReviewPipelineResult,
+} from "./review-graph.js";
 import { reviewCorrelation, type ReviewTarget } from "./review-target.js";
 
 interface ReviewPullRequestDeps {
@@ -112,7 +114,7 @@ function unreviewed(): ReviewPipelineResult {
   return {
     candidates: [],
     agentFailures: [],
-    synthesis: { outcome: "skipped", candidates: [], usage: emptyTokenUsage() },
+    synthesis: skippedSynthesis(),
     findings: [],
   };
 }
@@ -130,7 +132,7 @@ export async function reviewPullRequest(
   }: ReviewPullRequestDeps,
 ): Promise<ReviewPipelineResult> {
   const fields = reviewCorrelation(target);
-  const ref = {
+  const ref: PullRequestRef = {
     owner: target.owner,
     repo: target.repo,
     pullRequestNumber: target.pullRequestNumber,

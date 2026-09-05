@@ -18,7 +18,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { RenderedCheckRun } from "./render-check-run.js";
 import { findingMarker } from "./render-review.js";
-import type { ReviewPipelineResult, SynthesisState } from "./review-graph.js";
+import {
+  skippedSynthesis,
+  type ReviewPipelineResult,
+} from "./review-graph.js";
 import {
   createCheckRunPublisher,
   type PublishReview,
@@ -85,25 +88,22 @@ function makeClient() {
   } satisfies GithubInstallationClient;
 }
 
-/** `synthesis` is a whole union, so it is its own parameter rather than an override. */
 function reviewResult(
   overrides: Partial<ReviewPipelineResult> = {},
-  synthesis?: SynthesisState,
 ): ReviewPipelineResult {
   const candidates = overrides.candidates ?? [];
   return {
     candidates,
     agentFailures: [],
     synthesis:
-      synthesis ??
-      (candidates.length === 0
-        ? { outcome: "skipped", candidates: [], usage: emptyTokenUsage() }
+      candidates.length === 0
+        ? skippedSynthesis()
         : {
             outcome: "completed",
             candidates,
             usage: emptyTokenUsage(),
             durationMs: 0,
-          }),
+          },
     findings: candidates as ReviewFinding[],
     ...overrides,
   };
@@ -265,9 +265,9 @@ describe("reviewPullRequest", () => {
 
   it("logs synthesis.failed and still publishes when synthesis fails", async () => {
     const { deps, client, entries } = makeDeps(
-      reviewResult(
-        { candidates: [finding] },
-        {
+      reviewResult({
+        candidates: [finding],
+        synthesis: {
           outcome: "failed",
           candidates: [finding],
           usage: emptyTokenUsage(),
@@ -275,7 +275,7 @@ describe("reviewPullRequest", () => {
           errorName: "SynthesisError",
           durationMs: 0,
         },
-      ),
+      }),
     );
 
     await reviewPullRequest(target, deps);
@@ -382,8 +382,6 @@ describe("reviewPullRequest inline comments", () => {
     expect(client.createReview).not.toHaveBeenCalled();
   });
 
-  // The bug this replaced: no comment was posted, so the check run
-  // annotated the same lines the earlier commit's comments already hold.
   it("does not re-annotate a finding whose earlier comment still stands", async () => {
     const { deps, client } = makeDeps(reviewResult({ candidates: [finding] }));
     client.listReviewComments.mockResolvedValueOnce([

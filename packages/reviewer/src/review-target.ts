@@ -1,10 +1,7 @@
-/** The pull request one review runs against, and the fields its events carry. */
+import type { PullRequestRef } from "@pr-review/github";
 
-/** The pull request one review runs against. */
-export interface ReviewTarget {
-  owner: string;
-  repo: string;
-  pullRequestNumber: number;
+/** The pull request one review runs against, at one commit. */
+export interface ReviewTarget extends PullRequestRef {
   headSha: string;
 }
 
