@@ -1,4 +1,4 @@
-/** Provider selection: which adapter a configured name resolves to. */
+/** Provider selection: which model a configured name resolves to. */
 import { describe, expect, it } from "vitest";
 
 import {
@@ -6,10 +6,10 @@ import {
   MODEL_PROVIDERS,
   ModelProviderError,
   apiKeyEnvFor,
-  createModelClient,
+  createLanguageModel,
   defaultModelFor,
   resolveModelProvider,
-} from "./provider.js";
+} from "./model.js";
 
 describe("resolveModelProvider", () => {
   it("defaults to Anthropic when configuration names none", () => {
@@ -39,19 +39,38 @@ describe("per-provider defaults", () => {
   });
 });
 
-describe("createModelClient", () => {
-  it("builds the adapter for the selected provider", () => {
+describe("createLanguageModel", () => {
+  it("builds a model bound to the configured id for every provider", () => {
     for (const provider of MODEL_PROVIDERS) {
-      expect(createModelClient({ provider, apiKey: "sk-test" }).provider).toBe(
+      const model = createLanguageModel({
         provider,
-      );
+        apiKey: "sk-test",
+        modelId: defaultModelFor(provider),
+      });
+      expect(model.modelId).toBe(defaultModelFor(provider));
+      expect(model.provider).toContain(provider);
     }
   });
 
-  it("returns an independent client per call", () => {
-    const first = createModelClient({ provider: "anthropic", apiKey: "sk-one" });
-    const second = createModelClient({ provider: "anthropic", apiKey: "sk-two" });
+  it("returns an independent model per call", () => {
+    const config = {
+      provider: "anthropic" as const,
+      modelId: "claude-test-model",
+    };
+    const first = createLanguageModel({ ...config, apiKey: "sk-one" });
+    const second = createLanguageModel({ ...config, apiKey: "sk-two" });
 
     expect(first).not.toBe(second);
+  });
+
+  it("makes no request at construction", () => {
+    expect(() =>
+      createLanguageModel({
+        provider: "openai",
+        apiKey: "sk-test",
+        baseUrl: "https://gateway.example/v1",
+        modelId: "gpt-test-model",
+      }),
+    ).not.toThrow();
   });
 });

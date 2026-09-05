@@ -10,23 +10,14 @@ import {
   errorName,
   type StructuredLogger,
 } from "@pr-review/logging";
+import { generateText, isStepCount } from "ai";
 
 import { buildReviewSystemPrompt, type AgentDefinition } from "./definition.js";
 import { extractAgentOutput } from "./output.js";
-import { messageText } from "../model/types.js";
-import type {
-  ModelClient,
-  ModelContentBlock,
-  ModelMessage,
-  ModelResponse,
-  ModelToolDefinition,
-  ModelToolResultBlock,
-  ModelToolUseBlock,
-} from "../model/types.js";
-import { traceModelCall } from "../model-tracing.js";
+import type { ReviewModel } from "../model.js";
 import type { ReviewAgent, ReviewContext } from "../agent-contract.js";
-import { dispatchReviewTool, reviewTools, type ReviewToolScope } from "./tools.js";
-import { addTokenUsage, emptyTokenUsage } from "../usage.js";
+import { createReviewTools, type ReviewToolScope } from "./tools.js";
+import { addTokenUsage, emptyTokenUsage, toTokenUsage } from "../usage.js";
 
 /** An agent-level failure (bad final output, turn cap, ...). */
 export class AgentRunError extends Error {
@@ -92,35 +83,18 @@ function buildOpeningMessage(context: ReviewContext): string {
   ].join("\n");
 }
 
-const modelToolDefinitions: ModelToolDefinition[] = reviewTools.map((tool) => ({
-  name: tool.name,
-  description: tool.description,
-  inputSchema: tool.inputSchema,
-}));
-
 /** Keyed by agent category. An agent with no entry uses buildReviewSystemPrompt. */
 export type ReviewSystemPrompts = Readonly<Record<string, string>>;
 
 /** What every review agent needs, regardless of agent. */
 export interface ReviewAgentDeps {
-  model: ModelClient;
-  /** Model id from configuration; never hard-coded. */
-  modelId: string;
+  model: ReviewModel;
   github: GithubInstallationClient;
   maxTurns?: number | undefined;
   /** Receives agent.started / agent.completed / agent.failed. */
   logger?: StructuredLogger | undefined;
   /** Pre-resolved system prompts; missing agents fall back to the in-code prompt. */
   systemPrompts?: ReviewSystemPrompts | undefined;
-}
-
-/** The tool_use blocks of one message's content, in order. */
-function toolUseBlocks(
-  content: readonly ModelContentBlock[],
-): ModelToolUseBlock[] {
-  return content.filter(
-    (block): block is ModelToolUseBlock => block.type === "tool_use",
-  );
 }
 
 /**
@@ -169,122 +143,49 @@ export function createReviewAgent(
           metadata: {
             agent: agent.category,
             provider: deps.model.provider,
-            model: deps.modelId,
+            model: deps.model.modelId,
           },
         },
         { asType: "agent" },
       );
       const startedAt = Date.now();
-      const messages: ModelMessage[] = [
-        { role: "user", content: buildOpeningMessage(context) },
-      ];
       // Outside the try: a mid-loop API error still reports its spend.
       let usage = emptyTokenUsage();
-      let apiStopReason: string | undefined;
-      let finalText = "";
-
-      /** One model call, accumulating usage and the last stop reason. */
-      const callModel = async (): Promise<ModelResponse> => {
-        const response = await traceModelCall(
-          agentObservation,
-          {
-            provider: deps.model.provider,
-            model: deps.modelId,
-            input: { messageCount: messages.length },
-            maxTokens: MAX_OUTPUT_TOKENS,
-          },
-          () =>
-            deps.model.createMessage({
-              model: deps.modelId,
-              maxOutputTokens: MAX_OUTPUT_TOKENS,
-              // The system prompt and tools never vary between turns,
-              // so providers that cache can reuse them.
-              cachePrefix: true,
-              system: systemPrompt,
-              tools: modelToolDefinitions,
-              messages,
-            }),
-        );
-        usage = addTokenUsage(usage, response.usage);
-        apiStopReason = response.stopReason;
-        return response;
-      };
-
-      /** Dispatches every requested tool into one user turn of results. */
-      const answerToolUses = async (
-        toolUses: readonly ModelToolUseBlock[],
-      ): Promise<ModelToolResultBlock[]> => {
-        const results: ModelToolResultBlock[] = [];
-        for (const toolUse of toolUses) {
-          const toolObservation = agentObservation.startObservation(
-            `execute-tool-${toolUse.name}`,
-            { input: toolUse.input, metadata: { toolUseId: toolUse.id } },
-            { asType: "tool" },
-          );
-          const outcome = await dispatchReviewTool(
-            deps.github,
-            scope,
-            toolUse.name,
-            toolUse.input,
-          );
-          // A failed tool is reported to the model rather than thrown.
-          toolObservation
-            .update(
-              outcome.ok
-                ? { output: { ok: true, contentLength: outcome.content.length } }
-                : {
-                    level: "ERROR",
-                    statusMessage: "tool dispatch failed",
-                    output: { ok: false },
-                  },
-            )
-            .end();
-          results.push(
-            outcome.ok
-              ? {
-                  type: "tool_result",
-                  toolUseId: toolUse.id,
-                  content: outcome.content,
-                }
-              : {
-                  type: "tool_result",
-                  toolUseId: toolUse.id,
-                  content: outcome.error,
-                  isError: true,
-                },
-          );
-        }
-        return results;
-      };
-
-      const turnCapExceeded = new AgentRunError(
-        `${agent.category} agent exceeded the ${maxTurns}-turn cap without returning findings`,
-      );
 
       try {
-        // The cap bounds model calls, not tool round-trips.
-        for (let turn = 1; ; turn += 1) {
-          const response = await callModel();
-          const toolUses = toolUseBlocks(response.content);
-          if (toolUses.length === 0) {
-            finalText = messageText(response.content);
-            break;
-          }
-          if (turn >= maxTurns) {
-            throw turnCapExceeded;
-          }
-          messages.push({ role: "assistant", content: response.content });
-          messages.push({
-            role: "user",
-            content: await answerToolUses(toolUses),
-          });
+        const result = await generateText({
+          model: deps.model,
+          // The breakpoint must sit on the system message itself; the
+          // provider ignores a call-level one. Tools cache with it.
+          instructions: {
+            role: "system",
+            content: systemPrompt,
+            providerOptions: {
+              anthropic: { cacheControl: { type: "ephemeral" } },
+            },
+          },
+          messages: [{ role: "user", content: buildOpeningMessage(context) }],
+          tools: createReviewTools(deps.github, scope),
+          stopWhen: isStepCount(maxTurns),
+          maxOutputTokens: MAX_OUTPUT_TOKENS,
+          telemetry: { functionId: `review-agent-${agent.category}` },
+          onStepEnd: (step) => {
+            usage = addTokenUsage(usage, toTokenUsage(step.usage));
+          },
+        });
+
+        // The SDK stops silently at the cap, still holding tool calls.
+        if (result.finishReason === "tool-calls") {
+          throw new AgentRunError(
+            `${agent.category} agent exceeded the ${maxTurns}-turn cap without returning findings`,
+          );
         }
 
-        const output = extractAgentOutput(finalText);
+        const output = extractAgentOutput(result.text);
         if (!output.ok) {
           throw new AgentRunError(
             `${agent.category} agent produced invalid findings output ` +
-              `(stop reason: ${apiStopReason ?? "unknown"}): ${output.error}`,
+              `(stop reason: ${result.rawFinishReason ?? "unknown"}): ${output.error}`,
           );
         }
         // Cross-category findings are dropped, never re-stamped.

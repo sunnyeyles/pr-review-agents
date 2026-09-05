@@ -13,18 +13,19 @@ import {
   createLangfusePromptClient,
   createReviewAgents,
   apiKeyEnvFor,
-  createModelClient,
+  createLanguageModel,
   createSynthesiser,
   defaultModelFor,
   loadAgentDefinitions,
   loadManagedPrompts,
   resolveAgentDefinitions,
   resolveModelProvider,
+  type ModelProvider,
   type LangfusePromptClient,
   type LangfusePromptClientConfig,
   type ManagedPrompts,
-  type ModelClient,
-  type ModelClientConfig,
+  type LanguageModelConfig,
+  type ReviewModel,
   type ReadOptionalFile,
   type AgentDefinition,
 } from "@pr-review/ai";
@@ -61,7 +62,7 @@ export interface ActionEnvironment {
   env: Record<string, string | undefined>;
   /** Reads the workflow event payload file as UTF-8 text. */
   readEventFile: (path: string) => Promise<string>;
-  createModelClient: (config: ModelClientConfig) => ModelClient;
+  createLanguageModel: (config: LanguageModelConfig) => ReviewModel;
   createTokenClient: (config: GithubTokenConfig) => GithubInstallationClient;
   /** Builds the managed-prompt retrieval seam. */
   createPromptClient: (config: LangfusePromptClientConfig) => LangfusePromptClient;
@@ -77,7 +78,7 @@ export function actionEnvironment(): ActionEnvironment {
   return {
     env: process.env,
     readEventFile: (filePath) => readFile(filePath, "utf8"),
-    createModelClient,
+    createLanguageModel,
     createTokenClient,
     createPromptClient: createLangfusePromptClient,
     createLangfuseRuntime,
@@ -179,16 +180,16 @@ async function resolveManagedPrompts(
   }
 }
 
-/** The model client for this run, and the model id to call it with. */
+/** The model for this run, and the provider that was selected. */
 interface ModelInputs {
-  model: ModelClient;
-  modelId: string;
+  model: ReviewModel;
+  provider: ModelProvider;
 }
 
-/** Builds the run's model client. */
+/** Builds the run's model. */
 function resolveModelInputs(
   env: Record<string, string | undefined>,
-  environment: Pick<ActionEnvironment, "createModelClient">,
+  environment: Pick<ActionEnvironment, "createLanguageModel">,
 ): ModelInputs {
   const provider = resolveModelProvider(getInput(env, "model-provider"));
   const keyEnv = apiKeyEnvFor(provider);
@@ -202,12 +203,13 @@ function resolveModelInputs(
   }
   const baseUrl = getInput(env, "model-base-url");
   return {
-    model: environment.createModelClient({
+    provider,
+    model: environment.createLanguageModel({
       provider,
       apiKey,
       ...(baseUrl === "" ? {} : { baseUrl }),
+      modelId: getInput(env, "model") || defaultModelFor(provider),
     }),
-    modelId: getInput(env, "model") || defaultModelFor(provider),
   };
 }
 
@@ -279,11 +281,8 @@ export async function runAction(
       .map((agent) => agent.category),
   });
 
-  const { model, modelId } = resolveModelInputs(env, environment);
-  logger.info("review.model_selected", {
-    provider: model.provider,
-    model: modelId,
-  });
+  const { model, provider } = resolveModelInputs(env, environment);
+  logger.info("review.model_selected", { provider, model: model.modelId });
 
   const langfuse = resolveLangfuseInputs(env, logger);
   // Tracing starts before the prompt fetch so the fetch's spans are captured.
@@ -306,7 +305,6 @@ export async function runAction(
     // Repository-independent, so one instance serves the whole run.
     const synthesiser = createSynthesiser({
       model,
-      modelId,
       agents,
       ...(prompts === undefined
         ? {}
@@ -326,7 +324,6 @@ export async function runAction(
           createReviewAgents(
             {
               model,
-              modelId,
               github: reviewClient,
               ...(prompts === undefined ? {} : { systemPrompts: prompts }),
             },

@@ -3,7 +3,7 @@
  * the publish step differ from production.
  */
 import {
-  createModelClient,
+  createLanguageModel,
   createReviewAgents,
   createSynthesiser,
   type ReviewAgent,
@@ -65,19 +65,16 @@ export function modelBackedDeps(
   logger: StructuredLogger | undefined,
   agents: readonly AgentDefinition[],
 ): FixtureReviewDeps {
-  const model = createModelClient({
+  const model = createLanguageModel({
     provider: access.provider,
     apiKey: access.apiKey,
+    modelId: access.model,
   });
-  const modelId = access.model;
   return {
     agents,
     createAgents: (github, reviewLogger, activeAgents) =>
-      createReviewAgents(
-        { model, modelId, github, logger: reviewLogger },
-        activeAgents,
-      ),
-    synthesiser: createSynthesiser({ model, modelId, agents }),
+      createReviewAgents({ model, github, logger: reviewLogger }, activeAgents),
+    synthesiser: createSynthesiser({ model, agents }),
     logger,
   };
 }

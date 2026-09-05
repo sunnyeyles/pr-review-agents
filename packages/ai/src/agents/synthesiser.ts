@@ -3,10 +3,10 @@
  * untrusted and still passes through the validation chain.
  */
 import { startObservation } from "@langfuse/tracing";
+import { generateText } from "ai";
 import { extractAgentOutput } from "./output.js";
-import { messageText, type ModelClient } from "../model/types.js";
-import { traceModelCall } from "../model-tracing.js";
-import { addTokenUsage, emptyTokenUsage, type TokenUsage } from "../usage.js";
+import type { ReviewModel } from "../model.js";
+import { emptyTokenUsage, toTokenUsage, type TokenUsage } from "../usage.js";
 import { errorMessage } from "@pr-review/logging";
 import {
   categoryLabel,
@@ -80,9 +80,7 @@ export function buildSynthesisMessage(
 }
 
 interface SynthesiserDeps {
-  model: ModelClient;
-  /** Model id from configuration; never hard-coded. */
-  modelId: string;
+  model: ReviewModel;
   /** The run's agent set, which names the categories the prompt accepts. */
   agents: readonly AgentDefinition[];
   /** Omitted means the prompt built from `agents`. */
@@ -121,7 +119,7 @@ export function createSynthesiser(deps: SynthesiserDeps): Synthesiser {
         observation.update({
           metadata: {
             provider: deps.model.provider,
-            model: deps.modelId,
+            model: deps.model.modelId,
             wellFormedCount: wellFormed.length,
           },
         });
@@ -132,31 +130,22 @@ export function createSynthesiser(deps: SynthesiserDeps): Synthesiser {
           return { findings: [], usage: emptyTokenUsage() };
         }
 
-        const response = await traceModelCall(
-          observation,
-          {
-            provider: deps.model.provider,
-            model: deps.modelId,
-            input: { wellFormedCount: wellFormed.length },
-            maxTokens: MAX_OUTPUT_TOKENS,
-          },
-          () =>
-            deps.model.createMessage({
-              model: deps.modelId,
-              maxOutputTokens: MAX_OUTPUT_TOKENS,
-              system: systemPrompt,
-              messages: [
-                { role: "user", content: buildSynthesisMessage(wellFormed) },
-              ],
-            }),
-        );
-        const usage = addTokenUsage(emptyTokenUsage(), response.usage);
+        const result = await generateText({
+          model: deps.model,
+          instructions: systemPrompt,
+          messages: [
+            { role: "user", content: buildSynthesisMessage(wellFormed) },
+          ],
+          maxOutputTokens: MAX_OUTPUT_TOKENS,
+          telemetry: { functionId: "synthesise-findings" },
+        });
+        const usage = toTokenUsage(result.usage);
 
-        const output = extractAgentOutput(messageText(response.content));
+        const output = extractAgentOutput(result.text);
         if (!output.ok) {
           throw new SynthesisError(
             `synthesiser produced invalid findings output ` +
-              `(stop reason: ${response.stopReason ?? "unknown"}): ${output.error}`,
+              `(stop reason: ${result.rawFinishReason ?? "unknown"}): ${output.error}`,
           );
         }
         observation.update({

@@ -131,7 +131,7 @@ Reinforcing rules:
 apps/
   action/     Event parsing → review pipeline → check run (or job summary)
 packages/
-  ai/         Provider-neutral model seam (model/), prompts, agent
+  ai/         Provider selection (model.ts), prompts, agent
               configuration, and agents/: agent definition, runtime loop,
               read-only tools, synthesiser
   reviewer/   Review graph, validation chain, check-run rendering
@@ -148,8 +148,8 @@ LangGraph runs the review pipeline
 (`packages/reviewer/src/review-graph.ts`): one node per selected agent → `join`
 → `synthesise` → `validate`. Every agent node has `START` as its only
 dependency, so they run in the same superstep. Inside a node, one agent's
-tool-calling loop is a plain turn loop over the provider-neutral model seam
-(`packages/ai/src/agents/runtime.ts`), capped at 12 model calls.
+tool-calling loop is one `generateText` call
+(`packages/ai/src/agents/runtime.ts`), capped at 12 steps.
 
 ### Partial failure
 
@@ -180,10 +180,10 @@ Set as `with:` inputs on the Action step ([`apps/action/action.yml`](apps/action
 
 ### Model providers
 
-The model is reached through one provider-neutral seam
-(`packages/ai/src/model/`): the agent loop, the synthesiser, tracing, and token
-accounting speak `ModelClient` only. Each provider is one adapter beneath it,
-selected by `model-provider`:
+Models are reached through the [AI SDK](https://ai-sdk.dev). Which providers
+are allowed, what each one's default model is, and which environment variable
+carries its key live in `packages/ai/src/model.ts`, selected by
+`model-provider`:
 
 ```yaml
         with:
@@ -192,9 +192,10 @@ selected by `model-provider`:
           model: gpt-5
 ```
 
-`model-base-url` points an adapter at a gateway, a proxy, or any endpoint
-speaking that provider's API. Adding a provider means one adapter plus its
-entry in `model/provider.ts` — nothing above the seam changes.
+`model-base-url` points a provider at a gateway, a proxy, or any endpoint
+speaking its API — OpenAI is bound to Chat Completions rather than the
+Responses API for that reason. Adding a provider is an entry in `PROVIDERS`
+and nothing else.
 
 Prompt caching is requested on every agent turn and applied where the provider
 supports it. The four token counters keep cache writes and reads apart from the
@@ -326,10 +327,9 @@ round trip carrying the whole conversation.
 
 Prompt caching reprices that traffic rather than reducing it: roughly 0.1x for
 a cache read against 1.25x for the write that put it there. Each agent turn asks
-for its prefix to be cached (`cachePrefix` on the model request), which the
-Anthropic adapter (`packages/ai/src/model/anthropic.ts`) turns into two
-breakpoints — an explicit one on the system prompt, which also covers the tool
-schemas, and the automatic one, which follows the growing conversation tail.
+for its prefix to be cached, via one breakpoint on the system instructions
+(`providerOptions.anthropic.cacheControl`), which also covers the tool schemas.
+Anthropic's automatic breakpoint follows the growing conversation tail.
 The synthesiser's single call is not cached; there is no next turn to read it.
 
 A cache that stops hitting raises the bill and changes nothing else, so the

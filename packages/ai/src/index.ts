@@ -1,19 +1,19 @@
 /**
- * The model side of the review system: the client seam, prompts, and `agents/`.
+ * The model side of the review system: provider selection, prompts, `agents/`.
  * Agents only propose findings; publishing lives in @pr-review/reviewer.
  */
 export {
-  createModelClient,
+  createLanguageModel,
   defaultModelFor,
   resolveModelProvider,
   DEFAULT_MODEL_PROVIDER,
   MODEL_PROVIDERS,
   ModelProviderError,
   apiKeyEnvFor,
-  type ModelClientConfig,
+  type LanguageModelConfig,
   type ModelProvider,
-} from "./model/provider.js";
-export type { ModelClient } from "./model/types.js";
+  type ReviewModel,
+} from "./model.js";
 export type { ReviewAgent, ReviewContext } from "./agent-contract.js";
 export { emptyTokenUsage, type TokenUsage } from "./usage.js";
 export { AgentRunError, createReviewAgent } from "./agents/runtime.js";

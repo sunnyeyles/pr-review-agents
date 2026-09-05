@@ -62,10 +62,9 @@ describe("resolving the synthesis prompt", () => {
     );
     expect(sources.synthesis).toBe("langfuse");
 
-    const { model, requests } = recordingModel();
+    const { model, calls } = recordingModel();
     const synthesiser = createSynthesiser({
       model,
-      modelId: "test-model",
       agents: configuredAgents,
       systemPrompt: prompts.synthesis,
     });
@@ -83,7 +82,10 @@ describe("resolving the synthesis prompt", () => {
       },
     ]);
 
-    expect(requests[0]?.system).toBe(remote);
+    const system = (calls[0]?.prompt ?? []).find(
+      (entry) => (entry as { role?: string }).role === "system",
+    );
+    expect((system as { content?: string } | undefined)?.content).toBe(remote);
   });
 
   it("hands the in-code prompt to the synthesiser when the fetch fails", async () => {
