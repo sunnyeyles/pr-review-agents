@@ -18,7 +18,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { RenderedCheckRun } from "./render-check-run.js";
 import { findingMarker } from "./render-review.js";
-import type { ReviewPipelineResult } from "./review-graph.js";
+import type { ReviewPipelineResult, SynthesisState } from "./review-graph.js";
 import {
   createCheckRunPublisher,
   reviewCorrelation,
@@ -86,16 +86,25 @@ function makeClient() {
   } satisfies GithubInstallationClient;
 }
 
+/** `synthesis` is a whole union, so it is its own parameter rather than an override. */
 function reviewResult(
   overrides: Partial<ReviewPipelineResult> = {},
+  synthesis?: SynthesisState,
 ): ReviewPipelineResult {
   const candidates = overrides.candidates ?? [];
   return {
     candidates,
     agentFailures: [],
-    synthesisedCandidateCount: candidates.length,
-    synthesisOutcome: candidates.length === 0 ? "skipped" : "completed",
-    synthesisUsage: emptyTokenUsage(),
+    synthesis:
+      synthesis ??
+      (candidates.length === 0
+        ? { outcome: "skipped", candidates: [], usage: emptyTokenUsage() }
+        : {
+            outcome: "completed",
+            candidates,
+            usage: emptyTokenUsage(),
+            durationMs: 0,
+          }),
     findings: candidates as ReviewFinding[],
     ...overrides,
   };
@@ -257,12 +266,17 @@ describe("reviewPullRequest", () => {
 
   it("logs synthesis.failed and still publishes when synthesis fails", async () => {
     const { deps, client, entries } = makeDeps(
-      reviewResult({
-        candidates: [finding],
-        synthesisOutcome: "failed",
-        synthesisError: "model returned malformed JSON",
-        synthesisErrorName: "SynthesisError",
-      }),
+      reviewResult(
+        { candidates: [finding] },
+        {
+          outcome: "failed",
+          candidates: [finding],
+          usage: emptyTokenUsage(),
+          error: "model returned malformed JSON",
+          errorName: "SynthesisError",
+          durationMs: 0,
+        },
+      ),
     );
 
     await reviewPullRequest(target, deps);
@@ -520,7 +534,7 @@ describe("reviewPullRequest: path filters", () => {
         findings: [],
         candidates: [],
         agentFailures: [],
-        synthesisOutcome: "skipped",
+        synthesis: { outcome: "skipped" },
       });
     });
 

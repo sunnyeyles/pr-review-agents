@@ -8,6 +8,7 @@
 export {
   runReviewPipeline,
   type ReviewPipelineResult,
+  type SynthesisState,
 } from "./review-graph.js";
 export { validateFindings } from "./validate-findings.js";
 export type { RenderedCheckRun } from "./render-check-run.js";

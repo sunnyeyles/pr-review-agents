@@ -159,7 +159,7 @@ what succeeded. Only when *every* agent fails does the graph throw — which
 fails the workflow step, so the run can be retried from the Actions UI.
 
 Synthesis failure is softer still: it falls back to the raw candidates and
-reports `synthesisOutcome: "failed"` on the result rather than failing the
+reports `synthesis.outcome: "failed"` on the result rather than failing the
 review.
 
 ---

@@ -53,7 +53,8 @@ interface JoinedCandidates {
   agentFailures: AgentFailure[];
 }
 
-type SynthesisState =
+/** The synthesise node's outcome; the tag decides which fields exist. */
+export type SynthesisState =
   | { outcome: "skipped"; candidates: unknown[]; usage: TokenUsage }
   | {
       outcome: "completed";
@@ -237,15 +238,8 @@ export interface ReviewPipelineResult {
   candidates: unknown[];
   /** Agents that failed while at least one other agent succeeded. */
   agentFailures: AgentFailure[];
-  /** How many candidates the synthesiser (or the raw fallback) produced. */
-  synthesisedCandidateCount: number;
-  synthesisOutcome: "skipped" | "completed" | "failed";
-  synthesisError?: string;
-  synthesisErrorName?: string;
-  /** The synthesiser's single-call token usage; zero when skipped. */
-  synthesisUsage: TokenUsage;
-  /** Wall-clock time spent in the synthesise node; unset when skipped. */
-  synthesisDurationMs?: number;
+  /** The synthesise node's own outcome; every field it carries is one the tag guarantees. */
+  synthesis: SynthesisState;
   /** The final, deterministically validated findings. */
   findings: ReviewFinding[];
 }
@@ -262,18 +256,7 @@ export async function runReviewPipeline(
   return {
     candidates: joined.candidates,
     agentFailures: joined.agentFailures,
-    synthesisedCandidateCount: synthesis.candidates.length,
-    synthesisOutcome: synthesis.outcome,
-    synthesisUsage: synthesis.usage,
-    ...(synthesis.outcome === "failed"
-      ? {
-          synthesisError: synthesis.error,
-          synthesisErrorName: synthesis.errorName,
-        }
-      : {}),
-    ...(synthesis.outcome === "skipped"
-      ? {}
-      : { synthesisDurationMs: synthesis.durationMs }),
+    synthesis,
     findings,
   };
 }

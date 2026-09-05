@@ -313,7 +313,7 @@ describe("the full pipeline against a fixture", () => {
     );
 
     expect(review.result.agentFailures).toEqual([]);
-    expect(review.result.synthesisOutcome).toBe("completed");
+    expect(review.result.synthesis.outcome).toBe("completed");
     expect(review.rendered.conclusion).toBe("neutral");
 
     for (const expectation of expectationsFor(fixture.name)) {

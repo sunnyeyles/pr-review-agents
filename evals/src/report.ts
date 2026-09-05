@@ -75,8 +75,8 @@ export function formatReviewReport(review: FixtureReview): string {
     `  pull request:  ${fixture.context.owner}/${fixture.context.repo}#${fixture.pullRequest.number} ` +
       `(${fixture.changedFiles.length} changed files)`,
     `  agents:        ${result.candidates.length} candidate finding(s), failed: ${failures}`,
-    `  synthesis:     ${result.synthesisOutcome} -> ${result.synthesisedCandidateCount} finding(s)` +
-      (result.synthesisError === undefined ? "" : ` (${result.synthesisError})`),
+    `  synthesis:     ${result.synthesis.outcome} -> ${result.synthesis.candidates.length} finding(s)` +
+      (result.synthesis.outcome === "failed" ? ` (${result.synthesis.error})` : ""),
     `  validated:     ${result.findings.length} finding(s), check run conclusion "${review.rendered.conclusion}"`,
     `  repository reads: ${toolSummary(review)}`,
     `  tokens:        ${usage.inputTokens} in / ${usage.outputTokens} out, ${Math.round(review.durationMs / 1000)}s`,

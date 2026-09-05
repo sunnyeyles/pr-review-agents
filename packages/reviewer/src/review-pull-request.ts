@@ -168,7 +168,8 @@ function logSynthesisOutcome(
   review: ReviewPipelineResult,
 ): void {
   const fields = reviewCorrelation(target);
-  if (review.synthesisOutcome === "skipped") {
+  const { synthesis } = review;
+  if (synthesis.outcome === "skipped") {
     logger.info("synthesis.skipped", { ...fields, reason: "no candidate findings" });
     return;
   }
@@ -177,22 +178,22 @@ function logSynthesisOutcome(
     ...fields,
     candidateCount: review.candidates.length,
   });
-  if (review.synthesisOutcome === "completed") {
+  if (synthesis.outcome === "completed") {
     logger.info("synthesis.completed", {
       ...fields,
       candidateCount: review.candidates.length,
-      refinedCount: review.synthesisedCandidateCount,
-      ...review.synthesisUsage,
-      durationMs: review.synthesisDurationMs,
+      refinedCount: synthesis.candidates.length,
+      ...synthesis.usage,
+      durationMs: synthesis.durationMs,
     });
     return;
   }
 
   logger.error("synthesis.failed", {
     ...fields,
-    error: review.synthesisError,
-    errorName: review.synthesisErrorName,
-    durationMs: review.synthesisDurationMs,
+    error: synthesis.error,
+    errorName: synthesis.errorName,
+    durationMs: synthesis.durationMs,
     fallback: "publishing validated raw findings",
   });
 }
@@ -202,9 +203,7 @@ function unreviewed(): ReviewPipelineResult {
   return {
     candidates: [],
     agentFailures: [],
-    synthesisedCandidateCount: 0,
-    synthesisOutcome: "skipped",
-    synthesisUsage: emptyTokenUsage(),
+    synthesis: { outcome: "skipped", candidates: [], usage: emptyTokenUsage() },
     findings: [],
   };
 }
@@ -277,7 +276,7 @@ export async function reviewPullRequest(
 
   logger.info("findings.validated", {
     ...fields,
-    candidateCount: review.synthesisedCandidateCount,
+    candidateCount: review.synthesis.candidates.length,
     findingCount: review.findings.length,
   });
 

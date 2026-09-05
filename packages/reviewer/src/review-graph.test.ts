@@ -215,8 +215,11 @@ describe("runReviewPipeline: synthesis (spec §16)", () => {
       context,
     );
 
-    expect(result.synthesisOutcome).toBe("skipped");
-    expect(result.synthesisedCandidateCount).toBe(0);
+    expect(result.synthesis).toEqual({
+      outcome: "skipped",
+      candidates: [],
+      usage: emptyTokenUsage(),
+    });
     expect(result.findings).toEqual([]);
   });
 
@@ -236,8 +239,13 @@ describe("runReviewPipeline: synthesis (spec §16)", () => {
       context,
     );
 
-    expect(result.synthesisOutcome).toBe("completed");
-    expect(result.synthesisedCandidateCount).toBe(1);
+    expect(result.synthesis).toMatchObject({
+      outcome: "completed",
+      candidates: [refined],
+      usage: { inputTokens: 10, outputTokens: 5 },
+    });
+    // The tag carries it, so a completed synthesis cannot be missing a duration.
+    expect(result.synthesis).toHaveProperty("durationMs", expect.any(Number));
     expect(result.findings).toEqual([refined]);
   });
 
@@ -255,8 +263,10 @@ describe("runReviewPipeline: synthesis (spec §16)", () => {
       context,
     );
 
-    expect(result.synthesisOutcome).toBe("failed");
-    expect(result.synthesisError).toBe("anthropic unavailable");
+    expect(result.synthesis).toMatchObject({
+      outcome: "failed",
+      error: "anthropic unavailable",
+    });
     // Fallback candidates still flow through the same validation chain.
     expect(result.findings).toEqual([raw]);
   });

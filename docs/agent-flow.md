@@ -266,7 +266,7 @@ speculation, corrects severity, and orders results most important first.
 
 Three paths out:
 
-| Path | Trigger | `synthesisOutcome` |
+| Path | Trigger | `synthesis.outcome` |
 | --- | --- | --- |
 | Skipped | Zero candidates — nothing to refine | `"skipped"` |
 | Completed | Model returned valid JSON | `"completed"` |
