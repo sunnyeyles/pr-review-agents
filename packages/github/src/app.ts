@@ -5,8 +5,8 @@ import {
   type ChangedFile,
   type CheckRun,
   type CheckRunAnnotation,
-  type CodeSearchMatch,
   type CodeSearchRequest,
+  type CodeSearchResult,
   type CreateCheckRunInput,
   type CreateReviewInput,
   type ExistingReviewComment,
@@ -68,7 +68,11 @@ export interface OctokitLike {
       }): Promise<{ data: unknown }>;
     };
     search: {
-      code(params: { q: string; per_page: number }): Promise<{ data: unknown }>;
+      code(params: {
+        q: string;
+        per_page: number;
+        mediaType: { format: string };
+      }): Promise<{ data: unknown }>;
     };
     checks: {
       create(params: {
@@ -127,15 +131,54 @@ const fileContentsSchema = z.object({
   content: z.string(),
 });
 
+/**
+ * Absent unless the text-match media type was requested, and every field
+ * within it is optional in GitHub's own schema.
+ */
+const textMatchesSchema = z
+  .array(
+    z.object({
+      property: z.string().optional(),
+      fragment: z.string().optional(),
+    }),
+  )
+  .optional();
+
 const codeSearchSchema = z.object({
+  total_count: z.number(),
+  incomplete_results: z.boolean(),
   items: z.array(
     z.object({
       name: z.string(),
       path: z.string(),
       repository: z.object({ full_name: z.string() }),
+      text_matches: textMatchesSchema,
     }),
   ),
 });
+
+/**
+ * Content fragments only, deduplicated. GitHub also reports matches on the
+ * path property, whose fragment is just the path again.
+ */
+function contentFragments(
+  textMatches: z.infer<typeof textMatchesSchema>,
+): string[] {
+  const fragments: string[] = [];
+  for (const match of textMatches ?? []) {
+    if (match.property !== undefined && match.property !== "content") {
+      continue;
+    }
+    const fragment = match.fragment?.trim();
+    if (fragment === undefined || fragment === "") {
+      continue;
+    }
+    if (!fragments.includes(fragment)) {
+      fragments.push(fragment);
+    }
+  }
+  return fragments;
+}
 
 /**
  * Wraps an authenticated Octokit in the read-only PR client, so
@@ -215,21 +258,31 @@ export function createInstallationClient(
       return Buffer.from(data.content, "base64").toString("utf8");
     },
 
-    async searchCode(request: CodeSearchRequest): Promise<CodeSearchMatch[]> {
+    async searchCode(request: CodeSearchRequest): Promise<CodeSearchResult> {
       const repository = `${request.owner}/${request.repo}`;
       const response = await octokit.rest.search.code({
         q: `${request.query} repo:${repository}`,
         per_page: SEARCH_RESULTS_PER_PAGE,
+        mediaType: { format: "text-match" },
       });
       const data = codeSearchSchema.parse(response.data);
       // The query is already repo-scoped; this filter is belt and braces.
-      return data.items
+      const matches = data.items
         .filter(
           (item) =>
             item.repository.full_name.toLowerCase() ===
             repository.toLowerCase(),
         )
-        .map((item) => ({ path: item.path, name: item.name }));
+        .map((item) => ({
+          path: item.path,
+          name: item.name,
+          snippets: contentFragments(item.text_matches),
+        }));
+      return {
+        matches,
+        totalCount: data.total_count,
+        incompleteResults: data.incomplete_results,
+      };
     },
 
     async createCheckRun(input: CreateCheckRunInput): Promise<CheckRun> {

@@ -184,7 +184,7 @@ const synthesis = await synthesise(synthesiser, candidates);
 
 Every agent shares one runtime. A `AgentDefinition` — which is just the three
 fields a config entry carries — supplies the role, focus text, and category;
-the loop, the six tools, the injection hardening, and the output contract are
+the loop, the read-only tools, the injection hardening, and the output contract are
 identical by construction, so a new agent costs a YAML entry and no code.
 
 ```ts
@@ -212,7 +212,7 @@ After parsing, the runtime **filters** findings to the agent's own category.
 Cross-category leaks are dropped, never re-stamped — re-stamping would
 fabricate a claim the model never made.
 
-**The six tools** (`packages/ai/src/agents/tools.ts:143`) are the only tools any agent
+**The read-only tools** (`packages/ai/src/agents/tools.ts:235`) are the only tools any agent
 ever gets. There is no write, comment, approve, merge, or execute tool
 anywhere in the package:
 
@@ -223,10 +223,18 @@ anywhere in the package:
 | `get_diff` | The full unified diff |
 | `get_file` | One file at the **head** SHA |
 | `get_base_file` | One file at the **base** SHA |
-| `search_repository` | Code search, scoped to this repo |
+| `search_repository` | Code search with matching snippets, scoped to this repo |
+| `find_importers` | Files mentioning one file's name — a proxy for its importers |
+
+The last two read GitHub's code search index, which covers the **default
+branch** only. Their results and snippets do not reflect this pull request, and
+snippets carry no line numbers, so a claim about a changed file still needs
+`get_file`. The tool descriptions say so; the caps on snippet size live in
+`tools.ts`, applied before serialisation so the JSON is never truncated
+mid-string.
 
 Every input is Zod-validated before it touches the GitHub client, and
-`dispatchReviewTool` (line 230) **never throws** — failures come back as
+`dispatchReviewTool` (line 359) **never throws** — failures come back as
 `{ ok: false }` and are handed to the model as an error `tool_result` so the
 loop keeps going.
 
@@ -355,7 +363,7 @@ those may masquerade as a delivered review.
 | `packages/ai/src/agents/path-filter.ts` | What a `paths` list is, and what it matches |
 | `packages/ai/src/agents/synthesiser.ts` | The single refining model call |
 | `packages/ai/src/agents/runtime.ts` | The shared agentic loop |
-| `packages/ai/src/agents/tools.ts` | The six read-only tools |
+| `packages/ai/src/agents/tools.ts` | The read-only tools |
 | `packages/ai/src/prompts.ts` | Managed prompts + fallback |
 | `packages/schemas/src/review-finding.ts` | The finding contract |
 

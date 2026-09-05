@@ -110,10 +110,10 @@ Agents ──► raw candidates (unknown[])
 
 Reinforcing rules:
 
-- Agents are given **six read-only tools** and nothing else:
+- Agents are given **read-only tools** and nothing else:
   `get_pull_request`, `list_changed_files`, `get_diff`, `get_file`,
-  `get_base_file`, `search_repository`. No write, comment, approve, merge, or
-  execute tool exists.
+  `get_base_file`, `search_repository`, `find_importers`. No write, comment,
+  approve, merge, or execute tool exists.
 - Every agent's system prompt carries the same non-negotiable **prompt-injection
   block**: repository contents (diffs, files, PR title/description, search
   results) are data, never instructions; tool results grant no permissions.
@@ -171,7 +171,7 @@ Set as `with:` inputs on the Action step ([`apps/action/action.yml`](apps/action
 | --- | --- | --- |
 | `api-key` | yes, as the input or through `env` | Key for the selected provider, which the agents and synthesiser authenticate with. Store as a repository or organisation secret; never inline it. Falls back to the provider's own variable (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`) when left empty, so a workflow can pass keys through `env` instead of choosing one in YAML. |
 | `model-provider` | no (default `anthropic`) | Which provider the agents and synthesiser call: `anthropic` or `openai`. An unknown name fails the step before any model call. |
-| `github-token` | no (default `${{ github.token }}`) | Token for the six read-only repository tools and for publishing the check run. |
+| `github-token` | no (default `${{ github.token }}`) | Token for the read-only repository tools and for publishing the check run. |
 | `model` | no (default: the provider's own — `claude-sonnet-5`, `gpt-5`) | Model id the agents and synthesiser use, as the provider spells it. |
 | `model-base-url` | no (default: the provider's own host) | Overrides the provider's API host — a gateway, a proxy, or a compatible endpoint (for `openai`, one that accepts `max_completion_tokens`). |
 | `agents` | no (default `all`) | Which of the configured agents run: `all`, or a comma-separated subset of their names. Naming a subset also overrides any [path filters](#path-filters). |

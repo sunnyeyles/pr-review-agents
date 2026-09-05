@@ -6,6 +6,7 @@ import type {
   ChangedFile,
   CheckRun,
   CodeSearchMatch,
+  CodeSearchResult,
   CreateCheckRunInput,
   CreateReviewInput,
   ExistingReviewComment,
@@ -20,6 +21,31 @@ import type { LoadedFixture } from "./fixture.js";
 
 /** At most this many search matches come back from one query. */
 const MAX_SEARCH_MATCHES = 25;
+
+/** Characters of context either side of a match, as GitHub's fragments have. */
+const FRAGMENT_PADDING = 120;
+
+/** Stands in for GitHub's text-match fragments: a window around each term. */
+function fragmentsAround(contents: string, terms: string[]): string[] {
+  const haystack = contents.toLowerCase();
+  const fragments: string[] = [];
+  for (const term of terms) {
+    const at = haystack.indexOf(term);
+    if (at < 0) {
+      continue;
+    }
+    const fragment = contents
+      .slice(
+        Math.max(0, at - FRAGMENT_PADDING),
+        at + term.length + FRAGMENT_PADDING,
+      )
+      .trim();
+    if (!fragments.includes(fragment)) {
+      fragments.push(fragment);
+    }
+  }
+  return fragments;
+}
 
 /** One recorded read against the fixture repository. */
 export interface FixtureCall {
@@ -101,7 +127,7 @@ export function createFixtureClient(fixture: LoadedFixture): FixtureClient {
       return contents;
     },
 
-    async searchCode(request): Promise<CodeSearchMatch[]> {
+    async searchCode(request): Promise<CodeSearchResult> {
       const { owner, repo } = fixture.context;
       if (request.owner !== owner || request.repo !== repo) {
         throw new FixtureNotFoundError(
@@ -110,19 +136,29 @@ export function createFixtureClient(fixture: LoadedFixture): FixtureClient {
       }
       record("searchCode", request.query);
       // Cruder than GitHub's code search, but the property that matters
-      // holds: a query finds the files mentioning the terms.
+      // holds: a query finds the files mentioning the terms. Quotes are
+      // stripped because find_importers quotes its derived stem.
       const terms = request.query
         .toLowerCase()
+        .replaceAll('"', " ")
         .split(/\s+/)
         .filter((term) => term.length > 0);
       const matches: CodeSearchMatch[] = [];
       for (const [path, contents] of fixture.headFiles) {
         const haystack = `${path}\n${contents}`.toLowerCase();
         if (terms.every((term) => haystack.includes(term))) {
-          matches.push({ path, name: path.slice(path.lastIndexOf("/") + 1) });
+          matches.push({
+            path,
+            name: path.slice(path.lastIndexOf("/") + 1),
+            snippets: fragmentsAround(contents, terms),
+          });
         }
       }
-      return matches.slice(0, MAX_SEARCH_MATCHES);
+      return {
+        matches: matches.slice(0, MAX_SEARCH_MATCHES),
+        totalCount: matches.length,
+        incompleteResults: false,
+      };
     },
 
     async listReviewComments(ref): Promise<ExistingReviewComment[]> {

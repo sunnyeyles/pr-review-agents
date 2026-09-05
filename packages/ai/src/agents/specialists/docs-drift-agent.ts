@@ -10,5 +10,5 @@ export const DOCS_DRIFT_AGENT: AgentDefinition = {
 - examples and configuration snippets that no longer work as written
 Report a passage only when this diff is what made it wrong. Documentation that was already stale, and work that is simply undocumented, are not yours to report.
 Do NOT report prose style, wording preferences, or missing documentation for new work — those are out of scope for you and will be discarded.`,
-  contextGuidance: `Drift is only visible outside the diff. You MUST retrieve the documentation BEFORE reporting on it: use search_repository to find every document mentioning the symbol, command, path, or option the change touched, and get_file to read the surrounding passage and confirm it now describes something this change altered or removed. If you did not read the passage, do not report it.`,
+  contextGuidance: `Drift is only visible outside the diff. You MUST retrieve the documentation BEFORE reporting on it: use search_repository to find every document mentioning the symbol, command, path, or option the change touched, and get_file to read the surrounding passage and confirm it now describes something this change altered or removed. Search snippets are pointers, not evidence — they are partial and come from the default branch. If you did not read the passage with get_file, do not report it.`,
 };

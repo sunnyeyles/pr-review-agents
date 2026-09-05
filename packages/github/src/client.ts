@@ -48,6 +48,21 @@ export interface CodeSearchMatch {
   path: string;
   /** Base name of the matching file. */
   name: string;
+  /**
+   * Matching content fragments, in GitHub's order. They carry no line
+   * numbers, and come from the default branch like the index itself.
+   */
+  snippets: readonly string[];
+}
+
+/** A code search result set, with the totals GitHub reports alongside it. */
+export interface CodeSearchResult {
+  /** Matches GitHub returned; never more than one page. */
+  matches: CodeSearchMatch[];
+  /** Total matches in the repository, which may exceed `matches.length`. */
+  totalCount: number;
+  /** True when GitHub timed out the query and returned a partial answer. */
+  incompleteResults: boolean;
 }
 
 /** One changed file in a PR; patch is absent for e.g. binary files. */
@@ -134,7 +149,7 @@ export interface GithubInstallationClient {
   /** Reads one file's decoded contents at a specific SHA. Read-only. */
   getFileContents(request: FileContentsRequest): Promise<string>;
   /** Searches code within the single named repository. Read-only. */
-  searchCode(request: CodeSearchRequest): Promise<CodeSearchMatch[]>;
+  searchCode(request: CodeSearchRequest): Promise<CodeSearchResult>;
   /** Every inline review comment already on the pull request. */
   listReviewComments(ref: PullRequestRef): Promise<ExistingReviewComment[]>;
   createCheckRun(input: CreateCheckRunInput): Promise<CheckRun>;

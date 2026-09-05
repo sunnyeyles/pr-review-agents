@@ -12,6 +12,7 @@ export {
   type CheckRunConclusion,
   type CheckRunOutput,
   type CodeSearchMatch,
+  type CodeSearchResult,
   type CreateCheckRunInput,
   type CreateReviewInput,
   type ExistingReviewComment,

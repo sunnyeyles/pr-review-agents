@@ -74,6 +74,10 @@ const codeSearchResponse = {
       path: "src/sessions.ts",
       sha: "abc",
       repository: { full_name: "octo-org/example-service" },
+      text_matches: [
+        { object_type: "FileContent", property: "content", fragment: "  createSession(id);\n" },
+        { property: "path", fragment: "src/sessions.ts" },
+      ],
     },
     {
       name: "other.ts",
@@ -412,25 +416,129 @@ describe("searchCode", () => {
     expect(octokit.rest.search.code).toHaveBeenCalledExactlyOnceWith({
       q: "createSession repo:octo-org/example-service",
       per_page: 20,
+      mediaType: { format: "text-match" },
     });
   });
 
-  it("returns matches from the target repository only", async () => {
+  it("returns matches from the target repository only, with their content fragments", async () => {
     const { client } = makeClient();
 
-    const matches = await client.searchCode({
+    const result = await client.searchCode({
       owner: "octo-org",
       repo: "example-service",
       query: "createSession",
     });
 
-    expect(matches).toEqual([{ path: "src/sessions.ts", name: "sessions.ts" }]);
+    // The path-property fragment is dropped: it only repeats the path.
+    expect(result).toEqual({
+      matches: [
+        {
+          path: "src/sessions.ts",
+          name: "sessions.ts",
+          snippets: ["createSession(id);"],
+        },
+      ],
+      totalCount: 2,
+      incompleteResults: false,
+    });
   });
 
-  it("rejects a malformed search response", async () => {
+  it("reports an incomplete result set rather than hiding it", async () => {
     const { client } = makeClient({
-      searchData: { items: "not-an-array" },
+      searchData: { total_count: 900, incomplete_results: true, items: [] },
     });
+
+    const result = await client.searchCode({
+      owner: "octo-org",
+      repo: "example-service",
+      query: "createSession",
+    });
+
+    expect(result).toEqual({
+      matches: [],
+      totalCount: 900,
+      incompleteResults: true,
+    });
+  });
+
+  it.each([
+    ["no text_matches at all", {}],
+    ["a text match with no fragment", { text_matches: [{ property: "content" }] }],
+    ["only a path-property match", { text_matches: [{ property: "path", fragment: "src/a.ts" }] }],
+  ])("maps %s to an empty snippet list", async (_label, extra) => {
+    const { client } = makeClient({
+      searchData: {
+        total_count: 1,
+        incomplete_results: false,
+        items: [
+          {
+            name: "a.ts",
+            path: "src/a.ts",
+            repository: { full_name: "octo-org/example-service" },
+            ...extra,
+          },
+        ],
+      },
+    });
+
+    const result = await client.searchCode({
+      owner: "octo-org",
+      repo: "example-service",
+      query: "createSession",
+    });
+
+    expect(result.matches[0]?.snippets).toEqual([]);
+  });
+
+  it("deduplicates identical fragments", async () => {
+    const { client } = makeClient({
+      searchData: {
+        total_count: 1,
+        incomplete_results: false,
+        items: [
+          {
+            name: "a.ts",
+            path: "src/a.ts",
+            repository: { full_name: "octo-org/example-service" },
+            text_matches: [
+              { property: "content", fragment: "same\n" },
+              { property: "content", fragment: "  same" },
+              { property: "content", fragment: "different" },
+            ],
+          },
+        ],
+      },
+    });
+
+    const result = await client.searchCode({
+      owner: "octo-org",
+      repo: "example-service",
+      query: "createSession",
+    });
+
+    expect(result.matches[0]?.snippets).toEqual(["same", "different"]);
+  });
+
+  it.each([
+    ["items is not an array", { items: "not-an-array" }],
+    ["the totals are missing", { items: [] }],
+    [
+      "text_matches is not an array",
+      {
+        total_count: 1,
+        incomplete_results: false,
+        items: [
+          {
+            name: "a.ts",
+            path: "src/a.ts",
+            repository: { full_name: "octo-org/example-service" },
+            text_matches: "nope",
+          },
+        ],
+      },
+    ],
+  ])("rejects a malformed search response: %s", async (_label, searchData) => {
+    const { client } = makeClient({ searchData });
 
     await expect(
       client.searchCode({

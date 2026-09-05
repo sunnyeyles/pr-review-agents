@@ -77,7 +77,11 @@ function makeClient() {
     listChangedFiles: vi.fn(async (_ref: PullRequestRef) => changedFiles),
     getDiff: vi.fn(async (_ref: PullRequestRef) => diff),
     getFileContents: vi.fn(async () => "export const sessions = [];\n"),
-    searchCode: vi.fn(async () => []),
+    searchCode: vi.fn(async () => ({
+      matches: [],
+      totalCount: 0,
+      incompleteResults: false,
+    })),
     listReviewComments: vi.fn(async (): Promise<ExistingReviewComment[]> => []),
     createCheckRun: vi.fn(async (_input: CreateCheckRunInput) => ({ id: 987 })),
     createReview: vi.fn(async (_input: CreateReviewInput) => ({ id: 654 })),

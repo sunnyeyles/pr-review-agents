@@ -9,7 +9,7 @@ This action ships no agents of its own. You declare them in
 [Defining your agents](#defining-your-agents), which you need before the
 first run.
 
-The agents never write to GitHub. They are given six read-only tools and
+The agents never write to GitHub. They are given read-only tools and
 propose structured findings; deterministic code then decides what actually gets
 published: every finding must pass a schema check, name a file in the pull
 request, anchor to a line the pull request actually added, and clear a

@@ -44,7 +44,17 @@ function makeGithub() {
     listChangedFiles: vi.fn(async () => changedFiles),
     getDiff: vi.fn(async () => "diff --git a/src/sessions.ts b/src/sessions.ts\n"),
     getFileContents: vi.fn(async () => "export const sessions = [];\n"),
-    searchCode: vi.fn(async () => [{ path: "src/sessions.ts", name: "sessions.ts" }]),
+    searchCode: vi.fn(async () => ({
+      matches: [
+        {
+          path: "src/sessions.ts",
+          name: "sessions.ts",
+          snippets: ["export function createSession() {"],
+        },
+      ],
+      totalCount: 1,
+      incompleteResults: false,
+    })),
     listReviewComments: vi.fn(async () => []),
     createCheckRun: vi.fn(async () => ({ id: 987 })),
     createReview: vi.fn(async () => ({ id: 654 })),
@@ -71,8 +81,9 @@ function run(tools: ToolSet, name: string, input: unknown): Promise<unknown> {
 }
 
 describe("createReviewTools", () => {
-  it("exposes exactly the six read-only tools from the spec", () => {
+  it("exposes exactly the seven read-only tools from the spec", () => {
     expect(Object.keys(createReviewTools(makeGithub(), scope)).sort()).toEqual([
+      "find_importers",
       "get_base_file",
       "get_diff",
       "get_file",
@@ -93,6 +104,7 @@ describe("createReviewTools", () => {
     ["get_file", "path"],
     ["get_base_file", "path"],
     ["search_repository", "query"],
+    ["find_importers", "path"],
   ])("describes %s's %s parameter", (name, parameter) => {
     const tools = createReviewTools(makeGithub(), scope);
     const shape = (
@@ -195,9 +207,102 @@ describe("review tool execution", () => {
       repo: scope.repo,
       query: "createSession",
     });
-    expect(JSON.parse(result as string)).toEqual([
-      { path: "src/sessions.ts", name: "sessions.ts" },
-    ]);
+    expect(JSON.parse(result as string)).toEqual({
+      totalCount: 1,
+      incompleteResults: false,
+      matches: [
+        {
+          path: "src/sessions.ts",
+          name: "sessions.ts",
+          snippets: ["export function createSession() {"],
+        },
+      ],
+    });
+  });
+
+  it("caps snippets so an oversized search result is still valid JSON", async () => {
+    const github = makeGithub();
+    github.searchCode.mockResolvedValueOnce({
+      matches: Array.from({ length: 20 }, (_unused, index) => ({
+        path: `src/file-${index}.ts`,
+        name: `file-${index}.ts`,
+        snippets: Array.from({ length: 5 }, () => "x".repeat(5_000)),
+      })),
+      totalCount: 843,
+      incompleteResults: true,
+    });
+
+    const result = (await run(createReviewTools(github, scope), "search_repository", {
+      query: "createSession",
+    })) as string;
+
+    // truncate() would slice the JSON mid-string; the caps must land first.
+    expect(result).not.toMatch(/truncated/i);
+    const payload = JSON.parse(result);
+    expect(payload.totalCount).toBe(843);
+    expect(payload.incompleteResults).toBe(true);
+    for (const match of payload.matches) {
+      expect(match.snippets).toHaveLength(2);
+      expect(match.snippets[0].length).toBeLessThanOrEqual(401);
+    }
+  });
+
+  it("runs find_importers with the file's name stem, quoted, minus itself", async () => {
+    const github = makeGithub();
+
+    const result = (await run(createReviewTools(github, scope), "find_importers", {
+      path: "src/sessions.ts",
+    })) as string;
+
+    expect(github.searchCode).toHaveBeenCalledExactlyOnceWith({
+      owner: scope.owner,
+      repo: scope.repo,
+      query: '"sessions"',
+    });
+    const payload = JSON.parse(result);
+    expect(payload.searchedFor).toBe("sessions");
+    // The stub's only match is the subject file itself.
+    expect(payload.matches).toEqual([]);
+  });
+
+  it.each([
+    ["src/session/index.ts", "session"],
+    ["pkg/auth/__init__.py", "auth"],
+    ["crates/parser/src/mod.rs", "parser"],
+    ["cmd/server/main.go", "server"],
+    ["types/session.d.ts", "session.d"],
+  ])("derives a distinctive stem for %s", async (path, stem) => {
+    const github = makeGithub();
+
+    await run(createReviewTools(github, scope), "find_importers", { path });
+
+    expect(github.searchCode).toHaveBeenCalledExactlyOnceWith({
+      owner: scope.owner,
+      repo: scope.repo,
+      query: `"${stem}"`,
+    });
+  });
+
+  it.each([
+    ["every segment is generic", "src/index.ts"],
+    ["the stem would carry a qualifier", "org:someone.ts"],
+    ["the stem would carry a space", "a b/index.ts"],
+  ])("rejects find_importers when %s, client untouched", async (_label, path) => {
+    const github = makeGithub();
+
+    await expect(
+      run(createReviewTools(github, scope), "find_importers", { path }),
+    ).rejects.toThrow(/no distinctive name/i);
+    expect(github.searchCode).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["path traversal", { path: "../secrets/config.yml" }],
+    ["absolute path", { path: "/etc/passwd" }],
+    ["extra properties", { path: "src/sessions.ts", ref: "deadbeef" }],
+  ])("rejects find_importers input with %s", (_label, input) => {
+    const tools = createReviewTools(makeGithub(), scope);
+    expect(schemaOf(tools, "find_importers").safeParse(input).success).toBe(false);
   });
 
   it("truncates oversized tool results", async () => {
