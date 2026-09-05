@@ -1,7 +1,5 @@
 /**
- * What a review agent is. An AgentDefinition is the whole definition of
- * one agent: everything else — the tool loop, the prompt scaffold, the
- * Langfuse prompt key, the synthesiser's preamble — is derived from it,
+ * What a review agent is. Everything else is derived from an AgentDefinition,
  * so a run can carry any number of agents without code changes.
  */
 import { findingCategorySchema, type FindingCategory } from "@pr-review/schemas";
@@ -26,9 +24,8 @@ export interface AgentDefinition {
   /** Optional agent-specific addition to "# Context and tools". */
   contextGuidance?: string;
   /**
-   * Optional glob patterns gating whether the agent runs at all. It
-   * never narrows what a running agent reviews, and never reaches a
-   * prompt: an agent it wakes still sees the whole pull request.
+   * Optional globs gating whether the agent runs at all. Never narrows what a
+   * running agent reviews, and never reaches a prompt.
    */
   paths?: readonly string[];
 }

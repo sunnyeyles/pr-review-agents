@@ -35,11 +35,7 @@ export function repositoryAgentConfigYaml(): string {
 
 let cachedAgents: AgentDefinition[] | undefined;
 
-/**
- * This repository's own configured agents — the starter set the README
- * points newcomers at. Tests use it as their fixture, which also keeps
- * the shipped file honest: nothing else defines agents in code.
- */
+/** This repository's own configured agents, used as the test fixture. */
 export function repositoryAgents(): AgentDefinition[] {
   cachedAgents ??= parseAgentConfig(
     repositoryAgentConfigYaml(),

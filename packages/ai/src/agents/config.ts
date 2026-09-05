@@ -1,8 +1,6 @@
 /**
  * The agent set a run works with, read from repository configuration.
- * The action ships specialists (agents/specialists/) but runs none of
- * them on its own: an entry names one, or writes a definition out in
- * full, so the agents a review runs are exactly the ones configured.
+ * Shipped specialists never run unless an entry names one.
  */
 import { parse as parseYaml } from "yaml";
 import { z } from "zod";
@@ -22,10 +20,8 @@ export class AgentConfigError extends Error {
   }
 }
 
-// Entries are checked one at a time below rather than through a union:
-// invalid_union nests each branch's issues where issueList cannot reach
-// them, and a union cannot know which branch the author meant, so it
-// would report the string branch's failure alongside the real problem.
+// Checked one at a time, not as a union: invalid_union hides each branch's
+// issues from issueList and cannot know which branch the author meant.
 const agentConfigSchema = z
   .object({
     agents: z.array(z.unknown()).min(1),
@@ -63,9 +59,8 @@ function namesBuiltIn(entry: unknown): boolean {
 }
 
 /**
- * One `agents:` entry: the name of a built-in specialist, that name with
- * its own `paths`, or a definition written out in full. Errors carry the
- * entry's position, since a list offers nothing else to point at.
+ * One `agents:` entry: a specialist name, that name with `paths`, or a full
+ * definition. Errors carry the entry's position.
  */
 function resolveAgentEntry(
   entry: unknown,
@@ -171,9 +166,8 @@ function missingConfigMessage(path: string): string {
 }
 
 /**
- * The agent set for one run. A missing or unusable config fails loudly:
- * a review that ran the wrong agents — or none — looks exactly like a
- * clean bill of health.
+ * The agent set for one run. A missing or unusable config throws: a review
+ * that ran no agents looks exactly like a clean bill of health.
  */
 export async function loadAgentDefinitions(
   options: LoadAgentDefinitionsOptions,

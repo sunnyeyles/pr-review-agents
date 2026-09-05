@@ -8,13 +8,8 @@ import { createReviewAgent, type ReviewAgentDeps } from "./runtime.js";
 import type { ReviewAgent } from "../agent-contract.js";
 
 /**
- * Narrows an agent set by name — comma-separated categories, with `all`
- * selecting every agent wherever it appears. Always in `available` order,
- * since agent order decides the order findings reach the synthesiser. An
- * unknown name throws rather than quietly running a narrower review.
- *
- * A named agent comes back without its `paths`: asking for an agent by
- * name is asking for it, so its gate no longer decides.
+ * Narrows an agent set by name, in `available` order. An unknown name throws.
+ * A named agent comes back without its `paths`: naming it overrides the gate.
  */
 export function resolveAgentDefinitions(
   selection: string,
@@ -70,10 +65,8 @@ export interface GatedAgents {
 }
 
 /**
- * Splits an agent set by whether the pull request touched the paths each
- * agent declared. A gate, not a narrowing: an agent it wakes still
- * reviews the whole pull request. An agent declaring no paths always
- * runs, so a configuration without them behaves exactly as before.
+ * Splits an agent set by whether the PR touched each agent's declared paths.
+ * A gate, not a narrowing: a woken agent still reviews the whole PR.
  */
 export function gateAgentsByPaths(
   agents: readonly AgentDefinition[],

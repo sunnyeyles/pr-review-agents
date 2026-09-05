@@ -1,18 +1,7 @@
 #!/usr/bin/env bash
 #
-# Tests for cleanup-merged-worktrees.sh.
-#
-# The hook deletes work, and it decides whether to by walking a ladder of rungs
-# whose order is load-bearing. ESLint cannot check a shell script and neither can
-# `turbo test`, so this is what stops the ladder drifting — the same argument
-# apps/dashboard/lib/naming.test.ts makes for identifier rules.
-#
-# Everything runs against throwaway repositories under mktemp -d, with `gh`
-# stubbed on PATH, and almost every case runs in --dry-run, so a bug in the test
-# cannot eat a real worktree. One case at the end exercises real removal.
-#
-# Deliberately NOT wired into `turbo test`: it shells out to git and depends on
-# a PATH stub, which is a poor fit for a parallel task runner. Run it directly:
+# Tests for cleanup-merged-worktrees.sh. Throwaway repos under mktemp -d with
+# `gh` stubbed on PATH, almost all in --dry-run. Not part of `pnpm test`:
 #
 #   bash .claude/hooks/cleanup-merged-worktrees.test.sh
 

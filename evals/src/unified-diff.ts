@@ -1,7 +1,6 @@
 /**
- * Unified-diff construction for the evaluation fixtures, which store
- * whole files rather than diffs. A plain LCS walk grouped into hunks;
- * fixture files are small, so the O(n*m) table costs nothing.
+ * Unified-diff construction for fixtures, which store whole files. A plain LCS
+ * walk grouped into hunks; fixture files are small.
  */
 import { createHash } from "node:crypto";
 

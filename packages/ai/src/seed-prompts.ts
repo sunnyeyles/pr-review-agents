@@ -1,7 +1,6 @@
 /**
- * Publishes the in-code system prompts to Langfuse. Kept separate from
- * prompts.ts so nothing on the review path can reach a writer.
- * The repository is the source of truth for the baseline, not every version.
+ * Publishes the in-code system prompts to Langfuse. Separate from prompts.ts
+ * so nothing on the review path can reach a writer.
  */
 import {
   createConsoleLogger,
@@ -106,9 +105,8 @@ interface SeedManagedPromptsOptions {
 type SeedReport = Record<string, SeedOutcome>;
 
 /**
- * Publishes each managed prompt Langfuse does not already hold at this
- * label. Unchanged prompts create no version — Langfuse versions are
- * permanent. Never rejects; each prompt succeeds or fails alone.
+ * Publishes each managed prompt Langfuse does not already hold at this label.
+ * Never rejects; each prompt succeeds or fails alone.
  */
 export async function seedManagedPrompts(
   writer: LangfusePromptWriter,

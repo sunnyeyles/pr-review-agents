@@ -1,10 +1,6 @@
 /**
- * The model side of the review system: the provider-neutral client seam,
- * prompt management, and the model-calling units under `agents/`. Agents
- * only propose findings; publishing lives in @pr-review/reviewer.
- *
- * A name reaches this barrel when something outside the package imports
- * it; everything else stays reachable by its own module path.
+ * The model side of the review system: the client seam, prompts, and `agents/`.
+ * Agents only propose findings; publishing lives in @pr-review/reviewer.
  */
 export {
   createModelClient,

@@ -1,8 +1,6 @@
 /**
- * Renders validated findings into a review body plus one inline comment
- * per line-anchored finding; the caller owns the API call. Anchoring is
- * settled upstream: validateFindings already drops findings that are not
- * on an added line, which is GitHub's own condition for a comment.
+ * Renders validated findings into a review body plus inline comments; the
+ * caller owns the API call. validateFindings already settles anchoring.
  */
 import type { SkippedAgent } from "@pr-review/ai";
 import type { ReviewComment } from "@pr-review/github";
@@ -27,9 +25,8 @@ export interface RenderedReview {
 }
 
 /**
- * Identifies a finding across pushes. File and title, not line: a later
- * push shifts line numbers, and the same finding at a new line is still
- * the same finding.
+ * Identifies a finding across pushes. File and title, not line: a later push
+ * shifts line numbers.
  */
 function findingKey(finding: ReviewFinding): string {
   return `${finding.file}|${normaliseTitle(finding.title)}`;
@@ -67,9 +64,8 @@ function commentBody(finding: ReviewFinding): string {
 }
 
 /**
- * undefined when there is nothing worth posting; a clean PR gets no
- * review, and neither does one whose findings all stand as comments
- * from an earlier commit.
+ * undefined when there is nothing worth posting: a clean PR, or one whose
+ * findings all stand as comments from an earlier commit.
  */
 export function renderReview(
   findings: readonly ReviewFinding[],

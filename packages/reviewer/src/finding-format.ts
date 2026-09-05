@@ -50,9 +50,8 @@ export function pathList(paths: readonly string[]): string {
 }
 
 /**
- * Which agents sat this pull request out. A skipped agent is intended,
- * unlike a failed one, but it still has to be said: a review nobody can
- * see was narrowed is indistinguishable from a clean one.
+ * Which agents sat this pull request out. A narrowed review nobody can see was
+ * narrowed is indistinguishable from a clean one.
  */
 export function skipNotes(skippedAgents: readonly SkippedAgent[]): string[] {
   return skippedAgents.map(

@@ -1,7 +1,6 @@
 /**
- * The shared review-agent runtime — the tool loop every agent runs. A
- * AgentDefinition supplies the role, focus, and category; the rest is
- * identical for every agent, however many are configured.
+ * The shared review-agent runtime — the tool loop every agent runs. An
+ * AgentDefinition supplies role, focus and category; the rest is identical.
  */
 import { startObservation } from "@langfuse/tracing";
 import type { GithubInstallationClient } from "@pr-review/github";

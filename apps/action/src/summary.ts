@@ -1,7 +1,6 @@
 /**
- * The fork fallback: when the workflow token cannot create a check run,
- * the review goes to the job summary instead. Reacts to the permission
- * error GitHub returns rather than predicting it from the payload.
+ * The fork fallback: without permission to create a check run, the review goes
+ * to the job summary. Reacts to the real error, never predicts it.
  */
 import { appendFile } from "node:fs/promises";
 

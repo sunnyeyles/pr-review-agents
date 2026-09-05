@@ -1,9 +1,6 @@
 /**
- * Renders validated findings into the check-run payload; the caller owns
- * the API call. The conclusion is never "failure" — the review is
- * advisory — and never "success" when an agent failed. The summary is
- * complete on its own, so the caller suppresses the annotations when the
- * review already carries the same findings inline.
+ * Renders validated findings into the check-run payload; the caller owns the
+ * API call. Never "failure" (advisory), never "success" when an agent failed.
  */
 import type {
   AnnotationLevel,
@@ -71,8 +68,7 @@ function annotate(finding: ReviewFinding, line: number): CheckRunAnnotation {
 
 /**
  * Names the files nobody reviewed, so the reason a gate held is legible
- * without opening the pull request. Empty for a pull request that
- * changed nothing, like the other note builders.
+ * without opening the pull request.
  */
 function changedFilesNote(changedFiles: readonly string[]): string[] {
   if (changedFiles.length === 0) {
@@ -88,9 +84,8 @@ function changedFilesNote(changedFiles: readonly string[]): string[] {
 }
 
 /**
- * The check run for a pull request no agent's paths matched. Never
- * "success": nothing was reviewed, and a green check saying so is
- * indistinguishable from a clean bill of health.
+ * The check run for a pull request no agent's paths matched. Never "success":
+ * a green check reads as a clean bill of health.
  */
 export function renderNoAgentMatched(
   skippedAgents: readonly SkippedAgent[],

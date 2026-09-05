@@ -1,8 +1,6 @@
 /**
- * The agent evaluation suite: is the review any good? Each fixture is a
- * real pull request run through the real pipeline with the real model.
- * These call the model, cost tokens, and are non-deterministic, so they
- * live outside `pnpm test` and run on demand with `pnpm eval`.
+ * The agent evaluation suite: real pipeline, real model. Costs tokens and is
+ * non-deterministic, so it runs on demand with `pnpm eval`, not `pnpm test`.
  */
 import process from "node:process";
 

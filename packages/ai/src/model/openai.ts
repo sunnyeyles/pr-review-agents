@@ -1,7 +1,6 @@
 /**
  * The OpenAI adapter for the neutral model seam, over Chat Completions.
- * A `baseUrl` also points it at any OpenAI-compatible endpoint that
- * accepts `max_completion_tokens`.
+ * `baseUrl` also points it at any OpenAI-compatible endpoint.
  */
 import OpenAI from "openai";
 
@@ -117,9 +116,8 @@ function fromOpenAiMessage(
 }
 
 /**
- * `prompt_tokens` counts cached tokens too, unlike Anthropic's, so the
- * cached share is subtracted to keep `inputTokens` the uncached remainder.
- * OpenAI caches implicitly and never reports a cache write.
+ * OpenAI's `prompt_tokens` includes cached tokens, so the cached share is
+ * subtracted to leave `inputTokens` as the uncached remainder.
  */
 function fromOpenAiUsage(
   usage: OpenAI.Completions.CompletionUsage | undefined,

@@ -18,9 +18,8 @@ export const PROVIDER_ENV = "MODEL_PROVIDER";
 export const MODEL_ENV = "MODEL_ID";
 
 /**
- * Narrows which review agents the evaluations run, spelled like the
- * action's `agents` input. Expectations for an agent that no longer runs
- * will fail, and should.
+ * Narrows which agents the evaluations run, spelled like the action's `agents`
+ * input. Expectations for an agent that no longer runs will fail, and should.
  */
 export const AGENTS_ENV = "REVIEW_AGENTS";
 

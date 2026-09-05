@@ -1,36 +1,6 @@
 /**
- * Smoke-tests the built action bundle (apps/action/dist/index.mjs).
- *
- * The bundle is the only artefact consumers execute, and it is produced
- * by a step nothing else exercises: esbuild rewrites the whole workspace
- * into one file, so a dependency that will not bundle, or an import that
- * the Actions Node runtime rejects, is invisible to `tsc` and to vitest —
- * both of which read the TypeScript sources, never the bundle. This check
- * runs the artefact itself, and asserts the two properties the release
- * depends on:
- *
- *   1. It imports cleanly under the Node major the action declares in
- *      action.yml (`runs.using: node<major>`).
- *   2. It performs no work when the GITHUB_ACTIONS environment marker is
- *      absent — the contract src/index.ts's entrypoint guard promises, and
- *      what makes the module safe to import from tests and from here.
- *
- * Inertness is proved by a pair of runs rather than a single one, because
- * "printed nothing" is also what a broken-and-silent bundle would do:
- *
- *   inert run  — marker absent: must exit 0 with empty stdout and stderr,
- *                and must still expose its public exports, so we know the
- *                module graph really loaded.
- *   armed run  — marker present and nothing else: main() must run and fail
- *                fast on the missing GITHUB_EVENT_PATH, logging
- *                review.failed and exiting non-zero.
- *
- * The armed run reaches no network and touches no repository: main()'s
- * first act is the GITHUB_EVENT_PATH check. Together the two runs show the
- * guard is load-bearing — the difference in behaviour comes from the marker
- * and nothing else.
- *
- * Usage: node scripts/smoke-bundle.mjs   (after building the bundle)
+ * Smoke-tests apps/action/dist/index.mjs, which tsc and vitest never read: it
+ * must import cleanly on action.yml's Node major and be inert without CI env.
  */
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -45,13 +15,8 @@ const bundlePath = path.join(actionDir, "dist", "index.mjs");
 const actionManifest = path.join(actionDir, "action.yml");
 
 /**
- * An export the bundle must expose. Importing a module that throws is an
- * obvious failure; importing one that silently bundled to nothing is not,
- * so we look for something real on the namespace. This is the entrypoint
- * guard itself — the function that makes the bundle an action — so it is
- * owned by src/index.ts rather than re-exported from a sibling module,
- * and it cannot vanish without the action ceasing to work. If it is ever
- * renamed on purpose, rename it here too.
+ * An export the bundle must expose, so a bundle that silently compiled to
+ * nothing fails too. Rename here if src/index.ts renames it.
  */
 const requiredExport = "runEntrypoint";
 
@@ -77,11 +42,8 @@ function scrubbedEnv() {
 }
 
 /**
- * Imports the bundle in a child process and reports what it saw. The probe
- * writes its findings to a file rather than stdout, so the parent can hold
- * the child's stdout and stderr to the "not one byte" standard the inert
- * run requires. It never calls process.exit(), so an exit code set by the
- * bundle's own top-level catch survives.
+ * Imports the bundle in a child process. Findings go to a file, not stdout, so
+ * the inert run's "not one byte" check holds. Never calls process.exit().
  */
 const probeSource = `
 import { writeFileSync } from "node:fs";

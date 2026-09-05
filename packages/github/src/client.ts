@@ -1,7 +1,6 @@
 /**
- * The read-only PR loading and check-run publishing surface the review
- * pipeline (and the review agents' tools) consume. Implemented against
- * Octokit in app.ts; tests stub it structurally.
+ * The read-only PR loading and check-run publishing surface. Implemented
+ * against Octokit in app.ts; tests stub it structurally.
  */
 
 /** The name every check run this system publishes must use. */
@@ -126,8 +125,7 @@ export interface ExistingReviewComment {
 
 /**
  * A GitHub client for one repository's installation. Read-only except
- * createCheckRun and createReview, and every method is explicitly
- * repository-scoped.
+ * createCheckRun and createReview; every method is repository-scoped.
  */
 export interface GithubInstallationClient {
   getPullRequest(ref: PullRequestRef): Promise<PullRequestDetails>;

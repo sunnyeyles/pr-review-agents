@@ -1,7 +1,6 @@
 /**
- * Drives the real review pipeline for one fixture. Only two things
- * differ from production: the GitHub client serves a fixture
- * repository, and the publish step captures the rendered check run.
+ * Drives the real review pipeline for one fixture. Only the GitHub client and
+ * the publish step differ from production.
  */
 import {
   createModelClient,

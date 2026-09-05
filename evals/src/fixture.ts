@@ -1,7 +1,6 @@
 /**
- * Loads one evaluation fixture: `repo/` is the tree at the head SHA and
- * `base/` holds the previous contents of the modified files. Everything
- * the pipeline sees is derived from those two trees.
+ * Loads one evaluation fixture: `repo/` is the tree at the head SHA, `base/`
+ * the previous contents of the modified files.
  */
 import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join, posix, relative, resolve, sep } from "node:path";

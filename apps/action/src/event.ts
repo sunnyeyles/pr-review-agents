@@ -1,7 +1,6 @@
 /**
- * Reads the pull request out of the Actions event payload. An Actions
- * event carries no `installation.id` — the workflow token scopes the
- * request — so the payload schema is local to this app.
+ * Reads the pull request out of the Actions event payload. The schema is local
+ * to this app: an Actions event carries no `installation.id`.
  */
 import { isSupportedPullRequestAction } from "@pr-review/schemas";
 import type { ReviewTarget } from "@pr-review/reviewer";

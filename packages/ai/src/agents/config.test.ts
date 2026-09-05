@@ -1,7 +1,6 @@
 /**
- * Agent configuration. There is no built-in agent set, so this is the only
- * place a run's agents can come from — and every way it can go wrong has
- * to fail loudly rather than review with fewer agents than intended.
+ * Agent configuration, the only place a run's agents come from. Every failure
+ * mode must throw rather than review with fewer agents than intended.
  */
 import { describe, expect, it } from "vitest";
 
