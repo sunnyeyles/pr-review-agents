@@ -17,6 +17,7 @@ import { extractAgentOutput } from "./output.js";
 import type { ReviewModel } from "../model.js";
 import type { ReviewAgent, ReviewContext } from "../agent-contract.js";
 import { createReviewTools, type ReviewToolScope } from "./tools.js";
+import { truncateWithMarker } from "./truncate.js";
 import { addTokenUsage, emptyTokenUsage, toTokenUsage } from "../usage.js";
 
 /** An agent-level failure (bad final output, turn cap, ...). */
@@ -40,12 +41,10 @@ const MAX_DIFF_CHARS = 80_000;
 const MAX_LISTED_FILES = 300;
 
 function truncateDiff(diff: string): string {
-  if (diff.length <= MAX_DIFF_CHARS) {
-    return diff;
-  }
-  return (
-    diff.slice(0, MAX_DIFF_CHARS) +
-    "\n[... diff truncated; use the get_file / get_diff tools for specific files]"
+  return truncateWithMarker(
+    diff,
+    MAX_DIFF_CHARS,
+    "\n[... diff truncated; use the get_file / get_diff tools for specific files]",
   );
 }
 

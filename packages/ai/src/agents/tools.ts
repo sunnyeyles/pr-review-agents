@@ -6,6 +6,8 @@ import type { GithubInstallationClient } from "@pr-review/github";
 import { tool, type ToolSet } from "ai";
 import { z } from "zod";
 
+import { truncateWithMarker } from "./truncate.js";
+
 /** The repository/PR coordinates a job pins its tools to. */
 export interface ReviewToolScope {
   owner: string;
@@ -21,10 +23,7 @@ const MAX_TOOL_RESULT_CHARS = 50_000;
 const TRUNCATION_MARKER = "\n[... truncated: result exceeded the size limit]";
 
 function truncate(content: string): string {
-  if (content.length <= MAX_TOOL_RESULT_CHARS) {
-    return content;
-  }
-  return content.slice(0, MAX_TOOL_RESULT_CHARS) + TRUNCATION_MARKER;
+  return truncateWithMarker(content, MAX_TOOL_RESULT_CHARS, TRUNCATION_MARKER);
 }
 
 /** A repository-relative path: no absolute paths, no traversal, no dot segments. */
