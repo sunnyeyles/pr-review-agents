@@ -344,6 +344,7 @@ those may masquerade as a delivered review.
 | `packages/reviewer/src/validate-findings.ts` | The trust boundary |
 | `packages/reviewer/src/render-check-run.ts` | Findings → check run payload |
 | `packages/reviewer/src/render-review.ts` | Findings → review body + inline comments |
+| `packages/reviewer/src/publish-review.ts` | Comments then check run; which surface carries the findings |
 | `.github/pr-review-agents.yml` | The agents this repository reviews with |
 | `packages/ai/src/agents/config.ts` | Reading and validating a repository's agents |
 | `packages/ai/src/agents/definition.ts` | What an agent is, and its shared system prompt |

@@ -1,0 +1,175 @@
+/**
+ * Delivery: one review, across two GitHub surfaces. Inline comments go
+ * first, and the check run annotates only what no comment carries. The
+ * ordering, the annotate decision and the comment permission fallback
+ * live here so no renderer has to know whether a network call succeeded.
+ */
+import type { SkippedAgent } from "@pr-review/ai";
+import {
+  httpStatus,
+  isPermissionError,
+  type GithubInstallationClient,
+} from "@pr-review/github";
+import type { StructuredLogger } from "@pr-review/logging";
+import type { ReviewFinding } from "@pr-review/schemas";
+
+import {
+  renderCheckRun,
+  type RenderedCheckRun,
+} from "./render-check-run.js";
+import { renderReview, type RenderedReview } from "./render-review.js";
+import type { AgentFailure } from "./review-graph.js";
+import { reviewCorrelation, type ReviewTarget } from "./review-target.js";
+
+/** What the comment publisher itself can report. */
+export type CommentsPublished = "posted" | "unavailable";
+
+/** Why this commit's findings do or do not carry inline comments. */
+export type CommentsOutcome =
+  | CommentsPublished
+  /** Every finding was already commented on an earlier commit. */
+  | "already-posted"
+  /** There was nothing to say. */
+  | "nothing-to-post";
+
+/** Delivers the rendered review; the default publishes a check run. */
+export type PublishReview = (
+  target: ReviewTarget,
+  rendered: RenderedCheckRun,
+) => Promise<void>;
+
+/** Delivers the inline review comments, naming what happened to them. */
+export type PublishReviewComments = (
+  target: ReviewTarget,
+  rendered: RenderedReview,
+) => Promise<CommentsPublished>;
+
+/** Everything one review has to say, before it is split across surfaces. */
+export interface ReviewDeliveryInput {
+  findings: readonly ReviewFinding[];
+  agentFailures: readonly AgentFailure[];
+  skippedAgents: readonly SkippedAgent[];
+  /** Finding keys already carrying a comment from an earlier commit. */
+  alreadyPosted: ReadonlySet<string>;
+}
+
+export interface ReviewDeliveryDeps {
+  publishCheckRun: PublishReview;
+  publishComments: PublishReviewComments;
+  logger: StructuredLogger;
+}
+
+/** What one review's delivery actually did. */
+export interface ReviewDelivery {
+  comments: CommentsOutcome;
+  /** Inline comments in the review that was posted; 0 otherwise. */
+  commentCount: number;
+  /** Whether the check run repeated the findings as annotations. */
+  annotated: boolean;
+}
+
+/** The default delivery: an "AI PR Review" check run on the head SHA. */
+export function createCheckRunPublisher(
+  client: GithubInstallationClient,
+): PublishReview {
+  return async (target, rendered) => {
+    await client.createCheckRun({
+      owner: target.owner,
+      repo: target.repo,
+      headSha: target.headSha,
+      conclusion: rendered.conclusion,
+      output: rendered.output,
+    });
+  };
+}
+
+/**
+ * The default delivery for inline comments: one advisory review on the
+ * head SHA. A failure is swallowed — publishing comments needs
+ * `pull-requests: write`, which a fork's token lacks, and the check run
+ * must still be published.
+ */
+export function createReviewCommentPublisher(
+  client: GithubInstallationClient,
+  logger: StructuredLogger,
+): PublishReviewComments {
+  return async (target, rendered) => {
+    try {
+      await client.createReview({
+        owner: target.owner,
+        repo: target.repo,
+        pullRequestNumber: target.pullRequestNumber,
+        commitSha: target.headSha,
+        body: rendered.body,
+        comments: rendered.comments,
+      });
+      return "posted";
+    } catch (error) {
+      // Only a permission error degrades: a fork's token cannot post
+      // comments. Anything else is rethrown, so a real bug here fails
+      // the run instead of silently falling back forever.
+      if (!isPermissionError(error)) {
+        throw error;
+      }
+      logger.info("review.comments.degraded", {
+        ...reviewCorrelation(target),
+        reason: "workflow token cannot post review comments",
+        status: httpStatus(error),
+      });
+      return "unavailable";
+    }
+  };
+}
+
+/** Annotations are the fallback surface: only when no comment carries the finding. */
+function annotates(comments: CommentsOutcome): boolean {
+  return comments !== "posted";
+}
+
+/** Comments first; the check run annotates only what nothing else carries. */
+export async function deliverReview(
+  target: ReviewTarget,
+  input: ReviewDeliveryInput,
+  deps: ReviewDeliveryDeps,
+): Promise<ReviewDelivery> {
+  const fields = reviewCorrelation(target);
+  const review = renderReview(
+    input.findings,
+    input.agentFailures,
+    input.alreadyPosted,
+    input.skippedAgents,
+  );
+
+  const comments: CommentsOutcome =
+    review === undefined
+      ? input.findings.length === 0
+        ? "nothing-to-post"
+        : "already-posted"
+      : await deps.publishComments(target, review);
+
+  const commentCount = comments === "posted" ? (review?.comments.length ?? 0) : 0;
+  if (comments === "posted") {
+    deps.logger.info("review.comments.published", {
+      ...fields,
+      commentCount,
+      carriedInBodyCount: input.findings.length - commentCount,
+    });
+  }
+
+  const annotated = annotates(comments);
+  await deps.publishCheckRun(
+    target,
+    renderCheckRun(input.findings, input.agentFailures, {
+      annotate: annotated,
+      skippedAgents: input.skippedAgents,
+    }),
+  );
+
+  deps.logger.info("review.published", {
+    ...fields,
+    findingCount: input.findings.length,
+    skippedAgents: input.skippedAgents.map((skip) => skip.agent),
+  });
+
+  return { comments, commentCount, annotated };
+}

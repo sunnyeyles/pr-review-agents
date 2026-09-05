@@ -21,11 +21,10 @@ import { findingMarker } from "./render-review.js";
 import type { ReviewPipelineResult, SynthesisState } from "./review-graph.js";
 import {
   createCheckRunPublisher,
-  reviewCorrelation,
-  reviewPullRequest,
   type PublishReview,
-  type ReviewTarget,
-} from "./review-pull-request.js";
+} from "./publish-review.js";
+import { reviewPullRequest } from "./review-pull-request.js";
+import { reviewCorrelation, type ReviewTarget } from "./review-target.js";
 
 const target: ReviewTarget = {
   owner: "octo-org",
