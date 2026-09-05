@@ -25,6 +25,7 @@ export {
   createReviewAgents,
   gateAgentsByPaths,
   resolveAgentDefinitions,
+  skippedAgentNames,
   type SkippedAgent,
 } from "./agents/agent-set.js";
 export {

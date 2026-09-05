@@ -1,8 +1,8 @@
 /**
- * Delivery across two GitHub surfaces: inline comments go first, and the
+ * Delivery: one review across two GitHub surfaces. Comments go first; the
  * check run annotates only what no comment carries.
  */
-import type { SkippedAgent } from "@pr-review/ai";
+import { skippedAgentNames, type SkippedAgent } from "@pr-review/ai";
 import {
   httpStatus,
   isPermissionError,
@@ -15,7 +15,11 @@ import {
   renderCheckRun,
   type RenderedCheckRun,
 } from "./render-check-run.js";
-import { renderReview, type RenderedReview } from "./render-review.js";
+import {
+  nothingPostedReason,
+  renderReview,
+  type RenderedReview,
+} from "./render-review.js";
 import type { AgentFailure } from "./review-pipeline.js";
 import { reviewCorrelation, type ReviewTarget } from "./review-target.js";
 
@@ -43,7 +47,7 @@ export type PublishReviewComments = (
 ) => Promise<CommentsPublished>;
 
 /** Everything one review has to say, before it is split across surfaces. */
-export interface ReviewDeliveryInput {
+interface ReviewDeliveryInput {
   findings: readonly ReviewFinding[];
   agentFailures: readonly AgentFailure[];
   skippedAgents: readonly SkippedAgent[];
@@ -51,7 +55,7 @@ export interface ReviewDeliveryInput {
   alreadyPosted: ReadonlySet<string>;
 }
 
-export interface ReviewDeliveryDeps {
+interface ReviewDeliveryDeps {
   publishCheckRun: PublishReview;
   publishComments: PublishReviewComments;
   logger: StructuredLogger;
@@ -73,8 +77,8 @@ export function createCheckRunPublisher(
 }
 
 /**
- * The default delivery for inline comments: one advisory review on the head
- * SHA. Failure is swallowed — a fork's token lacks `pull-requests: write`.
+ * One advisory review on the head SHA. A fork's token lacks
+ * `pull-requests: write`, so a permission failure must not stop the check run.
  */
 export function createReviewCommentPublisher(
   client: GithubInstallationClient,
@@ -92,8 +96,7 @@ export function createReviewCommentPublisher(
       });
       return "posted";
     } catch (error) {
-      // Only a permission error degrades. Anything else is rethrown, so a real
-      // bug fails the run instead of falling back forever.
+      // Only a permission error degrades; anything else is a real bug.
       if (!isPermissionError(error)) {
         throw error;
       }
@@ -123,8 +126,7 @@ export async function deliverReview(
 
   let comments: CommentsOutcome;
   if (review === undefined) {
-    comments =
-      input.findings.length === 0 ? "nothing-to-post" : "already-posted";
+    comments = nothingPostedReason(input.findings);
   } else {
     comments = await deps.publishComments(target, review);
     if (comments === "posted") {
@@ -137,8 +139,8 @@ export async function deliverReview(
     }
   }
 
-  // Annotations are the fallback surface: they repeat a finding only when no
-  // comment carries it. An earlier commit's comments still carry it.
+  // Annotations are the fallback surface only; an earlier commit's comments
+  // still carry their findings.
   const annotated = comments === "unavailable";
   await deps.publishCheckRun(
     target,
@@ -151,7 +153,7 @@ export async function deliverReview(
   deps.logger.info("review.published", {
     ...fields,
     findingCount: input.findings.length,
-    skippedAgents: input.skippedAgents.map((skip) => skip.agent),
+    skippedAgents: skippedAgentNames(input.skippedAgents),
     comments,
     annotated,
   });

@@ -210,11 +210,7 @@ describe("runReviewPipeline: synthesis (spec §16)", () => {
       context,
     );
 
-    expect(result.synthesis).toEqual({
-      outcome: "skipped",
-      candidates: [],
-      usage: emptyTokenUsage(),
-    });
+    expect(result.synthesis).toEqual({ outcome: "skipped", candidates: [] });
     expect(result.findings).toEqual([]);
   });
 
