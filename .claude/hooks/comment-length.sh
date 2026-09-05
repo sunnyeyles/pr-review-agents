@@ -37,9 +37,11 @@ dir=$(dirname "$file")
 command -v git >/dev/null 2>&1 || exit 0
 git -C "$dir" rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
 
+# Against HEAD, not the index: a staged long comment must still be judged added.
 added=$(
-  if git -C "$dir" ls-files --error-unmatch "$file" >/dev/null 2>&1; then
-    git -C "$dir" diff -U0 -- "$file" 2>/dev/null |
+  if git -C "$dir" rev-parse --verify HEAD >/dev/null 2>&1 &&
+    git -C "$dir" ls-files --error-unmatch "$file" >/dev/null 2>&1; then
+    git -C "$dir" diff -U0 HEAD -- "$file" 2>/dev/null |
       awk '/^@@/ {
         spec = $3
         sub(/^\+/, "", spec)

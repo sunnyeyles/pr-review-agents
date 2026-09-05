@@ -140,6 +140,35 @@ export const x = 1;
 EOF
 expect "editing a legacy block flags it" 2 "$(run_hook "$d/a.ts")"
 
+# --- staging does not launder a long comment -------------------------------
+# Diffing the index instead of HEAD would let `git add -A` hide it.
+d=$(new_repo staged)
+cat >"$d/a.ts" <<'EOF'
+/**
+ * one
+ * two
+ * three
+ */
+export const x = 1;
+EOF
+git -C "$d" add -A
+printf 'export const later = 2;\n' >>"$d/a.ts"
+expect "a staged long block is still flagged" 2 "$(run_hook "$d/a.ts")"
+
+# --- a repository with no commits at all -----------------------------------
+d="$t/no-commits"
+rm -rf "$d"
+mkdir -p "$d"
+git -C "$d" init -q
+cat >"$d/a.ts" <<'EOF'
+// one
+// two
+// three
+export const x = 1;
+EOF
+git -C "$d" add -A
+expect "staged with no HEAD is judged whole" 2 "$(run_hook "$d/a.ts")"
+
 # --- an untracked file is judged whole -------------------------------------
 d=$(new_repo untracked)
 cat >"$d/new.ts" <<'EOF'
