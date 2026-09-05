@@ -1,6 +1,6 @@
 /**
  * The GitHub Action entrypoint. Wiring only: read action inputs, build
- * the clients, hand off to the handler.
+ * the clients, hand off to reviewPullRequest.
  */
 import { readFile } from "node:fs/promises";
 import process from "node:process";
@@ -42,11 +42,12 @@ import {
 } from "@pr-review/logging";
 import {
   createCheckRunPublisher,
+  reviewCorrelation,
+  reviewPullRequest,
   runReviewPipeline,
 } from "@pr-review/reviewer";
 
 import { inspectEvent } from "./event.js";
-import { createActionHandler } from "./handler.js";
 import {
   createLangfuseRuntime,
   type LangfuseRuntime,
@@ -314,7 +315,11 @@ export async function runAction(
         ? {}
         : { systemPrompt: prompts[SYNTHESIS_PROMPT_ID] }),
     });
-    const handler = createActionHandler({
+    // Event-inspection knowledge: the reviewer only ever sees the permission
+    // failure a fork's token causes, never the fork itself.
+    logger.info("review.started", { ...reviewCorrelation(target), isFork });
+
+    await reviewPullRequest(target, {
       client,
       agents,
       // `activeAgents` is the subset the path gate woke, decided once the
@@ -341,8 +346,6 @@ export async function runAction(
       }),
       logger,
     });
-
-    await handler(target, isFork);
   } finally {
     // A flush failure never fails a review that already ran.
     if (tracing !== undefined) {
