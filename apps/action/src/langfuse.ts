@@ -3,7 +3,9 @@
  * the full OpenTelemetry Node SDK would ship unused exporters in the bundle.
  */
 import { LangfuseSpanProcessor } from "@langfuse/otel";
+import { LangfuseVercelAiSdkIntegration } from "@langfuse/vercel-ai-sdk";
 import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
+import { registerTelemetry } from "ai";
 
 export interface LangfuseRuntimeConfig {
   publicKey: string;
@@ -30,6 +32,8 @@ export function createLangfuseRuntime(
   });
 
   new NodeTracerProvider({ spanProcessors: [spanProcessor] }).register();
+  // From v7 the SDK emits spans only to a registered integration.
+  registerTelemetry(new LangfuseVercelAiSdkIntegration());
 
   return {
     async forceFlush() {

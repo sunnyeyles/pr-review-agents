@@ -7,6 +7,7 @@ import {
   finalFindingsJson,
   headSha,
   makeGithub,
+  makeModel,
   message,
   repositoryAgentConfigYaml,
   textBlock,
@@ -72,7 +73,12 @@ function pullRequestEvent(overrides: Record<string, unknown> = {}): string {
 interface Harness {
   environment: ActionEnvironment;
   entries: ReturnType<typeof createCapturingLogger>["entries"];
-  modelConfigs: { provider: string; apiKey: string; baseUrl?: string | undefined }[];
+  modelConfigs: {
+    provider: string;
+    apiKey: string;
+    baseUrl?: string | undefined;
+    modelId: string;
+  }[];
   tokenConfigs: { token: string }[];
   promptClientConfigs: { publicKey: string; secretKey: string; baseUrl: string }[];
   /** Prompt names fetched, in order, across every client built. */
@@ -146,23 +152,27 @@ function harness(
           ? Promise.reject(eventFile)
           : Promise.resolve(eventFile);
       },
-      createModelClient: (config) => {
+      createLanguageModel: (config) => {
         modelConfigs.push({
           provider: config.provider,
           apiKey: config.apiKey,
           baseUrl: config.baseUrl,
+          modelId: config.modelId,
         });
-        return {
-          provider: config.provider,
-          createMessage: vi.fn(async () => {
-            modelCalls += 1;
-            if (options.modelError !== undefined) {
-              throw options.modelError;
-            }
-            // No findings, so the synthesiser is never reached.
-            return message([textBlock(finalFindingsJson([]))], "end_turn");
-          }),
-        };
+        const { model, doGenerate } = makeModel(
+          [],
+          config.provider,
+          config.modelId,
+        );
+        doGenerate.mockImplementation(async () => {
+          modelCalls += 1;
+          if (options.modelError !== undefined) {
+            throw options.modelError;
+          }
+          // No findings, so the synthesiser is never reached.
+          return message([textBlock(finalFindingsJson([]))], "end_turn");
+        });
+        return model;
       },
       createTokenClient: (config) => {
         tokenConfigs.push({ token: config.token });
@@ -422,6 +432,7 @@ describe("runAction", () => {
         provider: "openai",
         apiKey: "sk-openai-key",
         baseUrl: "https://gateway.example/v1",
+        modelId: "gpt-test-model",
       },
     ]);
   });
@@ -446,7 +457,12 @@ describe("runAction", () => {
 
     expect(readPaths).toEqual(["/tmp/event.json"]);
     expect(modelConfigs).toEqual([
-      { provider: "anthropic", apiKey: "sk-test-key", baseUrl: undefined },
+      {
+        provider: "anthropic",
+        apiKey: "sk-test-key",
+        baseUrl: undefined,
+        modelId: "claude-test-model",
+      },
     ]);
     expect(tokenConfigs).toEqual([{ token: "ghs-test-token" }]);
     expect(events(entries)).toContain("review.started");
@@ -921,7 +937,7 @@ describe("actionEnvironment", () => {
     const environment = actionEnvironment();
     expect(environment.env).toBe(process.env);
     expect(typeof environment.readEventFile).toBe("function");
-    expect(typeof environment.createModelClient).toBe("function");
+    expect(typeof environment.createLanguageModel).toBe("function");
     expect(typeof environment.createTokenClient).toBe("function");
     expect(typeof environment.createPromptClient).toBe("function");
     expect(typeof environment.createLangfuseRuntime).toBe("function");

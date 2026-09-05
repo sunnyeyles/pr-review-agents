@@ -102,7 +102,7 @@ prompt fetch so the fetch's own spans are captured.
 | --- | --- | --- |
 | Load configured agents | `loadAgentDefinitions` | Yes — missing or malformed config |
 | Narrow to the selection | `resolveAgentDefinitions` | Yes — unknown name |
-| Model client | `createModelClient` | Yes — unknown provider or missing key |
+| Model client | `createLanguageModel` | Yes — unknown provider or missing key |
 | Langfuse tracing | `createLangfuseRuntime` | No — optional |
 | Managed prompts | `loadManagedPrompts` | No — falls back per prompt |
 | GitHub client | `createTokenClient` | Yes — missing token |

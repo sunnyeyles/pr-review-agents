@@ -24,9 +24,69 @@ import {
   textBlock,
   toolUseBlock,
 } from "../agent-test-support.js";
-import type { ModelResponse } from "../model/types.js";
+
+type ScriptedResponse = ReturnType<typeof message>;
+
+/** One provider-level call as the SDK assembled it. */
+type Call = { prompt: unknown[]; tools?: unknown[] };
 
 const correctnessAgent = repositoryAgent("correctness");
+
+/** The system instructions of one recorded call. */
+function systemOf(call: Call | undefined): string {
+  const system = (call?.prompt ?? []).find(
+    (entry) => (entry as { role?: string }).role === "system",
+  );
+  return String((system as { content?: string } | undefined)?.content ?? "");
+}
+
+/** The opening user text of one recorded call. */
+function openingOf(call: Call | undefined): string {
+  const user = (call?.prompt ?? []).find(
+    (entry) => (entry as { role?: string }).role === "user",
+  );
+  const parts = (user as { content?: { type: string; text?: string }[] })
+    ?.content;
+  return (parts ?? [])
+    .filter((part) => part.type === "text")
+    .map((part) => part.text ?? "")
+    .join("");
+}
+
+function toolNamesOf(call: Call | undefined): string[] {
+  return (call?.tools ?? [])
+    .map((tool) => String((tool as { name?: string }).name))
+    .sort();
+}
+
+/** Every Anthropic cache breakpoint in one recorded call's prompt. */
+function cacheMarkersOf(call: Call | undefined): unknown[] {
+  return (call?.prompt ?? [])
+    .map(
+      (entry) =>
+        (
+          entry as {
+            providerOptions?: { anthropic?: { cacheControl?: unknown } };
+          }
+        ).providerOptions?.anthropic?.cacheControl,
+    )
+    .filter((marker) => marker !== undefined);
+}
+
+interface ToolResultPart {
+  toolCallId: string;
+  toolName: string;
+  output: { type: string; value: unknown };
+}
+
+/** The tool results the SDK fed back into one recorded call. */
+function toolResultsOf(call: Call | undefined): ToolResultPart[] {
+  return (call?.prompt ?? [])
+    .filter((entry) => (entry as { role?: string }).role === "tool")
+    .flatMap(
+      (entry) => (entry as { content: ToolResultPart[] }).content ?? [],
+    );
+}
 
 const finding = {
   file: "src/sessions.ts",
@@ -41,15 +101,14 @@ const finding = {
 const finalJson = JSON.stringify({ findings: [finding] });
 
 function makeAgent(
-  responses: ModelResponse[],
+  responses: ScriptedResponse[],
   options: { maxTurns?: number; systemPrompts?: ReviewSystemPrompts } = {},
 ) {
-  const { model, createMessage: create, requests } = makeModel(responses);
+  const { model, doGenerate: create, calls } = makeModel(responses);
   const github = makeGithub();
   const { logger, entries } = createCapturingLogger();
   const agent = createReviewAgent(correctnessAgent, {
     model,
-    modelId: "claude-test-model",
     github,
     logger,
     ...(options.maxTurns !== undefined ? { maxTurns: options.maxTurns } : {}),
@@ -57,7 +116,7 @@ function makeAgent(
       ? { systemPrompts: options.systemPrompts }
       : {}),
   });
-  return { agent, create, requests, github, entries };
+  return { agent, create, calls: calls as unknown as Call[], github, entries };
 }
 
 describe("the Correctness agent", () => {
@@ -77,15 +136,13 @@ describe("the Correctness agent", () => {
   });
 
   it("opens with the PR title, description, changed files, and diff", async () => {
-    const { agent, create } = makeAgent([message([textBlock(finalJson)], "end_turn")]);
+    const { agent, calls } = makeAgent([
+      message([textBlock(finalJson)], "end_turn"),
+    ]);
 
     await agent.run(context);
 
-    const params = create.mock.calls[0]?.[0];
-    expect(params?.model).toBe("claude-test-model");
-    expect(params?.messages).toHaveLength(1);
-    expect(params?.messages[0]?.role).toBe("user");
-    const opening = String(params?.messages[0]?.content);
+    const opening = openingOf(calls[0]);
     expect(opening).toContain(pullRequest.title);
     expect(opening).toContain(pullRequest.body);
     expect(opening).toContain("src/sessions.ts");
@@ -93,13 +150,13 @@ describe("the Correctness agent", () => {
   });
 
   it("exposes exactly the six read-only review tools to the model", async () => {
-    const { agent, create } = makeAgent([message([textBlock(finalJson)], "end_turn")]);
+    const { agent, calls } = makeAgent([
+      message([textBlock(finalJson)], "end_turn"),
+    ]);
 
     await agent.run(context);
 
-    const params = create.mock.calls[0]?.[0];
-    const toolNames = (params?.tools ?? []).map((tool) => tool.name).sort();
-    expect(toolNames).toEqual([
+    expect(toolNamesOf(calls[0])).toEqual([
       "get_base_file",
       "get_diff",
       "get_file",
@@ -110,11 +167,13 @@ describe("the Correctness agent", () => {
   });
 
   it("hardens the system prompt against prompt injection", async () => {
-    const { agent, create } = makeAgent([message([textBlock(finalJson)], "end_turn")]);
+    const { agent, calls } = makeAgent([
+      message([textBlock(finalJson)], "end_turn"),
+    ]);
 
     await agent.run(context);
 
-    const system = create.mock.calls[0]?.[0]?.system ?? "";
+    const system = systemOf(calls[0]);
     // The hardening rules plus the correctness agent's own focus.
     expect(system).toMatch(/data.*not instructions|never instructions/is);
     expect(system).toMatch(/comments?.*(never|not).*instructions/is);
@@ -124,8 +183,8 @@ describe("the Correctness agent", () => {
     expect(system).toMatch(/(not|never).*(formatting|style)/is);
   });
 
-  it("round-trips a tool_use through the github client and replays the result", async () => {
-    const { agent, create, github } = makeAgent([
+  it("round-trips a tool call through the github client and replays the result", async () => {
+    const { agent, calls, github } = makeAgent([
       message(
         [toolUseBlock("toolu_1", "get_file", { path: "src/sessions.ts" })],
         "tool_use",
@@ -143,23 +202,18 @@ describe("the Correctness agent", () => {
       ref: headSha,
     });
 
-    const secondParams = create.mock.calls[1]?.[0];
-    expect(secondParams?.messages).toHaveLength(3);
-    expect(secondParams?.messages[1]?.role).toBe("assistant");
-    expect(secondParams?.messages[2]).toEqual({
-      role: "user",
-      content: [
-        {
-          type: "tool_result",
-          toolUseId: "toolu_1",
-          content: "export const sessions = [];\n",
-        },
-      ],
-    });
+    expect(toolResultsOf(calls[1])).toEqual([
+      {
+        type: "tool-result",
+        toolCallId: "toolu_1",
+        toolName: "get_file",
+        output: { type: "text", value: "export const sessions = [];\n" },
+      },
+    ]);
   });
 
-  it("answers malformed tool input with an error tool_result and keeps going", async () => {
-    const { agent, create, github } = makeAgent([
+  it("answers malformed tool input with an error result and keeps going", async () => {
+    const { agent, calls, github } = makeAgent([
       message(
         [toolUseBlock("toolu_1", "get_file", { path: "../../etc/passwd" })],
         "tool_use",
@@ -171,42 +225,51 @@ describe("the Correctness agent", () => {
 
     expect(findings).toEqual([finding]);
     expect(github.getFileContents).not.toHaveBeenCalled();
-    const secondParams = create.mock.calls[1]?.[0];
-    expect(secondParams?.messages[2]).toEqual({
-      role: "user",
-      content: [
-        expect.objectContaining({
-          type: "tool_result",
-          toolUseId: "toolu_1",
-          isError: true,
-        }),
-      ],
-    });
+    expect(toolResultsOf(calls[1])).toEqual([
+      expect.objectContaining({
+        toolCallId: "toolu_1",
+        output: expect.objectContaining({ type: "error-text" }),
+      }),
+    ]);
   });
 
-  it("answers an unknown tool with an error tool_result", async () => {
-    const { agent, create } = makeAgent([
+  it("answers an unknown tool with an error result", async () => {
+    const { agent, calls } = makeAgent([
       message([toolUseBlock("toolu_1", "merge_pull_request", {})], "tool_use"),
       message([textBlock(finalJson)], "end_turn"),
     ]);
 
     await agent.run(context);
 
-    const secondParams = create.mock.calls[1]?.[0];
-    expect(secondParams?.messages[2]).toEqual({
-      role: "user",
-      content: [
-        expect.objectContaining({
-          type: "tool_result",
-          toolUseId: "toolu_1",
-          isError: true,
-        }),
-      ],
-    });
+    expect(toolResultsOf(calls[1])).toEqual([
+      expect.objectContaining({
+        toolCallId: "toolu_1",
+        output: expect.objectContaining({ type: "error-text" }),
+      }),
+    ]);
   });
 
-  it("answers parallel tool_use blocks with one tool_result each", async () => {
-    const { agent, create } = makeAgent([
+  it("surfaces a failing github call to the model rather than throwing", async () => {
+    const { agent, github, calls } = makeAgent([
+      message(
+        [toolUseBlock("toolu_1", "get_file", { path: "src/missing.ts" })],
+        "tool_use",
+      ),
+      message([textBlock(finalJson)], "end_turn"),
+    ]);
+    github.getFileContents.mockRejectedValueOnce(new Error("404 not found"));
+
+    await expect(agent.run(context)).resolves.toEqual([finding]);
+    expect(toolResultsOf(calls[1])).toEqual([
+      expect.objectContaining({
+        toolCallId: "toolu_1",
+        output: { type: "error-text", value: expect.stringContaining("404") },
+      }),
+    ]);
+  });
+
+  it("answers parallel tool calls with one result each", async () => {
+    const { agent, calls } = makeAgent([
       message(
         [
           toolUseBlock("toolu_1", "get_file", { path: "src/sessions.ts" }),
@@ -219,14 +282,10 @@ describe("the Correctness agent", () => {
 
     await agent.run(context);
 
-    const secondParams = create.mock.calls[1]?.[0];
-    const results = secondParams?.messages[2]?.content;
-    expect(Array.isArray(results)).toBe(true);
-    if (Array.isArray(results)) {
-      expect(results.map((block) => (block as { toolUseId: string }).toolUseId)).toEqual(
-        ["toolu_1", "toolu_2"],
-      );
-    }
+    expect(toolResultsOf(calls[1]).map((part) => part.toolCallId)).toEqual([
+      "toolu_1",
+      "toolu_2",
+    ]);
   });
 
   it("extracts findings from a fenced JSON final message", async () => {
@@ -259,11 +318,10 @@ describe("the Correctness agent", () => {
   });
 
   it("propagates model API failures", async () => {
-    const { model } = makeModel([]);
-    model.createMessage.mockRejectedValueOnce(new Error("529 overloaded"));
+    const { model, doGenerate } = makeModel([]);
+    doGenerate.mockRejectedValueOnce(new Error("529 overloaded"));
     const agent = createReviewAgent(correctnessAgent, {
       model,
-      modelId: "claude-test-model",
       github: makeGithub(),
       logger: createCapturingLogger().logger,
     });
@@ -383,12 +441,11 @@ describe("lifecycle events (spec §26)", () => {
   });
 
   it("emits agent.failed when the model API call rejects", async () => {
-    const { model } = makeModel([]);
-    model.createMessage.mockRejectedValueOnce(new Error("529 overloaded"));
+    const { model, doGenerate } = makeModel([]);
+    doGenerate.mockRejectedValueOnce(new Error("529 overloaded"));
     const { logger, entries } = createCapturingLogger();
     const agent = createReviewAgent(correctnessAgent, {
       model,
-      modelId: "claude-test-model",
       github: makeGithub(),
       logger,
     });
@@ -412,14 +469,13 @@ describe("lifecycle events (spec §26)", () => {
       "tool_use",
       { inputTokens: 40, outputTokens: 4 },
     );
-    const { model } = makeModel([]);
-    model.createMessage
+    const { model, doGenerate } = makeModel([]);
+    doGenerate
       .mockImplementationOnce(async () => toolTurn)
       .mockRejectedValueOnce(new Error("529 overloaded"));
     const { logger, entries } = createCapturingLogger();
     const agent = createReviewAgent(correctnessAgent, {
       model,
-      modelId: "claude-test-model",
       github: makeGithub(),
       logger,
     });
@@ -460,7 +516,7 @@ describe("lifecycle events (spec §26)", () => {
 
 describe("prompt caching", () => {
   it("asks the provider to cache the stable prefix on every turn", async () => {
-    const { agent, create } = makeAgent([
+    const { agent, create, calls } = makeAgent([
       message([toolUseBlock("toolu_1", "get_diff", {})], "tool_use"),
       message([textBlock(finalJson)], "end_turn"),
     ]);
@@ -468,29 +524,27 @@ describe("prompt caching", () => {
     await agent.run(context);
 
     expect(create).toHaveBeenCalledTimes(2);
-    for (const [params] of create.mock.calls) {
-      expect(params.cachePrefix).toBe(true);
-      expect(params.system).toBe(buildReviewSystemPrompt(correctnessAgent));
+    for (const call of calls) {
+      expect(systemOf(call)).toBe(buildReviewSystemPrompt(correctnessAgent));
+      expect(cacheMarkersOf(call)).toEqual([{ type: "ephemeral" }]);
     }
   });
 
   it("sends a byte-identical prefix between turns, so the cache can hit", async () => {
     // Caching depends on turn two repeating turn one's prefix unchanged.
-    const { agent, requests } = makeAgent([
+    const { agent, calls } = makeAgent([
       message([toolUseBlock("toolu_1", "get_diff", {})], "tool_use"),
       message([textBlock(finalJson)], "end_turn"),
     ]);
 
     await agent.run(context);
 
-    const [first, second] = requests;
-    expect(second?.system).toEqual(first?.system);
+    const [first, second] = calls;
+    expect(systemOf(second)).toEqual(systemOf(first));
     expect(second?.tools).toEqual(first?.tools);
-    expect(second?.cachePrefix).toEqual(first?.cachePrefix);
-    expect(second?.messages.slice(0, first?.messages.length)).toEqual(
-      first?.messages,
-    );
-    expect(second?.messages.length).toBeGreaterThan(first?.messages.length ?? 0);
+    expect(cacheMarkersOf(second)).toEqual(cacheMarkersOf(first));
+    expect(second?.prompt.slice(0, first?.prompt.length)).toEqual(first?.prompt);
+    expect(second?.prompt.length).toBeGreaterThan(first?.prompt.length ?? 0);
   });
 
   it("reports cache writes and reads separately on agent.completed", async () => {
@@ -524,27 +578,25 @@ describe("prompt caching", () => {
 describe("pre-resolved system prompts", () => {
   it("uses the injected prompt for an agent that has one", async () => {
     const injected = "INJECTED CORRECTNESS SYSTEM PROMPT";
-    const { agent, create } = makeAgent(
+    const { agent, calls } = makeAgent(
       [message([textBlock(finalJson)], "end_turn")],
       { systemPrompts: { correctness: injected } },
     );
 
     await agent.run(context);
 
-    expect(create.mock.calls[0]?.[0]?.system).toBe(injected);
+    expect(systemOf(calls[0])).toBe(injected);
   });
 
   it("falls back to the in-code prompt for an agent that has none", async () => {
     // A map covering only other agents must leave this one untouched.
-    const { agent, create } = makeAgent(
+    const { agent, calls } = makeAgent(
       [message([textBlock(finalJson)], "end_turn")],
       { systemPrompts: { security: "SOMEONE ELSE'S PROMPT" } },
     );
 
     await agent.run(context);
 
-    expect(create.mock.calls[0]?.[0]?.system).toBe(
-      buildReviewSystemPrompt(correctnessAgent),
-    );
+    expect(systemOf(calls[0])).toBe(buildReviewSystemPrompt(correctnessAgent));
   });
 });

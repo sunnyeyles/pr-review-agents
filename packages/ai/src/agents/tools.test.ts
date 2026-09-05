@@ -3,9 +3,11 @@ import type {
   GithubInstallationClient,
   PullRequestDetails,
 } from "@pr-review/github";
+import type { Tool, ToolSet } from "ai";
 import { describe, expect, it, vi } from "vitest";
+import type { z } from "zod";
 
-import { dispatchReviewTool, reviewTools, type ReviewToolScope } from "./tools.js";
+import { createReviewTools, type ReviewToolScope } from "./tools.js";
 
 const scope: ReviewToolScope = {
   owner: "octo-org",
@@ -49,9 +51,28 @@ function makeGithub() {
   } satisfies GithubInstallationClient;
 }
 
-describe("reviewTools", () => {
+/** The SDK stores the Zod schema we passed, so tests can parse against it. */
+function schemaOf(tools: ToolSet, name: string): z.ZodType {
+  return tools[name]?.inputSchema as unknown as z.ZodType;
+}
+
+/** The SDK supplies these to `execute`; nothing under test reads them. */
+const executeOptions = {
+  toolCallId: "call-1",
+  messages: [],
+} as unknown as Parameters<NonNullable<Tool["execute"]>>[1];
+
+function run(tools: ToolSet, name: string, input: unknown): Promise<unknown> {
+  const execute = tools[name]?.execute;
+  if (execute === undefined) {
+    throw new Error(`no executable tool named ${name}`);
+  }
+  return Promise.resolve(execute(input, executeOptions));
+}
+
+describe("createReviewTools", () => {
   it("exposes exactly the six read-only tools from the spec", () => {
-    expect(reviewTools.map((tool) => tool.name).sort()).toEqual([
+    expect(Object.keys(createReviewTools(makeGithub(), scope)).sort()).toEqual([
       "get_base_file",
       "get_diff",
       "get_file",
@@ -61,161 +82,153 @@ describe("reviewTools", () => {
     ]);
   });
 
-  it("declares a strict JSON-schema input for every tool", () => {
-    for (const tool of reviewTools) {
-      expect(tool.inputSchema.type).toBe("object");
-      expect(tool.inputSchema.additionalProperties).toBe(false);
-      expect(tool.description.length).toBeGreaterThan(0);
+  it("describes every tool it exposes", () => {
+    for (const tool of Object.values(createReviewTools(makeGithub(), scope))) {
+      expect(tool.description?.length ?? 0).toBeGreaterThan(0);
     }
-  });
-
-  /** Pins the parameters: a derivation that silently drops one leaves a tool the model cannot call. */
-  it("derives each tool's parameters from its Zod schema", () => {
-    const parametersOf = (name: string): string[] =>
-      Object.keys(
-        reviewTools.find((tool) => tool.name === name)?.inputSchema
-          .properties ?? {},
-      );
-
-    expect(parametersOf("get_pull_request")).toEqual([]);
-    expect(parametersOf("list_changed_files")).toEqual([]);
-    expect(parametersOf("get_diff")).toEqual([]);
-    expect(parametersOf("get_file")).toEqual(["path"]);
-    expect(parametersOf("get_base_file")).toEqual(["path"]);
-    expect(parametersOf("search_repository")).toEqual(["query"]);
   });
 
   /** Descriptions live on the Zod schemas, where a new field is easy to forget. */
-  it("describes every parameter it exposes", () => {
-    for (const tool of reviewTools) {
-      for (const [name, schema] of Object.entries(
-        tool.inputSchema.properties,
-      )) {
-        expect(
-          (schema as { description?: string }).description,
-          `${tool.name}.${name} has no description`,
-        ).toBeTruthy();
+  it.each([
+    ["get_file", "path"],
+    ["get_base_file", "path"],
+    ["search_repository", "query"],
+  ])("describes %s's %s parameter", (name, parameter) => {
+    const tools = createReviewTools(makeGithub(), scope);
+    const shape = (
+      schemaOf(tools, name) as unknown as {
+        shape: Record<string, { description?: string }>;
       }
-    }
+    ).shape;
+    expect(Object.keys(shape)).toEqual([parameter]);
+    expect(shape[parameter]?.description).toBeTruthy();
+  });
+
+  it("offers no tool that could write to the repository", () => {
+    const tools = createReviewTools(makeGithub(), scope);
+    expect(tools["approve_pull_request"]).toBeUndefined();
+    expect(tools["create_review"]).toBeUndefined();
   });
 });
 
-describe("dispatchReviewTool", () => {
+describe("review tool execution", () => {
   it("dispatches get_pull_request to the client and returns PR details as JSON", async () => {
     const github = makeGithub();
+    const result = await run(
+      createReviewTools(github, scope),
+      "get_pull_request",
+      {},
+    );
 
-    const result = await dispatchReviewTool(github, scope, "get_pull_request", {});
-
-    expect(github.getPullRequest).toHaveBeenCalledExactlyOnceWith({
+    expect(github.getPullRequest).toHaveBeenCalledWith({
       owner: scope.owner,
       repo: scope.repo,
       pullRequestNumber: scope.pullRequestNumber,
     });
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(JSON.parse(result.content)).toMatchObject({ title: "Add rate limiting" });
-    }
+    expect(JSON.parse(result as string)).toEqual(pullRequest);
   });
 
-  it("dispatches list_changed_files and returns the file list without patches", async () => {
+  it("lists changed files without their patches", async () => {
     const github = makeGithub();
+    const result = await run(
+      createReviewTools(github, scope),
+      "list_changed_files",
+      {},
+    );
 
-    const result = await dispatchReviewTool(github, scope, "list_changed_files", {});
-
-    expect(github.listChangedFiles).toHaveBeenCalledExactlyOnceWith({
-      owner: scope.owner,
-      repo: scope.repo,
-      pullRequestNumber: scope.pullRequestNumber,
-    });
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(JSON.parse(result.content)).toEqual([
-        { filename: "src/sessions.ts", status: "modified", additions: 2, deletions: 1 },
-      ]);
-    }
+    expect(JSON.parse(result as string)).toEqual([
+      {
+        filename: "src/sessions.ts",
+        status: "modified",
+        additions: 2,
+        deletions: 1,
+      },
+    ]);
   });
 
-  it("dispatches get_diff to the client", async () => {
+  it("returns the diff verbatim", async () => {
     const github = makeGithub();
+    const result = await run(createReviewTools(github, scope), "get_diff", {});
 
-    const result = await dispatchReviewTool(github, scope, "get_diff", {});
-
-    expect(github.getDiff).toHaveBeenCalledExactlyOnceWith({
-      owner: scope.owner,
-      repo: scope.repo,
-      pullRequestNumber: scope.pullRequestNumber,
-    });
-    expect(result).toEqual({
-      ok: true,
-      content: "diff --git a/src/sessions.ts b/src/sessions.ts\n",
-    });
+    expect(github.getDiff).toHaveBeenCalled();
+    expect(result).toBe("diff --git a/src/sessions.ts b/src/sessions.ts\n");
   });
 
-  it("dispatches get_file to getFileContents at the head SHA", async () => {
+  it("reads get_file at the head commit", async () => {
     const github = makeGithub();
-
-    const result = await dispatchReviewTool(github, scope, "get_file", {
+    await run(createReviewTools(github, scope), "get_file", {
       path: "src/sessions.ts",
     });
 
-    expect(github.getFileContents).toHaveBeenCalledExactlyOnceWith({
+    expect(github.getFileContents).toHaveBeenCalledWith({
       owner: scope.owner,
       repo: scope.repo,
       path: "src/sessions.ts",
       ref: scope.headSha,
     });
-    expect(result).toEqual({ ok: true, content: "export const sessions = [];\n" });
   });
 
-  it("dispatches get_base_file to getFileContents at the base SHA", async () => {
+  it("reads get_base_file at the base commit", async () => {
     const github = makeGithub();
-
-    const result = await dispatchReviewTool(github, scope, "get_base_file", {
+    await run(createReviewTools(github, scope), "get_base_file", {
       path: "src/sessions.ts",
     });
 
-    expect(github.getFileContents).toHaveBeenCalledExactlyOnceWith({
+    expect(github.getFileContents).toHaveBeenCalledWith({
       owner: scope.owner,
       repo: scope.repo,
       path: "src/sessions.ts",
       ref: scope.baseSha,
     });
-    expect(result.ok).toBe(true);
   });
 
-  it("dispatches search_repository to searchCode scoped to the repository", async () => {
+  it("scopes search_repository to the pull request's own repository", async () => {
     const github = makeGithub();
+    const result = await run(
+      createReviewTools(github, scope),
+      "search_repository",
+      { query: "createSession" },
+    );
 
-    const result = await dispatchReviewTool(github, scope, "search_repository", {
-      query: "createSession",
-    });
-
-    expect(github.searchCode).toHaveBeenCalledExactlyOnceWith({
+    expect(github.searchCode).toHaveBeenCalledWith({
       owner: scope.owner,
       repo: scope.repo,
       query: "createSession",
     });
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(JSON.parse(result.content)).toEqual([
-        { path: "src/sessions.ts", name: "sessions.ts" },
-      ]);
-    }
+    expect(JSON.parse(result as string)).toEqual([
+      { path: "src/sessions.ts", name: "sessions.ts" },
+    ]);
   });
 
-  it("rejects an unknown tool name without touching the client", async () => {
+  it("truncates oversized tool results", async () => {
     const github = makeGithub();
+    github.getDiff.mockResolvedValueOnce("x".repeat(200_000));
 
-    const result = await dispatchReviewTool(github, scope, "approve_pull_request", {});
+    const result = (await run(
+      createReviewTools(github, scope),
+      "get_diff",
+      {},
+    )) as string;
 
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error).toMatch(/unknown tool/i);
-    }
-    expect(github.getPullRequest).not.toHaveBeenCalled();
-    expect(github.createCheckRun).not.toHaveBeenCalled();
+    expect(result.length).toBeLessThan(200_000);
+    expect(result).toMatch(/truncated/i);
   });
 
+  /** The SDK turns a rejected execute into a tool-error the model reads. */
+  it("lets a github client failure reject rather than swallowing it", async () => {
+    const github = makeGithub();
+    github.getFileContents.mockRejectedValueOnce(new Error("404 not found"));
+
+    await expect(
+      run(createReviewTools(github, scope), "get_file", {
+        path: "src/missing.ts",
+      }),
+    ).rejects.toThrow("404 not found");
+  });
+});
+
+/** The SDK validates against these before `execute` ever runs. */
+describe("review tool input schemas", () => {
   it.each([
     ["missing path", {}],
     ["non-string path", { path: 42 }],
@@ -224,13 +237,9 @@ describe("dispatchReviewTool", () => {
     ["absolute path", { path: "/etc/passwd" }],
     ["path traversal", { path: "../../secrets/config.yml" }],
     ["extra properties", { path: "src/sessions.ts", ref: "some-other-sha" }],
-  ])("rejects get_file with %s as an error result, client untouched", async (_label, input) => {
-    const github = makeGithub();
-
-    const result = await dispatchReviewTool(github, scope, "get_file", input);
-
-    expect(result.ok).toBe(false);
-    expect(github.getFileContents).not.toHaveBeenCalled();
+  ])("rejects get_file with %s", (_label, input) => {
+    const tools = createReviewTools(makeGithub(), scope);
+    expect(schemaOf(tools, "get_file").safeParse(input).success).toBe(false);
   });
 
   it.each([
@@ -240,47 +249,24 @@ describe("dispatchReviewTool", () => {
     ["an empty query", { query: "" }],
     ["an over-long query", { query: "x".repeat(300) }],
     ["a non-string query", { query: { nested: true } }],
-  ])("rejects search_repository with %s, client untouched", async (_label, input) => {
-    const github = makeGithub();
-
-    const result = await dispatchReviewTool(github, scope, "search_repository", input);
-
-    expect(result.ok).toBe(false);
-    expect(github.searchCode).not.toHaveBeenCalled();
+  ])("rejects search_repository with %s", (_label, input) => {
+    const tools = createReviewTools(makeGithub(), scope);
+    expect(schemaOf(tools, "search_repository").safeParse(input).success).toBe(
+      false,
+    );
   });
 
-  it("rejects unexpected properties on a no-input tool", async () => {
-    const github = makeGithub();
-
-    const result = await dispatchReviewTool(github, scope, "get_diff", {
-      pull_number: 7,
-    });
-
-    expect(result.ok).toBe(false);
-    expect(github.getDiff).not.toHaveBeenCalled();
+  it("rejects unexpected properties on a no-input tool", () => {
+    const tools = createReviewTools(makeGithub(), scope);
+    expect(
+      schemaOf(tools, "get_diff").safeParse({ pull_number: 7 }).success,
+    ).toBe(false);
   });
 
-  it("returns a github client failure as an error result instead of throwing", async () => {
-    const github = makeGithub();
-    github.getFileContents.mockRejectedValueOnce(new Error("404 not found"));
-
-    const result = await dispatchReviewTool(github, scope, "get_file", {
-      path: "src/missing.ts",
-    });
-
-    expect(result).toEqual({ ok: false, error: "404 not found" });
-  });
-
-  it("truncates oversized tool results", async () => {
-    const github = makeGithub();
-    github.getDiff.mockResolvedValueOnce("x".repeat(200_000));
-
-    const result = await dispatchReviewTool(github, scope, "get_diff", {});
-
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.content.length).toBeLessThan(200_000);
-      expect(result.content).toMatch(/truncated/i);
-    }
+  it("accepts a plain repository-relative path", () => {
+    const tools = createReviewTools(makeGithub(), scope);
+    expect(
+      schemaOf(tools, "get_file").safeParse({ path: "src/index.ts" }).success,
+    ).toBe(true);
   });
 });

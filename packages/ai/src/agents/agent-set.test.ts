@@ -29,7 +29,6 @@ import {
   repositoryAgents,
   textBlock,
 } from "../agent-test-support.js";
-import type { ModelResponse } from "../model/types.js";
 
 const configuredAgents = repositoryAgents();
 const correctnessAgent = repositoryAgent("correctness");
@@ -45,15 +44,14 @@ const SIX_TOOL_NAMES = [
   "search_repository",
 ];
 
-function makeDeps(responses: ModelResponse[]) {
-  const { model, createMessage } = makeModel(responses);
+function makeDeps(responses: ReturnType<typeof message>[]) {
+  const { model, doGenerate, calls } = makeModel(responses);
   const deps: ReviewAgentDeps = {
     model,
-    modelId: "test-model",
     github: makeGithub(),
     logger: createCapturingLogger().logger,
   };
-  return { deps, create: createMessage };
+  return { deps, create: doGenerate, calls };
 }
 
 /**
@@ -215,13 +213,16 @@ describe("the composed agent prompt", () => {
 describe("prompt wiring", () => {
   it("each agent sends its own agent prompt to the model", async () => {
     for (const agent of configuredAgents) {
-      const { deps, create } = makeDeps([
+      const { deps, calls } = makeDeps([
         message([textBlock(finalFindingsJson([]))], "end_turn"),
       ]);
 
       await createReviewAgent(agent, deps).run(context);
 
-      expect(create.mock.calls[0]?.[0]?.system).toBe(
+      const system = (calls[0]?.prompt ?? []).find(
+        (entry) => (entry as { role?: string }).role === "system",
+      );
+      expect((system as { content?: string } | undefined)?.content).toBe(
         buildReviewSystemPrompt(agent),
       );
     }
@@ -229,14 +230,14 @@ describe("prompt wiring", () => {
 
   it("every agent exposes the identical six read-only tools", async () => {
     for (const agent of configuredAgents) {
-      const { deps, create } = makeDeps([
+      const { deps, calls } = makeDeps([
         message([textBlock(finalFindingsJson([]))], "end_turn"),
       ]);
 
       await createReviewAgent(agent, deps).run(context);
 
-      const toolNames = (create.mock.calls[0]?.[0]?.tools ?? [])
-        .map((tool) => tool.name)
+      const toolNames = (calls[0]?.tools ?? [])
+        .map((tool) => String((tool as { name?: string }).name))
         .sort();
       expect(toolNames).toEqual(SIX_TOOL_NAMES);
     }
@@ -255,22 +256,17 @@ describe("this repository's agents over one PR context", () => {
 
     function gatedAgent(agent: (typeof configuredAgents)[number]) {
       const finding = makeFinding(agent.category);
+      const { model, doGenerate } = makeModel([]);
+      doGenerate.mockImplementation(async () => {
+        started.push(agent.category);
+        if (started.length === 3) {
+          releaseAll();
+        }
+        await allStarted;
+        return message([textBlock(finalFindingsJson([finding]))], "end_turn");
+      });
       const deps: ReviewAgentDeps = {
-        model: {
-          provider: "test-provider",
-          createMessage: async () => {
-            started.push(agent.category);
-            if (started.length === 3) {
-              releaseAll();
-            }
-            await allStarted;
-            return message(
-              [textBlock(finalFindingsJson([finding]))],
-              "end_turn",
-            );
-          },
-        },
-        modelId: "test-model",
+        model,
         github: makeGithub(),
         logger: createCapturingLogger().logger,
       };
