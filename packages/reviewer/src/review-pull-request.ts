@@ -3,7 +3,13 @@
  * -> publish. The side-effect boundary is enforced here, once, rather
  * than in each delivery-path wrapper.
  */
-import type { ReviewContext } from "@pr-review/ai";
+import {
+  emptyTokenUsage,
+  gateAgentsByPaths,
+  type AgentDefinition,
+  type ReviewContext,
+  type SkippedAgent,
+} from "@pr-review/ai";
 import {
   httpStatus,
   isPermissionError,
@@ -17,7 +23,11 @@ import {
   type StructuredLogger,
 } from "@pr-review/logging";
 
-import { renderCheckRun, type RenderedCheckRun } from "./render-check-run.js";
+import {
+  renderCheckRun,
+  renderNoAgentMatched,
+  type RenderedCheckRun,
+} from "./render-check-run.js";
 import {
   postedFindingKeys,
   renderReview,
@@ -53,10 +63,18 @@ export type PublishReviewComments = (
 export interface ReviewPullRequestDeps {
   /** Authenticated read-only GitHub client for this repository. */
   client: GithubInstallationClient;
+  /** The run's agent set, already narrowed by the `agents` input. */
+  agents: readonly AgentDefinition[];
+  /**
+   * Whether an agent's `paths` decide if it runs. Defaults to true; the
+   * caller sets it false when someone named the agents explicitly.
+   */
+  applyPathFilters?: boolean | undefined;
   /** Throws only when every agent failed; a synthesis failure is reported on the result. */
   runReviewPipeline: (
     client: GithubInstallationClient,
     context: ReviewContext,
+    agents: readonly AgentDefinition[],
   ) => Promise<ReviewPipelineResult>;
   /** Defaults to publishing a check run through `client`. */
   publishReview?: PublishReview | undefined;
@@ -185,17 +203,37 @@ function logSynthesisOutcome(
   });
 }
 
+/** A review's pipeline result, plus the agents the path gate held back. */
+export interface ReviewOutcome extends ReviewPipelineResult {
+  skippedAgents: SkippedAgent[];
+}
+
+/** The result of a review that never reached the pipeline. */
+function unreviewed(skippedAgents: SkippedAgent[]): ReviewOutcome {
+  return {
+    candidates: [],
+    agentFailures: [],
+    synthesisedCandidateCount: 0,
+    synthesisOutcome: "skipped",
+    synthesisUsage: emptyTokenUsage(),
+    findings: [],
+    skippedAgents,
+  };
+}
+
 /** Throws when the pipeline or the publish step fails; retries are the caller's. */
 export async function reviewPullRequest(
   target: ReviewTarget,
   {
     client,
+    agents,
+    applyPathFilters = true,
     runReviewPipeline,
     publishReview,
     publishReviewComments,
     logger = createConsoleLogger(),
   }: ReviewPullRequestDeps,
-): Promise<ReviewPipelineResult> {
+): Promise<ReviewOutcome> {
   const fields = reviewCorrelation(target);
   const ref = {
     owner: target.owner,
@@ -213,14 +251,55 @@ export async function reviewPullRequest(
     diffLength: diff.length,
   });
 
+  // A gate, not a narrowing: the agents this wakes still review the
+  // whole pull request, on the same context and the same prompts.
+  const { active, skipped } = applyPathFilters
+    ? gateAgentsByPaths(
+        agents,
+        changedFiles.map((file) => file.filename),
+      )
+    : { active: [...agents], skipped: [] };
+  const skippedNames = skipped.map((skip) => skip.agent);
+  for (const skip of skipped) {
+    logger.info("agent.skipped", {
+      ...fields,
+      agent: skip.agent,
+      paths: skip.paths,
+      reason: "no changed file matched",
+    });
+  }
+
+  const publish = publishReview ?? createCheckRunPublisher(client);
+  if (active.length === 0) {
+    // Publishing is not optional here. An unreviewed pull request with
+    // no check run at all is the silent narrowing this must never be.
+    logger.info("review.no_agents_matched", {
+      ...fields,
+      changedFileCount: changedFiles.length,
+      skippedAgents: skippedNames,
+    });
+    await publish(
+      target,
+      renderNoAgentMatched(
+        skipped,
+        changedFiles.map((file) => file.filename),
+      ),
+    );
+    return unreviewed(skipped);
+  }
+
   // The AI boundary: only the validate node's output reaches GitHub.
-  const review = await runReviewPipeline(client, {
-    owner: target.owner,
-    repo: target.repo,
-    pullRequest,
-    changedFiles,
-    diff,
-  });
+  const review = await runReviewPipeline(
+    client,
+    {
+      owner: target.owner,
+      repo: target.repo,
+      pullRequest,
+      changedFiles,
+      diff,
+    },
+    active,
+  );
   logSynthesisOutcome(logger, target, review);
 
   logger.info("findings.validated", {
@@ -235,6 +314,7 @@ export async function reviewPullRequest(
     review.findings,
     review.agentFailures,
     postedFindingKeys(await listPostedComments(client, ref, target, logger)),
+    skipped,
   );
   const publishComments =
     publishReviewComments ?? createReviewCommentPublisher(client, logger);
@@ -254,14 +334,15 @@ export async function reviewPullRequest(
 
   const rendered = renderCheckRun(review.findings, review.agentFailures, {
     annotate: !commented,
+    skippedAgents: skipped,
   });
-  const publish = publishReview ?? createCheckRunPublisher(client);
   await publish(target, rendered);
 
   logger.info("review.published", {
     ...fields,
     findingCount: review.findings.length,
+    skippedAgents: skippedNames,
   });
 
-  return review;
+  return { ...review, skippedAgents: skipped };
 }

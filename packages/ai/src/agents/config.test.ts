@@ -110,6 +110,60 @@ describe("parseAgentConfig", () => {
   });
 });
 
+describe("parseAgentConfig: path filters", () => {
+  const gatedYaml = `${performanceYaml}    paths:
+      - "packages/**"
+      - "!**/*.test.ts"
+`;
+
+  it("keeps an agent's paths and omits them otherwise", () => {
+    expect(parseAgentConfig(performanceYaml, PATH)[0]?.paths).toBeUndefined();
+    expect(parseAgentConfig(gatedYaml, PATH)[0]?.paths).toEqual([
+      "packages/**",
+      "!**/*.test.ts",
+    ]);
+  });
+
+  it("gates a built-in through the `agent:` form", () => {
+    const [agent] = parseAgentConfig(
+      'agents:\n  - agent: security\n    paths: ["packages/github/**"]\n',
+      PATH,
+    );
+
+    expect(agent?.category).toBe("security");
+    expect(agent?.role).toBe("Security reviewer");
+    expect(agent?.paths).toEqual(["packages/github/**"]);
+  });
+
+  it("accepts the `agent:` form without paths, like the bare string", () => {
+    expect(parseAgentConfig("agents:\n  - agent: security\n", PATH)).toEqual(
+      parseAgentConfig("agents:\n  - security\n", PATH),
+    );
+  });
+
+  it("names the built-ins when the `agent:` form misspells one", () => {
+    expect(() =>
+      parseAgentConfig("agents:\n  - agent: securty\n", PATH),
+    ).toThrow(/unknown built-in agent: "securty"/);
+  });
+
+  it("rejects an unknown key beside `agent:`", () => {
+    // Otherwise `path:` would drop the gate and run the agent always.
+    expect(() =>
+      parseAgentConfig('agents:\n  - agent: security\n    path: ["src/**"]\n', PATH),
+    ).toThrow(AgentConfigError);
+  });
+
+  it("rejects paths that would match nothing", () => {
+    // Each of these retires the agent in silence otherwise.
+    for (const paths of ['[]', '["!**/*.md"]', '["/packages/**"]', '["./src/**"]']) {
+      expect(() =>
+        parseAgentConfig(`${performanceYaml}    paths: ${paths}\n`, PATH),
+      ).toThrow(AgentConfigError);
+    }
+  });
+});
+
 describe("loadAgentDefinitions", () => {
   it("reads the default path", async () => {
     const paths: string[] = [];

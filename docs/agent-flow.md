@@ -139,6 +139,29 @@ const [pullRequest, changedFiles, diff] = await Promise.all([
 agents see it, and `validate` filters against it — so validation can never
 check findings against a different file list than the one the agents reviewed.
 
+#### 3a · The path gate
+
+`packages/ai/src/agents/agent-set.ts` → `gateAgentsByPaths`
+
+The agent set was resolved at boot, before the pull request existed. This is
+the first point where an agent's `paths` can be answered, so the gate runs
+here — pure, over `changedFiles[].filename`:
+
+```ts
+const { active, skipped } = gateAgentsByPaths(agents, filenames);
+```
+
+A gate, not a narrowing: the agents it wakes get the same `ReviewContext` and
+the same prompts as always, so the cache prefix they share is untouched. An
+agent with no `paths` is always active.
+
+Every skipped agent is logged as `agent.skipped` and named in the check-run
+summary. When `active` is empty the pipeline is never built — `buildReviewGraph`
+throws on an empty set, and more to the point a review that ran nothing must
+publish `renderNoAgentMatched`'s neutral check rather than a clean bill of
+health. The `agents` input overrides the gate: naming agents is asking for
+those agents.
+
 ### 4 · The graph
 
 `packages/reviewer/src/review-graph.ts` → `buildReviewGraph` (line 196)
@@ -285,6 +308,8 @@ confidence score dies — regardless of how confident the model sounded.
 | No findings, no agent failures | `success` — "No issues found" |
 | Any findings | `neutral` — advisory; never blocks a merge |
 | An agent failed, even with zero findings | `neutral` — an incomplete review must not publish a clean bill of health |
+| An agent was skipped by its `paths` | Unchanged — a skip is configured, not a failure; the summary names it |
+| **No agent matched** | `neutral`, "No agent reviewed this pull request" — the one case where nothing was read at all |
 
 Line-anchored findings also become inline annotations (GitHub caps these at 50
 per request).
@@ -322,7 +347,8 @@ those may masquerade as a delivered review.
 | `.github/pr-review-agents.yml` | The agents this repository reviews with |
 | `packages/ai/src/agents/config.ts` | Reading and validating a repository's agents |
 | `packages/ai/src/agents/definition.ts` | What an agent is, and its shared system prompt |
-| `packages/ai/src/agents/agent-set.ts` | Narrowing an agent set, building its agents |
+| `packages/ai/src/agents/agent-set.ts` | Narrowing an agent set, gating it by path, building its agents |
+| `packages/ai/src/agents/path-filter.ts` | What a `paths` list is, and what it matches |
 | `packages/ai/src/agents/synthesiser.ts` | The single refining model call |
 | `packages/ai/src/agents/runtime.ts` | The shared agentic loop |
 | `packages/ai/src/agents/tools.ts` | The six read-only tools |
@@ -339,6 +365,9 @@ those may masquerade as a delivered review.
 | Malformed `pull_request` payload | **Fails** |
 | One or two agents fail | Review continues; names listed in the check run |
 | **Every** agent fails | **Fails** — re-runnable from the Actions UI |
+| An agent's `paths` match nothing | Agent is skipped; named in the check run and logged |
+| No agent's `paths` match | Clean no-op with a neutral check run; **no model call** |
+| A `paths` pattern is malformed or matches nothing by construction | **Fails** before any model call |
 | Synthesis fails | Raw candidates published instead |
 | A tool call fails | Reported to the model, loop continues |
 | Langfuse unreachable | In-code prompts used; no traces |
@@ -352,6 +381,8 @@ from the logs alone.
 
 ```
 review.started → review.loaded
+  → agent.skipped ×N            (paths matched nothing)
+  → review.no_agents_matched    (and the review ends here)
   → agent.started ×N → agent.completed / agent.failed ×N
   → synthesis.started → synthesis.completed / synthesis.failed / synthesis.skipped
   → findings.validated

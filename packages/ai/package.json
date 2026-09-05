@@ -17,7 +17,11 @@
     "@pr-review/logging": "workspace:*",
     "@pr-review/schemas": "workspace:*",
     "openai": "^7.10.0",
+    "picomatch": "^4.0.5",
     "yaml": "^2.9.0",
     "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/picomatch": "^4.0.3"
   }
 }

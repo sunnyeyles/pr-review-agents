@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   MAX_ANNOTATIONS_PER_REQUEST,
+  changedFilesNote,
   renderCheckRun,
+  renderNoAgentMatched,
 } from "./render-check-run.js";
 
 function finding(overrides: Partial<ReviewFinding> = {}): ReviewFinding {
@@ -232,5 +234,97 @@ describe("renderCheckRun with agent failures", () => {
   it("changes nothing when there are no failures", () => {
     expect(renderCheckRun([finding()], [])).toEqual(renderCheckRun([finding()]));
     expect(renderCheckRun([], [])).toEqual(renderCheckRun([]));
+  });
+});
+
+describe("renderCheckRun with skipped agents", () => {
+  const skipped = [
+    { agent: "security", paths: ["packages/github/**", "**/auth/**"] },
+  ];
+
+  it("names the skipped agent and the paths it waited for", () => {
+    const rendered = renderCheckRun([finding()], [], { skippedAgents: skipped });
+
+    expect(rendered.output.summary).toMatch(/security review did not run/i);
+    expect(rendered.output.summary).toContain("`packages/github/**`");
+    expect(rendered.output.summary).toContain("`**/auth/**`");
+  });
+
+  it("still reports success when the agents that did run found nothing", () => {
+    // A skip is configured, unlike a failure: the review the repository
+    // asked for ran in full, so the check is not degraded.
+    const rendered = renderCheckRun([], [], { skippedAgents: skipped });
+
+    expect(rendered.conclusion).toBe("success");
+    expect(rendered.output.title).toMatch(/no issues found/i);
+    expect(rendered.output.summary).toMatch(/security review did not run/i);
+  });
+
+  it("changes nothing when no agent was skipped", () => {
+    expect(renderCheckRun([finding()], [], { skippedAgents: [] })).toEqual(
+      renderCheckRun([finding()]),
+    );
+    expect(renderCheckRun([], [], { skippedAgents: [] })).toEqual(
+      renderCheckRun([]),
+    );
+  });
+});
+
+describe("renderNoAgentMatched", () => {
+  const skipped = [
+    { agent: "security", paths: ["packages/github/**"] },
+    { agent: "docs-drift", paths: ["docs/**"] },
+  ];
+
+  it("is neutral, never a green check on an unreviewed pull request", () => {
+    const rendered = renderNoAgentMatched(skipped, ["README.md"]);
+
+    expect(rendered.conclusion).toBe("neutral");
+    expect(rendered.output.title).toBe("No agent reviewed this pull request");
+    expect(rendered.output.summary).toContain("was not reviewed");
+  });
+
+  it("names every agent with the paths it waited for", () => {
+    const summary = renderNoAgentMatched(skipped, ["README.md"]).output.summary;
+
+    expect(summary).toContain("Security — waiting on `packages/github/**`");
+    expect(summary).toContain("Docs drift — waiting on `docs/**`");
+    expect(summary).toContain("None of the 2 configured agents");
+  });
+
+  it("lists the changed files so the decision can be checked at a glance", () => {
+    const summary = renderNoAgentMatched(skipped, [
+      "README.md",
+      "docs/index.html",
+    ]).output.summary;
+
+    expect(summary).toContain("the 2 changed files");
+    expect(summary).toContain("Changed: `README.md`, `docs/index.html`.");
+  });
+
+  it("caps the file list so a large pull request cannot bury the reason", () => {
+    const files = Array.from({ length: 14 }, (_, index) => `src/file${index}.ts`);
+
+    const summary = renderNoAgentMatched(skipped, files).output.summary;
+
+    expect(summary).toContain("`src/file9.ts`, and 4 more.");
+    expect(summary).not.toContain("src/file10.ts");
+  });
+
+  it("omits the file list when a pull request changed nothing", () => {
+    const summary = renderNoAgentMatched(skipped, []).output.summary;
+
+    expect(summary).not.toContain("Changed:");
+    expect(summary).toContain("the 0 changed files");
+  });
+});
+
+describe("changedFilesNote", () => {
+  it("is empty for no files", () => {
+    expect(changedFilesNote([])).toBe("");
+  });
+
+  it("lists every file up to the cap", () => {
+    expect(changedFilesNote(["a.ts", "b.ts"])).toBe("Changed: `a.ts`, `b.ts`.");
   });
 });

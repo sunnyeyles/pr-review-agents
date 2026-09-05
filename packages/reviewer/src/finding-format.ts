@@ -2,6 +2,7 @@
  * How a finding reads once it leaves the pipeline. Shared so the check
  * run and the review describe a finding identically.
  */
+import type { SkippedAgent } from "@pr-review/ai";
 import { categoryLabel, type ReviewFinding } from "@pr-review/schemas";
 
 import type { AgentFailure } from "./review-graph.js";
@@ -40,6 +41,23 @@ export function failureNotes(
   return agentFailures.map(
     (failure) =>
       `> **Note:** The ${categoryLabel(failure.agent)} review did not complete, so its findings are missing from this run.`,
+  );
+}
+
+/** The patterns an agent waited for, as the summary spells them. */
+export function pathList(paths: readonly string[]): string {
+  return paths.map((path) => `\`${path}\``).join(", ");
+}
+
+/**
+ * Which agents sat this pull request out. A skipped agent is intended,
+ * unlike a failed one, but it still has to be said: a review nobody can
+ * see was narrowed is indistinguishable from a clean one.
+ */
+export function skipNotes(skippedAgents: readonly SkippedAgent[]): string[] {
+  return skippedAgents.map(
+    (skipped) =>
+      `> **Note:** The ${categoryLabel(skipped.agent)} review did not run: no changed file matched its paths (${pathList(skipped.paths)}).`,
   );
 }
 

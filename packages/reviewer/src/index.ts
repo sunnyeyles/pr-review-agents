@@ -8,7 +8,11 @@ export {
   type ReviewPipelineResult,
 } from "./review-graph.js";
 export { validateFindings } from "./validate-findings.js";
-export { renderCheckRun, type RenderedCheckRun } from "./render-check-run.js";
+export {
+  renderCheckRun,
+  renderNoAgentMatched,
+  type RenderedCheckRun,
+} from "./render-check-run.js";
 export { renderReview, type RenderedReview } from "./render-review.js";
 export {
   createCheckRunPublisher,
@@ -17,6 +21,7 @@ export {
   reviewPullRequest,
   type PublishReview,
   type PublishReviewComments,
+  type ReviewOutcome,
   type ReviewPullRequestDeps,
   type ReviewTarget,
 } from "./review-pull-request.js";

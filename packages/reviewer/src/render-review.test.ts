@@ -122,4 +122,13 @@ describe("renderReview", () => {
 
     expect(rendered?.body).toContain("The Architecture review did not complete");
   });
+
+  it("notes an agent the changed paths did not wake", () => {
+    const rendered = renderReview([finding()], [], new Set(), [
+      { agent: "security", paths: ["packages/github/**"] },
+    ]);
+
+    expect(rendered?.body).toContain("The Security review did not run");
+    expect(rendered?.body).toContain("`packages/github/**`");
+  });
 });

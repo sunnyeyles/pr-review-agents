@@ -4,6 +4,7 @@
  * settled upstream: validateFindings already drops findings that are not
  * on an added line, which is GitHub's own condition for a comment.
  */
+import type { SkippedAgent } from "@pr-review/ai";
 import type { ReviewComment } from "@pr-review/github";
 import type { ReviewFinding } from "@pr-review/schemas";
 
@@ -11,6 +12,7 @@ import {
   failureNotes,
   findingCountLabel,
   heading,
+  skipNotes,
   summarise,
 } from "./finding-format.js";
 import type { AgentFailure } from "./review-graph.js";
@@ -73,6 +75,7 @@ export function renderReview(
   findings: readonly ReviewFinding[],
   agentFailures: readonly AgentFailure[] = [],
   alreadyPosted: ReadonlySet<string> = new Set(),
+  skippedAgents: readonly SkippedAgent[] = [],
 ): RenderedReview | undefined {
   const fresh = findings.filter(
     (finding) => !alreadyPosted.has(findingKey(finding)),
@@ -109,7 +112,7 @@ export function renderReview(
       ...fileLevel.map(summarise),
     );
   }
-  sections.push(...failureNotes(agentFailures));
+  sections.push(...failureNotes(agentFailures), ...skipNotes(skippedAgents));
 
   return { body: sections.join("\n\n"), comments };
 }

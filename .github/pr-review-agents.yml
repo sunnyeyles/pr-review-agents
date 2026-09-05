@@ -14,6 +14,19 @@
 # Optional:
 #   contextGuidance  makes the agent retrieve repository context with the
 #                    read-only tools before it may make a claim
+#   paths            glob patterns deciding whether the agent runs at all.
+#                    Declaring none means it runs on every pull request.
+#
+# `paths` is a gate, not a filter: an agent one changed file wakes still
+# reviews the whole pull request. Skipped agents are named on the check run,
+# and a pull request no agent matched gets a neutral check saying so — never
+# a green one. To gate a built-in, name it under `agent:` instead:
+#
+#   - agent: docs-drift
+#     paths:
+#       - "docs/**"
+#       - "README.md"
+#       - "!**/*.test.ts"
 #
 # Order matters: it is the order findings reach the synthesiser.
 #

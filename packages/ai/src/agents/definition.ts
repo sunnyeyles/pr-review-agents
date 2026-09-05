@@ -7,6 +7,8 @@
 import { findingCategorySchema, type FindingCategory } from "@pr-review/schemas";
 import { z } from "zod";
 
+import { agentPathsSchema } from "./path-filter.js";
+
 /** Reserved: the synthesiser's managed prompt shares the agent key space. */
 export const SYNTHESIS_PROMPT_ID = "synthesis";
 
@@ -23,6 +25,12 @@ export interface AgentDefinition {
   focus: string;
   /** Optional agent-specific addition to "# Context and tools". */
   contextGuidance?: string;
+  /**
+   * Optional glob patterns gating whether the agent runs at all. It
+   * never narrows what a running agent reviews, and never reaches a
+   * prompt: an agent it wakes still sees the whole pull request.
+   */
+  paths?: readonly string[];
 }
 
 /** Parses one agent from untrusted configuration. Strict: contextGuidance
@@ -36,6 +44,7 @@ export const agentDefinitionSchema = z
     role: z.string().min(1),
     focus: z.string().min(1),
     contextGuidance: z.string().min(1).optional(),
+    paths: agentPathsSchema.optional(),
   })
   .strict();
 

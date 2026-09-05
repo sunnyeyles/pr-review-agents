@@ -30,10 +30,13 @@ import type { ModelAccess } from "./model-access.js";
 
 /** The model-facing half of a review; the harness's own tests inject scripted agents. */
 export interface FixtureReviewDeps {
+  /** The agent set the review gates by path and then runs. */
+  agents: readonly AgentDefinition[];
   /** Built over the review's own logger, so every event of one fixture lands together. */
   createAgents: (
     github: GithubInstallationClient,
     logger: StructuredLogger,
+    agents: readonly AgentDefinition[],
   ) => readonly ReviewAgent[];
   synthesiser: Synthesiser;
   /** Receives events live, alongside the capturing logger the report is built from. */
@@ -69,10 +72,11 @@ export function modelBackedDeps(
   });
   const modelId = access.model;
   return {
-    createAgents: (github, reviewLogger) =>
+    agents,
+    createAgents: (github, reviewLogger, activeAgents) =>
       createReviewAgents(
         { model, modelId, github, logger: reviewLogger },
-        agents,
+        activeAgents,
       ),
     synthesiser: createSynthesiser({ model, modelId, agents }),
     logger,
@@ -116,9 +120,10 @@ export async function runFixtureReview(
     },
     {
       client,
-      runReviewPipeline: (reviewClient, context) =>
+      agents: deps.agents,
+      runReviewPipeline: (reviewClient, context, activeAgents) =>
         runReviewPipeline(
-          deps.createAgents(reviewClient, logger),
+          deps.createAgents(reviewClient, logger, activeAgents),
           deps.synthesiser,
           context,
         ),

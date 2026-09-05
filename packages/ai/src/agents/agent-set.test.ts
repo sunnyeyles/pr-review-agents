@@ -7,8 +7,17 @@ import { createCapturingLogger } from "@pr-review/logging";
 import type { FindingCategory } from "@pr-review/schemas";
 import { describe, expect, it } from "vitest";
 
-import { ALL_AGENTS, buildReviewSystemPrompt } from "./definition.js";
-import { createReviewAgents, resolveAgentDefinitions } from "./agent-set.js";
+import {
+  ALL_AGENTS,
+  buildReviewSystemPrompt,
+  type AgentDefinition,
+} from "./definition.js";
+import {
+  createReviewAgents,
+  gateAgentsByPaths,
+  resolveAgentDefinitions,
+  selectsSpecificAgents,
+} from "./agent-set.js";
 import { createReviewAgent, type ReviewAgentDeps } from "./runtime.js";
 import { reviewPromptContractProblems } from "../prompts.js";
 import {
@@ -275,4 +284,92 @@ describe("this repository's agents over one PR context", () => {
       combined.map((candidate) => (candidate as { category: string }).category),
     ).toEqual(["correctness", "security", "architecture"]);
   }, 5_000);
+});
+
+describe("gateAgentsByPaths", () => {
+  function agent(category: string, paths?: string[]): AgentDefinition {
+    return {
+      category,
+      role: `${category} reviewer`,
+      focus: `Review only for ${category} problems.`,
+      ...(paths === undefined ? {} : { paths }),
+    };
+  }
+
+  it("runs an agent that declares no paths, whatever changed", () => {
+    const agents = [agent("correctness")];
+
+    expect(gateAgentsByPaths(agents, ["README.md"])).toEqual({
+      active: agents,
+      skipped: [],
+    });
+  });
+
+  it("wakes an agent on a single matching file", () => {
+    const security = agent("security", ["packages/github/**"]);
+
+    const gated = gateAgentsByPaths(
+      [security],
+      ["README.md", "packages/github/src/client.ts"],
+    );
+
+    expect(gated.active).toEqual([security]);
+    expect(gated.skipped).toEqual([]);
+  });
+
+  it("skips an agent nothing matched, recording what it waited for", () => {
+    const paths = ["packages/github/**", "**/auth/**"];
+
+    const gated = gateAgentsByPaths([agent("security", paths)], ["README.md"]);
+
+    expect(gated.active).toEqual([]);
+    expect(gated.skipped).toEqual([{ agent: "security", paths }]);
+  });
+
+  it("keeps the configured order in both halves", () => {
+    // Agent order is the order findings reach the synthesiser, so the
+    // gate must not reorder what it lets through.
+    const agents = [
+      agent("correctness"),
+      agent("security", ["packages/github/**"]),
+      agent("architecture"),
+      agent("docs-drift", ["docs/**"]),
+    ];
+
+    const gated = gateAgentsByPaths(agents, ["src/index.ts"]);
+
+    expect(gated.active.map((one) => one.category)).toEqual([
+      "correctness",
+      "architecture",
+    ]);
+    expect(gated.skipped.map((one) => one.agent)).toEqual([
+      "security",
+      "docs-drift",
+    ]);
+  });
+
+  it("skips every agent when a pull request changed nothing", () => {
+    const gated = gateAgentsByPaths([agent("security", ["packages/**"])], []);
+
+    expect(gated.active).toEqual([]);
+    expect(gated.skipped.map((one) => one.agent)).toEqual(["security"]);
+  });
+});
+
+describe("selectsSpecificAgents", () => {
+  it("is false for the default, which leaves path filters deciding", () => {
+    for (const selection of ["", "   ", "all", "ALL", " all , "]) {
+      expect(selectsSpecificAgents(selection), selection).toBe(false);
+    }
+  });
+
+  it("is true when the input names agents", () => {
+    for (const selection of ["security", "architecture,correctness", " SECURITY "]) {
+      expect(selectsSpecificAgents(selection), selection).toBe(true);
+    }
+  });
+
+  it("treats `all` beside a name as `all`, so gating still applies", () => {
+    expect(selectsSpecificAgents("all,security")).toBe(false);
+  });
 });

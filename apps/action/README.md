@@ -84,6 +84,40 @@ A missing file, a malformed one, or one declaring no agents fails the step
 before any model call: a review with the wrong agents, or none, looks exactly
 like a clean bill of health.
 
+### Path filters
+
+An agent can declare the paths it cares about and sit out a pull request that
+touches none of them:
+
+```yaml
+agents:
+  - category: security
+    role: Security reviewer
+    focus: Review ONLY for security problems.
+    paths:
+      - "packages/github/**"
+      - "**/auth/**"
+      - "!**/*.test.ts"
+
+  # A built-in gated the same way.
+  - agent: docs-drift
+    paths: ["docs/**", "README.md"]
+```
+
+Patterns are globs over each changed file's repository-relative path: `**`
+crosses directories, `*` does not, dotfiles match, and `!` subtracts. An agent
+declaring no `paths` runs on every pull request, as all of them do today.
+
+This gates *whether* an agent runs, never *what* it reviews — a woken agent
+still sees the whole pull request, because a security-relevant change is
+routinely exploited through a file that does not look security-relevant.
+
+Nothing is skipped quietly. Skipped agents are named in the check-run summary
+and logged as `agent.skipped`; a pull request no agent matched gets a
+`neutral` check run titled "No agent reviewed this pull request", listing every
+agent, its patterns, and the changed files — never a green one. Naming agents
+on the `agents` input overrides the gate.
+
 A working three-agent starting point lives in
 [`.github/pr-review-agents.yml`](https://github.com/sunnyeyles/pr-review-agents/blob/main/.github/pr-review-agents.yml)
 of this action's repository — copy it and edit.
@@ -97,7 +131,7 @@ of this action's repository — copy it and edit.
 | `github-token` | no | `${{ github.token }}` | Token for the read-only tools, the review comments, and the check run. |
 | `model` | no | the provider's own | Model id, as the provider spells it: `claude-sonnet-5` on `anthropic`, `gpt-5` on `openai`. |
 | `model-base-url` | no | the provider's own host | Overrides the provider's API host — a gateway, a proxy, or a compatible endpoint (for `openai`, one that accepts `max_completion_tokens`). |
-| `agents` | no | `all` | Which of the configured agents run: `all`, or a comma-separated subset of their names. |
+| `agents` | no | `all` | Which of the configured agents run: `all`, or a comma-separated subset of their names. Naming a subset also overrides their `paths`. |
 | `agent-config` | no | `.github/pr-review-agents.yml` | Path to the YAML file defining this repository's agents, read from the pull request's base commit. The file itself is required — there is no built-in set, and a missing one fails the step. |
 | `langfuse-public-key` | no | — | Langfuse public key. Set this and the secret key to manage prompts and collect traces. |
 | `langfuse-secret-key` | no | — | Langfuse secret key. Store it as a secret. |
