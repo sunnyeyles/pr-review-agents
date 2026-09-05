@@ -138,8 +138,11 @@ packages/
   github/     GitHub client (workflow-token auth) + Octokit calls
   schemas/    Zod schemas: ReviewFinding, the review trigger contract
   logging/    Structured single-line JSON logger
-scripts/      build-bundle.mjs — esbuild bundler for apps/action
-spec.md       The original specification this implementation follows
+evals/        Fixture repositories and the harness that runs the real
+              pipeline against them without touching GitHub
+docs/         index.html — the architecture walkthrough, published to Pages
+scripts/      esbuild bundler for apps/action, its smoke test, and the
+              Langfuse prompt seeder
 ```
 
 ### Concurrency
@@ -467,11 +470,6 @@ counters: `inputTokens`, `cacheCreationInputTokens`, `cacheReadInputTokens`,
 - **[Propose, Refine, Decide](https://sunnyeyles.github.io/pr-review-agents/)**
   — the pipeline traced stage by stage, with a diagram, the file that owns each
   step, and the failure modes. Source: [`docs/index.html`](docs/index.html).
-- [`docs/agent-flow.md`](docs/agent-flow.md) — the same walkthrough as Markdown,
-  for reading inside the repository.
-- [`spec.md`](spec.md) — the original specification this implementation
-  follows (predates the GitHub Action; see its header note). Source comments
-  reference its sections (`spec §17`, `spec §21`, …).
 
 ## Out of scope
 
