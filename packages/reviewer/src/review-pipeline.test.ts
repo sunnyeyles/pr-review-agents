@@ -33,7 +33,7 @@ const context: ReviewContext = {
     headRef: "feature/rate-limit",
     headSha: "6dcb09b5b57875f334f61aebed695e2e4193db5e",
   },
-  // The agents and the validation node both read the changed-file list here.
+  // The agents and the validation step both read the changed-file list here.
   changedFiles,
   diff: "",
 };
@@ -114,7 +114,7 @@ describe("runReviewPipeline: agent fan-out and partial failure (spec §20)", () 
     ]);
   });
 
-  it("starts every agent node before any of them resolves (real concurrency)", async () => {
+  it("starts every agent before any of them resolves (real concurrency)", async () => {
     const starts: string[] = [];
     const resolvers: (() => void)[] = [];
     const gated = (name: string) =>
@@ -131,11 +131,8 @@ describe("runReviewPipeline: agent fan-out and partial failure (spec §20)", () 
       context,
     );
 
-    // Every agent must have started without any resolving: a sequential
-    // runner would still be on the first.
-    for (let tick = 0; tick < 50 && starts.length < 3; tick += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    }
+    // Every agent has started and none has resolved: a sequential runner
+    // would still be on the first.
     expect(starts).toEqual(["correctness", "security", "architecture"]);
 
     for (const resolve of resolvers) {

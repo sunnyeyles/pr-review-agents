@@ -20,20 +20,10 @@ export interface AgentFailure {
   error: string;
 }
 
-/** One agent's outcome. */
-interface AgentOutcome {
-  name: string;
-  candidates?: unknown[];
-  error?: string;
-}
-
-/** What `join` derives from the agent outcomes. */
-interface JoinedCandidates {
-  /** Untrusted candidate findings, in agent order. */
-  candidates: unknown[];
-  /** Agents that failed while at least one other agent succeeded. */
-  agentFailures: AgentFailure[];
-}
+/** One agent's outcome; the tag decides which field exists. */
+type AgentOutcome =
+  | { name: string; candidates: readonly unknown[] }
+  | { name: string; error: string };
 
 /** The synthesise step's outcome; the tag decides which fields exist. */
 export type SynthesisState =
@@ -64,25 +54,23 @@ async function runAgent(
   context: ReviewContext,
 ): Promise<AgentOutcome> {
   try {
-    const candidates = await agent.run(context);
-    return { name: agent.name, candidates: [...candidates] };
+    return { name: agent.name, candidates: await agent.run(context) };
   } catch (error) {
     return { name: agent.name, error: errorMessage(error) };
   }
 }
 
-/**
- * Fan-in: derives candidates/failures in the agents' original order —
- * never completion order — and throws when every agent failed.
- */
-function join(outcomes: readonly AgentOutcome[]): JoinedCandidates {
+/** Throws only when every agent failed. */
+function join(
+  outcomes: readonly AgentOutcome[],
+): Pick<ReviewPipelineResult, "candidates" | "agentFailures"> {
   const candidates: unknown[] = [];
   const agentFailures: AgentFailure[] = [];
   for (const outcome of outcomes) {
-    if (outcome.error !== undefined) {
+    if ("error" in outcome) {
       agentFailures.push({ agent: outcome.name, error: outcome.error });
     } else {
-      candidates.push(...(outcome.candidates ?? []));
+      candidates.push(...outcome.candidates);
     }
   }
 
@@ -135,7 +123,7 @@ export interface ReviewPipelineResult {
   candidates: unknown[];
   /** Agents that failed while at least one other agent succeeded. */
   agentFailures: AgentFailure[];
-  /** The synthesise step's own outcome; every field it carries is one the tag guarantees. */
+  /** The synthesise step's own outcome. */
   synthesis: SynthesisState;
   /** The final, deterministically validated findings. */
   findings: ReviewFinding[];

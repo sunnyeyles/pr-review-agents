@@ -170,7 +170,7 @@ export async function reviewPullRequest(
     return unreviewed();
   }
 
-  // The AI boundary: only the validate node's output reaches GitHub.
+  // The AI boundary: only the validate step's output reaches GitHub.
   const review = await runReviewPipeline(
     client,
     {
