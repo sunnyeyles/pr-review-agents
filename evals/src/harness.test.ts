@@ -420,34 +420,35 @@ describe("the full pipeline against a fixture", () => {
 
 describe("model access", () => {
   it("refuses to run without an API key, naming the variable and the command", () => {
-    expect(() => requireModelAccess({})).toThrow("ANTHROPIC_API_KEY");
-    expect(() => requireModelAccess({ ANTHROPIC_API_KEY: "  " })).toThrow(
+    expect(() => requireModelAccess({})).toThrow("OPENAI_API_KEY");
+    expect(() => requireModelAccess({ OPENAI_API_KEY: "  " })).toThrow(
       /pnpm eval/,
     );
   });
 
-  it("names the selected provider's key variable, not Anthropic's", () => {
+  it("names the selected provider's key variable, not the default's", () => {
     expect(() =>
-      requireModelAccess({ [PROVIDER_ENV]: "openai", ANTHROPIC_API_KEY: "x" }),
-    ).toThrow("OPENAI_API_KEY");
+      requireModelAccess({ [PROVIDER_ENV]: "anthropic", OPENAI_API_KEY: "x" }),
+    ).toThrow("ANTHROPIC_API_KEY");
   });
 
   it("rejects an unknown provider rather than falling back to the default", () => {
     expect(() =>
-      requireModelAccess({ [PROVIDER_ENV]: "wattson", ANTHROPIC_API_KEY: "x" }),
+      requireModelAccess({ [PROVIDER_ENV]: "wattson", OPENAI_API_KEY: "x" }),
     ).toThrow(/Unknown model provider/);
   });
 
   it("defaults the model per provider and lets it be overridden", () => {
-    expect(requireModelAccess({ ANTHROPIC_API_KEY: "x" })).toMatchObject({
-      provider: "anthropic",
-      model: "claude-sonnet-5",
+    expect(requireModelAccess({ OPENAI_API_KEY: "x" })).toMatchObject({
+      provider: "openai",
+      model: "gpt-5.6-luna",
     });
     expect(
-      requireModelAccess({ [PROVIDER_ENV]: "openai", OPENAI_API_KEY: "x" }).model,
-    ).toBe("gpt-5");
+      requireModelAccess({ [PROVIDER_ENV]: "anthropic", ANTHROPIC_API_KEY: "x" })
+        .model,
+    ).toBe("claude-haiku-4-5");
     expect(
-      requireModelAccess({ ANTHROPIC_API_KEY: "x", [MODEL_ENV]: "other-model" })
+      requireModelAccess({ OPENAI_API_KEY: "x", [MODEL_ENV]: "other-model" })
         .model,
     ).toBe("other-model");
   });

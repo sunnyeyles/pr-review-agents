@@ -3,7 +3,7 @@
 # If a change breaks the reviewer, it shows up on the pull request that made it.
 #
 # Requires the selected provider's API key as a repository secret — set
-# vars.MODEL_PROVIDER to pick one, defaulting to Anthropic. Without a key the
+# vars.MODEL_PROVIDER to pick one, defaulting to OpenAI. Without a key the
 # job is skipped rather than failed, so forks and unconfigured clones stay
 # green.
 
@@ -36,8 +36,8 @@ jobs:
         # Normalised as the action reads it; unknown names run so it fails loudly.
         run: |
           case "$(printf '%s' "$MODEL_PROVIDER" | tr '[:upper:]' '[:lower:]' | xargs)" in
-            "" | anthropic) API_KEY="$ANTHROPIC_API_KEY" ;;
-            openai) API_KEY="$OPENAI_API_KEY" ;;
+            "" | openai) API_KEY="$OPENAI_API_KEY" ;;
+            anthropic) API_KEY="$ANTHROPIC_API_KEY" ;;
             *) API_KEY="unknown provider" ;;
           esac
           if [ -n "$API_KEY" ]; then
@@ -81,8 +81,10 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         with:
-          # Set vars.MODEL_PROVIDER to review with a different provider.
+          # Set vars.MODEL_PROVIDER to review with a different provider, and
+          # vars.REVIEW_MODEL to swap the default model without a commit.
           model-provider: ${{ vars.MODEL_PROVIDER }}
+          model: ${{ vars.REVIEW_MODEL }}
           # The agents come from .github/pr-review-agents.yml, read at the
           # pull request's base commit rather than from the checkout above.
           # Narrow the review from repository variables — set

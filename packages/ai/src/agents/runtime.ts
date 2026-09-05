@@ -87,7 +87,10 @@ export type ReviewSystemPrompts = Readonly<Record<string, string>>;
 
 /** What every review agent needs, regardless of agent. */
 export interface ReviewAgentDeps {
+  /** The default model; an agent's own `model` is built with createModel. */
   model: ReviewModel;
+  /** Builds a model by id. Without it, an agent's `model` is ignored. */
+  createModel?: ((modelId: string) => ReviewModel) | undefined;
   github: GithubInstallationClient;
   maxTurns?: number | undefined;
   /** Receives agent.started / agent.completed / agent.failed. */

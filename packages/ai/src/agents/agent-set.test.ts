@@ -210,6 +210,54 @@ describe("the composed agent prompt", () => {
   });
 });
 
+describe("per-agent model", () => {
+  const finalResponse = (): ReturnType<typeof message> =>
+    message([textBlock(finalFindingsJson([]))], "end_turn");
+
+  it("builds an agent's own model and leaves the rest on the default", async () => {
+    const fallback = makeModel([finalResponse()]);
+    const override = makeModel([finalResponse()], "test-provider", "override-model");
+    const built: string[] = [];
+    const deps: ReviewAgentDeps = {
+      model: fallback.model,
+      createModel: (modelId) => {
+        built.push(modelId);
+        return override.model;
+      },
+      github: makeGithub(),
+      logger: createCapturingLogger().logger,
+    };
+
+    const agents = createReviewAgents(deps, [
+      { ...securityAgent, model: "override-model" },
+      correctnessAgent,
+    ]);
+    for (const agent of agents) {
+      await agent.run(context);
+    }
+
+    expect(built).toEqual(["override-model"]);
+    expect(override.doGenerate).toHaveBeenCalledTimes(1);
+    expect(fallback.doGenerate).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls back to the default model when no factory is configured", async () => {
+    const fallback = makeModel([finalResponse()]);
+    const deps: ReviewAgentDeps = {
+      model: fallback.model,
+      github: makeGithub(),
+      logger: createCapturingLogger().logger,
+    };
+
+    const [agent] = createReviewAgents(deps, [
+      { ...securityAgent, model: "override-model" },
+    ]);
+    await agent?.run(context);
+
+    expect(fallback.doGenerate).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("prompt wiring", () => {
   it("each agent sends its own agent prompt to the model", async () => {
     for (const agent of configuredAgents) {

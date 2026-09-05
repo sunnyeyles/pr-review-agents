@@ -52,6 +52,25 @@ describe("parseAgentConfig", () => {
     expect(guided?.contextGuidance).toBe("Read the neighbours first.");
   });
 
+  it("keeps an optional model and omits it otherwise", () => {
+    const [plain] = parseAgentConfig(performanceYaml, PATH);
+    expect(plain?.model).toBeUndefined();
+
+    const [overridden] = parseAgentConfig(
+      `${performanceYaml}    model: claude-haiku-4-5\n`,
+      PATH,
+    );
+    expect(overridden?.model).toBe("claude-haiku-4-5");
+  });
+
+  it("rejects an empty model, which would name no model at all", () => {
+    for (const value of ['""', '"   "']) {
+      expect(() =>
+        parseAgentConfig(`${performanceYaml}    model: ${value}\n`, PATH),
+      ).toThrow(AgentConfigError);
+    }
+  });
+
   it("rejects an empty document, which would define no agents", () => {
     for (const source of ["", "# just a comment\n", "agents: []\n"]) {
       expect(() => parseAgentConfig(source, PATH)).toThrow(AgentConfigError);
@@ -101,7 +120,7 @@ describe("parseAgentConfig", () => {
   it("rejects an unknown key within an agent", () => {
     // contextGuidance is optional, so a misspelling would drop the
     // agent's evidence requirement without a word.
-    for (const typo of ["contextguidance", "context_guidance", "guidance"]) {
+    for (const typo of ["contextguidance", "context_guidance", "guidance", "modle"]) {
       expect(() =>
         parseAgentConfig(`${performanceYaml}    ${typo}: Read the neighbours first.\n`, PATH),
       ).toThrow(AgentConfigError);
@@ -144,6 +163,16 @@ describe("parseAgentConfig: path filters", () => {
     expect(() =>
       parseAgentConfig("agents:\n  - agent: securty\n", PATH),
     ).toThrow(/unknown built-in agent: "securty"/);
+  });
+
+  it("gives a built-in its own model through the `agent:` form", () => {
+    const [agent] = parseAgentConfig(
+      "agents:\n  - agent: security\n    model: claude-opus-5\n",
+      PATH,
+    );
+
+    expect(agent?.category).toBe("security");
+    expect(agent?.model).toBe("claude-opus-5");
   });
 
   it("rejects an unknown key beside `agent:`", () => {

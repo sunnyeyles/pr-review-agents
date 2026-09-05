@@ -65,15 +65,20 @@ export function modelBackedDeps(
   logger: StructuredLogger | undefined,
   agents: readonly AgentDefinition[],
 ): FixtureReviewDeps {
-  const model = createLanguageModel({
-    provider: access.provider,
-    apiKey: access.apiKey,
-    modelId: access.model,
-  });
+  const createModel = (modelId: string) =>
+    createLanguageModel({
+      provider: access.provider,
+      apiKey: access.apiKey,
+      modelId,
+    });
+  const model = createModel(access.model);
   return {
     agents,
     createAgents: (github, reviewLogger, activeAgents) =>
-      createReviewAgents({ model, github, logger: reviewLogger }, activeAgents),
+      createReviewAgents(
+        { model, createModel, github, logger: reviewLogger },
+        activeAgents,
+      ),
     synthesiser: createSynthesiser({ model, agents }),
     logger,
   };
