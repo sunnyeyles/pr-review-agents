@@ -212,7 +212,7 @@ After parsing, the runtime **filters** findings to the agent's own category.
 Cross-category leaks are dropped, never re-stamped — re-stamping would
 fabricate a claim the model never made.
 
-**The read-only tools** (`packages/ai/src/agents/tools.ts:235`) are the only tools any agent
+**The read-only tools** (`packages/ai/src/agents/tools.ts:193`) are the only tools any agent
 ever gets. There is no write, comment, approve, merge, or execute tool
 anywhere in the package:
 
@@ -234,10 +234,9 @@ a changed file still needs `get_file`. The tool descriptions say so; the caps on
 snippet size live in `tools.ts`, applied before serialisation so the JSON is
 never truncated mid-string.
 
-Every input is Zod-validated before it touches the GitHub client, and
-`dispatchReviewTool` (line 455) **never throws** — failures come back as
-`{ ok: false }` and are handed to the model as an error `tool_result` so the
-loop keeps going.
+Every input is Zod-validated against the tool's own schema before `execute`
+runs, so a malformed path never reaches the GitHub client. A tool that rejects
+becomes an error tool result the model reads, and the loop keeps going.
 
 #### 4b · `join` — fan-in
 

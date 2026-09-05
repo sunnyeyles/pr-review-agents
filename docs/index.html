@@ -940,11 +940,10 @@ html { scroll-behavior: smooth; }
       </div>
       <div class="prose" style="margin-top:1.1rem">
         <p>
-          Every input is Zod-validated before it touches the GitHub client, and
-          <code>dispatchReviewTool</code> never throws: failures come back as
-          <code>{ ok: false }</code> and reach the model as an error
-          <code>tool_result</code>, so a bad tool call costs a turn rather than
-          the run.
+          Every input is Zod-validated against the tool's own schema before
+          <code>execute</code> runs, so a malformed path never reaches the GitHub
+          client. A tool that rejects reaches the model as an error tool result,
+          so a bad tool call costs a turn rather than the run.
         </p>
       </div>
 
