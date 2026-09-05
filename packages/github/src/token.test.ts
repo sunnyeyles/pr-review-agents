@@ -91,11 +91,12 @@ interface StubOptions {
   contentData?: unknown;
   searchData?: unknown;
   reviewData?: unknown;
-  reviewCommentsData?: unknown;
+  reviewCommentPages?: unknown[][];
 }
 
 function makeOctokit(options: StubOptions = {}) {
   const filePages = options.filePages ?? [[makeFile(1), makeFile(2)]];
+  const commentPages = options.reviewCommentPages ?? [[]];
   const octokit = {
     rest: {
       pulls: {
@@ -121,10 +122,10 @@ function makeOctokit(options: StubOptions = {}) {
         ),
         listReviewComments: vi.fn(
           async (
-            _params: Parameters<
+            params: Parameters<
               OctokitLike["rest"]["pulls"]["listReviewComments"]
             >[0],
-          ) => ({ data: options.reviewCommentsData ?? [] }),
+          ) => ({ data: commentPages[params.page - 1] ?? [] }),
         ),
         createReview: vi.fn(
           async (
@@ -535,5 +536,171 @@ describe("createCheckRun", () => {
         output: { title: "t", summary: "s" },
       }),
     ).rejects.toThrow("Resource not accessible by integration");
+  });
+});
+
+/** One inline comment as GitHub returns it, with fields the client ignores. */
+function makeComment(index: number) {
+  return {
+    id: 1000 + index,
+    body: `<!-- pr-review-finding: src/file-${index}.ts|title -->`,
+    path: `src/file-${index}.ts`,
+    line: index,
+    user: { login: "github-actions[bot]" },
+  };
+}
+
+describe("listReviewComments", () => {
+  it("keeps only the comment body, and drops the fields we do not consume", async () => {
+    const { octokit, client } = makeClient({
+      reviewCommentPages: [[makeComment(1), makeComment(2)]],
+    });
+
+    const comments = await client.listReviewComments(ref);
+
+    expect(octokit.rest.pulls.listReviewComments).toHaveBeenCalledWith(
+      expect.objectContaining({
+        owner: "octo-org",
+        repo: "example-service",
+        pull_number: 42,
+      }),
+    );
+    expect(comments).toEqual([
+      { body: "<!-- pr-review-finding: src/file-1.ts|title -->" },
+      { body: "<!-- pr-review-finding: src/file-2.ts|title -->" },
+    ]);
+  });
+
+  it("paginates until a short page is returned", async () => {
+    const pageOne = Array.from({ length: 100 }, (_, index) =>
+      makeComment(index),
+    );
+    const pageTwo = [makeComment(100), makeComment(101)];
+    const { octokit, client } = makeClient({
+      reviewCommentPages: [pageOne, pageTwo],
+    });
+
+    const comments = await client.listReviewComments(ref);
+
+    expect(comments).toHaveLength(102);
+    expect(comments[101]?.body).toContain("src/file-101.ts");
+    expect(octokit.rest.pulls.listReviewComments).toHaveBeenCalledTimes(2);
+    expect(octokit.rest.pulls.listReviewComments).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ per_page: 100, page: 1 }),
+    );
+    expect(octokit.rest.pulls.listReviewComments).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ per_page: 100, page: 2 }),
+    );
+  });
+
+  it("stops after one page when the pull request has no comments", async () => {
+    const { octokit, client } = makeClient();
+
+    await expect(client.listReviewComments(ref)).resolves.toEqual([]);
+    expect(octokit.rest.pulls.listReviewComments).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects a malformed comment listing", async () => {
+    const { client } = makeClient({ reviewCommentPages: [[{ body: 42 }]] });
+
+    await expect(client.listReviewComments(ref)).rejects.toThrow();
+  });
+});
+
+describe("createReview", () => {
+  const comments = [
+    { path: "src/sessions.ts", line: 2, body: "Session token logged." },
+    { path: "src/auth.ts", line: 84, body: "Missing tenant validation." },
+  ];
+
+  it("posts one advisory review on the commit, every comment on the new side", async () => {
+    const { octokit, client } = makeClient();
+
+    const review = await client.createReview({
+      owner: "octo-org",
+      repo: "example-service",
+      pullRequestNumber: 42,
+      commitSha: headSha,
+      body: "2 findings",
+      comments,
+    });
+
+    expect(octokit.rest.pulls.createReview).toHaveBeenCalledTimes(1);
+    expect(octokit.rest.pulls.createReview).toHaveBeenCalledWith({
+      owner: "octo-org",
+      repo: "example-service",
+      pull_number: 42,
+      commit_id: headSha,
+      body: "2 findings",
+      event: "COMMENT",
+      comments: [
+        {
+          path: "src/sessions.ts",
+          line: 2,
+          side: "RIGHT",
+          body: "Session token logged.",
+        },
+        {
+          path: "src/auth.ts",
+          line: 84,
+          side: "RIGHT",
+          body: "Missing tenant validation.",
+        },
+      ],
+    });
+    expect(review).toEqual({ id: 654 });
+  });
+
+  it("sends an empty comment list rather than omitting the field", async () => {
+    const { octokit, client } = makeClient();
+
+    await client.createReview({
+      owner: "octo-org",
+      repo: "example-service",
+      pullRequestNumber: 42,
+      commitSha: headSha,
+      body: "No issues found",
+      comments: [],
+    });
+
+    expect(octokit.rest.pulls.createReview).toHaveBeenCalledWith(
+      expect.objectContaining({ comments: [] }),
+    );
+  });
+
+  // GitHub rejects the whole review, not the offending comment.
+  it("rejects when one comment's line falls outside the diff", async () => {
+    const { octokit, client } = makeClient();
+    octokit.rest.pulls.createReview.mockRejectedValueOnce(
+      new Error("pull_request_review_thread.line must be part of the diff"),
+    );
+
+    await expect(
+      client.createReview({
+        owner: "octo-org",
+        repo: "example-service",
+        pullRequestNumber: 42,
+        commitSha: headSha,
+        body: "1 finding",
+        comments,
+      }),
+    ).rejects.toThrow("must be part of the diff");
+  });
+
+  it("rejects a malformed review response", async () => {
+    const { client } = makeClient({ reviewData: { id: "654" } });
+
+    await expect(
+      client.createReview({
+        owner: "octo-org",
+        repo: "example-service",
+        pullRequestNumber: 42,
+        commitSha: headSha,
+        body: "1 finding",
+        comments,
+      }),
+    ).rejects.toThrow();
   });
 });
