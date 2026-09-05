@@ -1,8 +1,10 @@
 import type { ReviewFinding } from "@pr-review/schemas";
 import { describe, expect, it } from "vitest";
 
+import { MockLanguageModelV4 } from "ai/test";
+
 import { finalFindingsJson, repositoryAgents } from "../agent-test-support.js";
-import type { ModelClient, ModelRequest } from "../model/types.js";
+import type { ReviewModel } from "../model.js";
 import {
   SynthesisError,
   buildSynthesisMessage,
@@ -12,8 +14,6 @@ import {
 
 const configuredAgents = repositoryAgents();
 const SYNTHESIS_SYSTEM_PROMPT = buildSynthesisSystemPrompt(configuredAgents);
-
-const modelId = "test-model";
 
 /** A schema-valid candidate finding, overridable per test. */
 function makeFinding(overrides: Partial<ReviewFinding> = {}): ReviewFinding {
@@ -52,7 +52,27 @@ const combinedFinding = makeFinding({
   confidence: 0.95,
 });
 
-type CreateParams = ModelRequest;
+/** One provider-level call as the SDK assembled it. */
+interface CreateParams {
+  prompt: { role?: string; content?: unknown }[];
+  tools?: unknown[];
+}
+
+/** The user text of one recorded call, joined across its parts. */
+function userTextOf(call: CreateParams | undefined): string {
+  const user = (call?.prompt ?? []).find((entry) => entry.role === "user");
+  const parts = (user?.content ?? []) as { type: string; text?: string }[];
+  return parts
+    .filter((part) => part.type === "text")
+    .map((part) => part.text ?? "")
+    .join("");
+}
+
+/** The system instructions of one recorded call. */
+function systemOf(call: CreateParams | undefined): string {
+  const system = (call?.prompt ?? []).find((entry) => entry.role === "system");
+  return String((system?.content as string | undefined) ?? "");
+}
 
 /** One scripted response: text, optionally with explicit token usage. */
 type ScriptedResponse =
@@ -67,10 +87,11 @@ type ScriptedResponse =
 function makeTextModel(script: readonly ScriptedResponse[]) {
   const queue = [...script];
   const calls: CreateParams[] = [];
-  const model: ModelClient = {
+  const model = new MockLanguageModelV4({
     provider: "test-provider",
-    createMessage: async (request) => {
-      calls.push(request);
+    modelId: "test-model",
+    doGenerate: (async (options: CreateParams) => {
+      calls.push(options);
       const next = queue.shift();
       if (next === undefined) {
         throw new Error("fake model client ran out of scripted responses");
@@ -84,23 +105,31 @@ function makeTextModel(script: readonly ScriptedResponse[]) {
           : next;
       return {
         content: [{ type: "text", text: scripted.text }],
-        stopReason: "end_turn",
+        finishReason: { unified: "stop", raw: "end_turn" },
         usage: {
-          inputTokens: scripted.inputTokens,
-          outputTokens: scripted.outputTokens,
-          cacheCreationInputTokens: 0,
-          cacheReadInputTokens: 0,
+          inputTokens: {
+            total: scripted.inputTokens,
+            noCache: scripted.inputTokens,
+            cacheRead: 0,
+            cacheWrite: 0,
+          },
+          outputTokens: {
+            total: scripted.outputTokens,
+            text: scripted.outputTokens,
+            reasoning: 0,
+          },
         },
+        warnings: [],
       };
-    },
-  };
-  return { model, calls };
+    }) as unknown as MockLanguageModelV4["doGenerate"],
+  });
+  return { model: model as ReviewModel, calls };
 }
 
 describe("createSynthesiser", () => {
   it("combines duplicates across agents into the model's single refined finding", async () => {
     const { model } = makeTextModel([finalFindingsJson([combinedFinding])]);
-    const synthesiser = createSynthesiser({ model, modelId, agents: configuredAgents });
+    const synthesiser = createSynthesiser({ model, agents: configuredAgents });
 
     const { findings } = await synthesiser.synthesise([
       correctnessDuplicate,
@@ -118,7 +147,7 @@ describe("createSynthesiser", () => {
         outputTokens: 45,
       },
     ]);
-    const synthesiser = createSynthesiser({ model, modelId, agents: configuredAgents });
+    const synthesiser = createSynthesiser({ model, agents: configuredAgents });
 
     const { usage } = await synthesiser.synthesise([
       correctnessDuplicate,
@@ -135,28 +164,24 @@ describe("createSynthesiser", () => {
 
   it("makes exactly one single-turn model call with no tools", async () => {
     const { model, calls } = makeTextModel([finalFindingsJson([combinedFinding])]);
-    const synthesiser = createSynthesiser({ model, modelId, agents: configuredAgents });
+    const synthesiser = createSynthesiser({ model, agents: configuredAgents });
 
     await synthesiser.synthesise([correctnessDuplicate, securityDuplicate]);
 
     expect(calls).toHaveLength(1);
-    const params = calls[0];
-    expect(params?.model).toBe(modelId);
-    expect(params?.system).toBe(SYNTHESIS_SYSTEM_PROMPT);
-    expect(params?.tools).toBeUndefined();
-    expect(params?.messages).toHaveLength(1);
-    expect(params?.messages[0]?.role).toBe("user");
+    const prompt = calls[0]?.prompt ?? [];
+    expect(systemOf(calls[0])).toBe(SYNTHESIS_SYSTEM_PROMPT);
+    expect(calls[0]?.tools ?? []).toHaveLength(0);
+    expect(prompt.filter((entry) => entry.role === "user")).toHaveLength(1);
   });
 
   it("sends every well-formed candidate to the model as untrusted data", async () => {
     const { model, calls } = makeTextModel([finalFindingsJson([combinedFinding])]);
-    const synthesiser = createSynthesiser({ model, modelId, agents: configuredAgents });
+    const synthesiser = createSynthesiser({ model, agents: configuredAgents });
 
     await synthesiser.synthesise([correctnessDuplicate, securityDuplicate]);
 
-    const content = calls[0]?.messages[0]?.content;
-    expect(typeof content).toBe("string");
-    const text = content as string;
+    const text = userTextOf(calls[0]);
     expect(text).toContain(correctnessDuplicate.title);
     expect(text).toContain(securityDuplicate.title);
     // Candidate findings are wrapped as data, not instructions.
@@ -167,14 +192,14 @@ describe("createSynthesiser", () => {
 
   it("excludes malformed candidates from the synthesis input", async () => {
     const { model, calls } = makeTextModel([finalFindingsJson([combinedFinding])]);
-    const synthesiser = createSynthesiser({ model, modelId, agents: configuredAgents });
+    const synthesiser = createSynthesiser({ model, agents: configuredAgents });
 
     await synthesiser.synthesise([
       correctnessDuplicate,
       { file: "x.ts", title: "malformed-marker", confidence: 5 },
     ]);
 
-    const text = calls[0]?.messages[0]?.content as string;
+    const text = userTextOf(calls[0]);
     expect(text).toContain(correctnessDuplicate.title);
     expect(text).not.toContain("malformed-marker");
   });
@@ -188,7 +213,7 @@ describe("createSynthesiser", () => {
       confidence: 0.72,
     });
     const { model } = makeTextModel([finalFindingsJson([strong])]);
-    const synthesiser = createSynthesiser({ model, modelId, agents: configuredAgents });
+    const synthesiser = createSynthesiser({ model, agents: configuredAgents });
 
     const { findings } = await synthesiser.synthesise([strong, weak]);
 
@@ -199,7 +224,7 @@ describe("createSynthesiser", () => {
     const overstated = makeFinding({ severity: "high" });
     const corrected = makeFinding({ severity: "medium" });
     const { model } = makeTextModel([finalFindingsJson([corrected])]);
-    const synthesiser = createSynthesiser({ model, modelId, agents: configuredAgents });
+    const synthesiser = createSynthesiser({ model, agents: configuredAgents });
 
     const { findings } = await synthesiser.synthesise([overstated]);
 
@@ -209,7 +234,7 @@ describe("createSynthesiser", () => {
 
   it("skips the model call entirely when there are no candidates, reporting zero usage", async () => {
     const { model, calls } = makeTextModel([]);
-    const synthesiser = createSynthesiser({ model, modelId, agents: configuredAgents });
+    const synthesiser = createSynthesiser({ model, agents: configuredAgents });
 
     const result = await synthesiser.synthesise([]);
 
@@ -227,7 +252,7 @@ describe("createSynthesiser", () => {
 
   it("skips the model call when no candidate is well-formed", async () => {
     const { model, calls } = makeTextModel([]);
-    const synthesiser = createSynthesiser({ model, modelId, agents: configuredAgents });
+    const synthesiser = createSynthesiser({ model, agents: configuredAgents });
 
     const result = await synthesiser.synthesise([
       { nonsense: true },
@@ -248,7 +273,7 @@ describe("createSynthesiser", () => {
 
   it("rejects with SynthesisError when the model output contains no JSON", async () => {
     const { model } = makeTextModel(["I refined the findings for you."]);
-    const synthesiser = createSynthesiser({ model, modelId, agents: configuredAgents });
+    const synthesiser = createSynthesiser({ model, agents: configuredAgents });
 
     await expect(
       synthesiser.synthesise([correctnessDuplicate]),
@@ -259,7 +284,7 @@ describe("createSynthesiser", () => {
     const { model } = makeTextModel([
       JSON.stringify({ findings: [{ file: "", confidence: 2 }] }),
     ]);
-    const synthesiser = createSynthesiser({ model, modelId, agents: configuredAgents });
+    const synthesiser = createSynthesiser({ model, agents: configuredAgents });
 
     await expect(
       synthesiser.synthesise([correctnessDuplicate]),
@@ -268,7 +293,7 @@ describe("createSynthesiser", () => {
 
   it("propagates model API errors to the caller", async () => {
     const { model } = makeTextModel([new Error("model provider unavailable")]);
-    const synthesiser = createSynthesiser({ model, modelId, agents: configuredAgents });
+    const synthesiser = createSynthesiser({ model, agents: configuredAgents });
 
     await expect(
       synthesiser.synthesise([correctnessDuplicate]),
@@ -357,13 +382,12 @@ describe("a pre-resolved synthesis prompt", () => {
     const { model, calls } = makeTextModel([finalFindingsJson([combinedFinding])]);
     const synthesiser = createSynthesiser({
       model,
-      modelId,
       agents: configuredAgents,
       systemPrompt: injected,
     });
 
     await synthesiser.synthesise([correctnessDuplicate, securityDuplicate]);
 
-    expect(calls[0]?.system).toBe(injected);
+    expect(systemOf(calls[0])).toBe(injected);
   });
 });

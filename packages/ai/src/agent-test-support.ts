@@ -12,14 +12,9 @@ import type {
 import type { ReviewFinding } from "@pr-review/schemas";
 import { vi } from "vitest";
 
+import { MockLanguageModelV4 } from "ai/test";
+
 import type { AgentDefinition } from "./agents/definition.js";
-import type {
-  ModelContentBlock,
-  ModelRequest,
-  ModelResponse,
-  ModelTextBlock,
-  ModelToolUseBlock,
-} from "./model/types.js";
 import { parseAgentConfig } from "./agents/config.js";
 import type { ReviewContext } from "./agent-contract.js";
 
@@ -107,62 +102,82 @@ export function finalFindingsJson(findings: readonly ReviewFinding[]): string {
   return JSON.stringify({ findings });
 }
 
-export function textBlock(text: string): ModelTextBlock {
-  return { type: "text", text };
+/** A text part of an assistant turn, as the provider protocol spells it. */
+export function textBlock(text: string) {
+  return { type: "text" as const, text };
 }
 
-export function toolUseBlock(
-  id: string,
-  name: string,
-  input: unknown,
-): ModelToolUseBlock {
-  return { type: "tool_use", id, name, input };
+/** Tool input crosses the protocol as a JSON string; the SDK parses it. */
+export function toolUseBlock(id: string, name: string, input: unknown) {
+  return {
+    type: "tool-call" as const,
+    toolCallId: id,
+    toolName: name,
+    input: JSON.stringify(input),
+  };
 }
+
+type ScriptedContent =
+  | ReturnType<typeof textBlock>
+  | ReturnType<typeof toolUseBlock>;
 
 /** Cache counters default to zero, as an uncached response reports them. */
 interface ScriptedUsage {
-  inputTokens: number;
-  outputTokens: number;
+  inputTokens?: number;
+  outputTokens?: number;
   cacheCreationInputTokens?: number;
   cacheReadInputTokens?: number;
 }
 
+/** `raw` is the provider's own stop reason, surfacing as rawFinishReason. */
 export function message(
-  content: ModelContentBlock[],
-  stopReason: string | undefined,
-  usage: ScriptedUsage = {
-    inputTokens: 1,
-    outputTokens: 1,
-  },
-): ModelResponse {
+  content: ScriptedContent[],
+  raw: string | undefined,
+  usage: ScriptedUsage = {},
+) {
+  const noCache = usage.inputTokens ?? 1;
+  const cacheRead = usage.cacheReadInputTokens ?? 0;
+  const cacheWrite = usage.cacheCreationInputTokens ?? 0;
+  const output = usage.outputTokens ?? 1;
+  const unified = content.some((part) => part.type === "tool-call")
+    ? ("tool-calls" as const)
+    : ("stop" as const);
   return {
     content,
-    stopReason,
+    finishReason: { unified, raw },
     usage: {
-      inputTokens: usage.inputTokens,
-      outputTokens: usage.outputTokens,
-      cacheCreationInputTokens: usage.cacheCreationInputTokens ?? 0,
-      cacheReadInputTokens: usage.cacheReadInputTokens ?? 0,
+      inputTokens: {
+        total: noCache + cacheRead + cacheWrite,
+        noCache,
+        cacheRead,
+        cacheWrite,
+      },
+      outputTokens: { total: output, text: output, reasoning: 0 },
     },
+    warnings: [],
   };
 }
 
-/**
- * Replays queued responses. `requests` holds deep copies: the agent loop
- * mutates one `messages` array in place, so live args would alias.
- */
-export function makeModel(responses: ModelResponse[], provider = "test-provider") {
+/** Replays queued responses and records the call options the SDK built. */
+export function makeModel(
+  responses: ReturnType<typeof message>[],
+  provider = "test-provider",
+  modelId = "test-model",
+) {
   const queue = [...responses];
-  const requests: ModelRequest[] = [];
-  const createMessage = vi.fn(async (request: ModelRequest) => {
-    requests.push(structuredClone(request) as ModelRequest);
+  const doGenerate = vi.fn(async () => {
     const next = queue.shift();
     if (!next) {
       throw new Error("fake model client ran out of scripted responses");
     }
     return next;
   });
-  return { model: { provider, createMessage }, createMessage, requests };
+  const model = new MockLanguageModelV4({
+    provider,
+    modelId,
+    doGenerate: doGenerate as unknown as MockLanguageModelV4["doGenerate"],
+  });
+  return { model, doGenerate, calls: model.doGenerateCalls };
 }
 
 export function makeGithub() {

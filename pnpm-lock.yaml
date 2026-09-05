@@ -24,8 +24,11 @@ importers:
   apps/action:
     dependencies:
       '@langfuse/otel':
-        specifier: ^5.10.1
-        version: 5.10.1(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.10.0(@opentelemetry/api@1.9.1))(@opentelemetry/exporter-trace-otlp-http@0.221.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.10.0(@opentelemetry/api@1.9.1))
+        specifier: ^5.11.0
+        version: 5.11.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.10.0(@opentelemetry/api@1.9.1))(@opentelemetry/exporter-trace-otlp-http@0.221.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.10.0(@opentelemetry/api@1.9.1))
+      '@langfuse/vercel-ai-sdk':
+        specifier: ^5.11.0
+        version: 5.11.0(@opentelemetry/api@1.9.1)(ai@7.0.93(zod@4.4.3))(zod@4.4.3)
       '@opentelemetry/sdk-trace-node':
         specifier: ^2.10.0
         version: 2.10.0(@opentelemetry/api@1.9.1)
@@ -44,6 +47,9 @@ importers:
       '@pr-review/schemas':
         specifier: workspace:*
         version: link:../../packages/schemas
+      ai:
+        specifier: ^7.0.93
+        version: 7.0.93(zod@4.4.3)
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -77,15 +83,12 @@ importers:
       '@ai-sdk/openai':
         specifier: ^4.0.59
         version: 4.0.59(zod@4.4.3)
-      '@anthropic-ai/sdk':
-        specifier: ^0.115.0
-        version: 0.115.0(zod@4.4.3)
       '@langfuse/client':
-        specifier: ^5.10.1
-        version: 5.10.1(@opentelemetry/api@1.9.1)
+        specifier: ^5.11.0
+        version: 5.11.0(@opentelemetry/api@1.9.1)
       '@langfuse/tracing':
-        specifier: ^5.10.1
-        version: 5.10.1(@opentelemetry/api@1.9.1)
+        specifier: ^5.11.0
+        version: 5.11.0(@opentelemetry/api@1.9.1)
       '@pr-review/github':
         specifier: workspace:*
         version: link:../github
@@ -98,9 +101,6 @@ importers:
       ai:
         specifier: ^7.0.93
         version: 7.0.93(zod@4.4.3)
-      openai:
-        specifier: ^7.10.0
-        version: 7.10.0(undici@7.29.1)(zod@4.4.3)
       picomatch:
         specifier: ^4.0.5
         version: 4.0.5
@@ -170,6 +170,10 @@ packages:
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
 
+  '@ai-sdk/otel@1.0.93':
+    resolution: {integrity: sha512-3p9RJm2bQmudXW6fkkPiIR8L5Jd/dWmwa/YbnQI2eECIH+/0ctZKzi4EsuOyOY4vd5Apptom223/MoFb7m0yEQ==}
+    engines: {node: '>=22'}
+
   '@ai-sdk/provider-utils@5.0.36':
     resolution: {integrity: sha512-MFXBn6XDyf37PNQAge/HTatPJE8Vmg/g/w4WPtjSV53jq8FKAzoaN5+43hsdQa9bqgN+/13jxug9ChvsG+godQ==}
     engines: {node: '>=22'}
@@ -179,19 +183,6 @@ packages:
   '@ai-sdk/provider@4.0.10':
     resolution: {integrity: sha512-fX2ENAc7iDpZ+Wp4+Rk06Usn/Ys7dI9uAkGv0jlF6XVrW13NkRWx5Ou+U6lIM2E1fTLkCs16GGrUAaVvroag7A==}
     engines: {node: '>=22'}
-
-  '@anthropic-ai/sdk@0.115.0':
-    resolution: {integrity: sha512-BJrFIVyjNuU8lfDyIJTvlRYzgQg+zEl78BxE7fq8esULsGz9IRQvGtW5spq3tydmtjQb/GFdooKGdGsetpx+lQ==}
-    hasBin: true
-    peerDependencies:
-      zod: ^3.25.0 || ^4.0.0
-    peerDependenciesMeta:
-      zod:
-        optional: true
-
-  '@babel/runtime@7.29.7':
-    resolution: {integrity: sha512-Nq8OhGWiZIZGV6hLHoyAKLLcJihP/xFeBMGJoUrxTX2psI8dCifzLhZISFb+VWS3wFMRDmCGw5R+dOySCqPLhw==}
-    engines: {node: '>=6.9.0'}
 
   '@cfworker/json-schema@4.1.1':
     resolution: {integrity: sha512-gAmrUZSGtKc3AiBL71iNWxDsyUC5uMaKKGdvzYsBoTW/xi42JQHl7eKV2OYzCUqvc+D2RCcf7EXY2iCyFIk6og==}
@@ -402,18 +393,18 @@ packages:
   '@langchain/protocol@0.0.18':
     resolution: {integrity: sha512-XW1egQtPfsGI41w2AMZNFZrUIwFSQHTjVMZs0OaTpCAvht/QLoaPN8FQcsysMVypOhupG28J29yOorrc70otBQ==}
 
-  '@langfuse/client@5.10.1':
-    resolution: {integrity: sha512-isfMUbb55mXnp5EjIKnKmdB6aVxy+jPYK65RkaLdi2xveUbifVeov9kAwHQN6lWtzkR/ssSk6+JwvTCLaPcvTQ==}
+  '@langfuse/client@5.11.0':
+    resolution: {integrity: sha512-3Bf8xI1y8Dc71iLbfBV/CDM6Z5EgRpMPR+m+SQoChVXlzXQATs3MkBR8lLQlU/ag+9Pa1vf1OYTfPX4gf0iJQw==}
     peerDependencies:
       '@opentelemetry/api': ^1.9.0
 
-  '@langfuse/core@5.10.1':
-    resolution: {integrity: sha512-W8UArizWSy1DdeLGTsTwJwl7bkA7OQQcGZW8RtoopXyJZ93O0rwG7wzzeiZjhjpj5OtWOUTEaJuNkwOrF31UDw==}
+  '@langfuse/core@5.11.0':
+    resolution: {integrity: sha512-Y5nBcrd8k0bEazb+lcOaEm6ICxxJJLGDkTax7dY4NyiYoO1LlTIFhkfwSOcneQRjpl7EvgL4Dy+9fzDXBDuVaA==}
     peerDependencies:
       '@opentelemetry/api': ^1.9.0
 
-  '@langfuse/otel@5.10.1':
-    resolution: {integrity: sha512-F2153e4PoJ1cN+5tM/xnsS44aQCQwK3p0nPk4NEpITV5pMTqiQVyvpkAvly8GKQ5Qjjr7heJ1dFtghW43ysyPQ==}
+  '@langfuse/otel@5.11.0':
+    resolution: {integrity: sha512-O3UYiH2Y0gDVUV42ZQD5NjdySoQ9F49UJxTGZiBMR1OCcrQDJZkz90Wg5OO2j1+NYWvIRbxJzMYNU8l/CqV00g==}
     engines: {node: '>=20'}
     peerDependencies:
       '@opentelemetry/api': ^1.9.0
@@ -421,11 +412,18 @@ packages:
       '@opentelemetry/exporter-trace-otlp-http': '>=0.202.0 <1.0.0'
       '@opentelemetry/sdk-trace-base': ^2.0.1
 
-  '@langfuse/tracing@5.10.1':
-    resolution: {integrity: sha512-m2kK4D0MsH8g4Og6KpnlYk8NLdQTYe0JR5M4KKpfNj99XXLlbdpXE/g3uJSqkcrWFhpiIb+3cyS9+uV6wQ6WtA==}
+  '@langfuse/tracing@5.11.0':
+    resolution: {integrity: sha512-RrAradZuRVYnr7TLv1tHwLzyYxli96E8ujPmrt5LXLsEYsqUlfAhweW8khE1wqwj7uooLFg2FVvw1+IAIQx/+Q==}
     engines: {node: '>=20'}
     peerDependencies:
       '@opentelemetry/api': ^1.9.0
+
+  '@langfuse/vercel-ai-sdk@5.11.0':
+    resolution: {integrity: sha512-Vst4patsD3tYSwh7ouk1MvLyRFux5Ub8VUuLlWEvEOXeTPXdW/tkoNK+yyPS1l8rUz9+kiMihyZkv1PVIp+yQQ==}
+    engines: {node: '>=22'}
+    peerDependencies:
+      '@opentelemetry/api': ^1.9.0
+      ai: '>=7.0.0 <8'
 
   '@napi-rs/wasm-runtime@1.2.2':
     resolution: {integrity: sha512-JfB4kuJQjaoHuCTseIINHtHWeJnvgEcxjwA5t/Y00ZgaOO1Crz3fjT/p8kT28zA/Caz7oiUMn3d6H2yOVCVwuw==}
@@ -670,9 +668,6 @@ packages:
   '@rolldown/pluginutils@1.0.1':
     resolution: {integrity: sha512-2j9bGt5Jh8hj+vPtgzPtl72j0yRxHAyumoo6TNfAjsLB04UtpSvPbPcDcBMxz7n+9CYB0c1GxQFxYRg2jimqGw==}
 
-  '@stablelib/base64@1.0.1':
-    resolution: {integrity: sha512-1bnPQqSxSuc3Ii6MhBysoWCg58j97aUjuCSZrGSmDxNqtytIi0k8utUenAwTZN4V5mXXYGsVUI9zeBqy+jBOSQ==}
-
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
 
@@ -789,9 +784,6 @@ packages:
     resolution: {integrity: sha512-KfYbmpRm0VbLjEvVa9yGwCi9GI34xvi7A/HXYWQO65CSD2u3MczUJSuwXKFIxlGsgBQizV9q5J9NHj4VG0n+pA==}
     engines: {node: '>=12.0.0'}
 
-  fast-sha256@1.3.0:
-    resolution: {integrity: sha512-n11RGP/lrWEFI/bWdygLxhI+pVeo1ZYIVwvvPkW7azl/rOy+F3HYRZ2K5zeE9mmkhQppyv9sQFx0JM9UabnpPQ==}
-
   fdir@6.5.0:
     resolution: {integrity: sha512-tIbYtZbucOs0BRGqPJkshJUYdL+SDH7dVM8gjy+ERp3WAUjLEFJE+02kanyHtwjWOnwrKYBiwAmM0p4kLJAnXg==}
     engines: {node: '>=12.0.0'}
@@ -812,10 +804,6 @@ packages:
 
   js-tiktoken@1.0.21:
     resolution: {integrity: sha512-biOj/6M5qdgx5TKjDnFT1ymSpM5tbd3ylwDtrQvFQSu0Z7bBYko2dF+W/aUkXUPuk6IVpRxk/3Q2sHOzGlS36g==}
-
-  json-schema-to-ts@3.1.1:
-    resolution: {integrity: sha512-+DWg8jCJG2TEnpy7kOm/7/AxaYoaRbjVB4LFZLySZlWn8exGs3A4OLJR966cVvU26N7X9TWxl+Jsw7dzAqKT6g==}
-    engines: {node: '>=16'}
 
   json-schema@0.4.0:
     resolution: {integrity: sha512-es94M3nTIfsEPisRafak+HDLfHXnKBhV3vU5eqPcS3flIWqcxJWgXHXiey3YrpaNsanY5ei1VoYEbOzijuq9BA==}
@@ -1006,9 +994,6 @@ packages:
   stackback@0.0.2:
     resolution: {integrity: sha512-1XMJE5fQo1jGH6Y/7ebnwPOBEkIEnT4QF32d5R1+VXdXveM0IBMJt8zfaxX1P3QhVwrYe+576+jkANtSS2mBbw==}
 
-  standardwebhooks@1.0.0:
-    resolution: {integrity: sha512-BbHGOQK9olHPMvQNHWul6MYlrRTAOKn03rOe4A8O3CLWhNf4YHBqq2HJKKC+sfqpxiBY52pNeesD6jIiLDz8jg==}
-
   std-env@4.2.0:
     resolution: {integrity: sha512-oCUKSupKTHX53EyjDtuZQ64pjLJ6yYCtpmEw0goYxtjG9KpbRe8KAsl2tBUGU9DyMcJ0RwJ8GqJAFzMXcXW1Rw==}
 
@@ -1026,9 +1011,6 @@ packages:
   tinyrainbow@3.1.1:
     resolution: {integrity: sha512-yau8yJdTt989Mm0Bd/236QnzEiPf2xLLTqUZRUJOo/3CB078LSwzei343DgtJVmfJKJE3TMINY1u42SQsP6mXw==}
     engines: {node: '>=14.0.0'}
-
-  ts-algebra@2.0.0:
-    resolution: {integrity: sha512-FPAhNPFMrkwz76P7cdjdmiShwMynZYN6SgOujD1urY4oNm80Ou9oMdmbR45LotcKOXoy7wSmHkRFE6Mxbrhefw==}
 
   tslib@2.8.1:
     resolution: {integrity: sha512-oJFu94HQb+KVduSUQL7wnpmqnfmLsOA/nAh6b6EH0wCEoK0/mPeXU6c3wKDV83MkOuHPRHtSXKKU99IBazS/2w==}
@@ -1166,6 +1148,14 @@ snapshots:
       '@ai-sdk/provider-utils': 5.0.36(zod@4.4.3)
       zod: 4.4.3
 
+  '@ai-sdk/otel@1.0.93(zod@4.4.3)':
+    dependencies:
+      '@ai-sdk/provider': 4.0.10
+      '@opentelemetry/api': 1.9.1
+      ai: 7.0.93(zod@4.4.3)
+    transitivePeerDependencies:
+      - zod
+
   '@ai-sdk/provider-utils@5.0.36(zod@4.4.3)':
     dependencies:
       '@ai-sdk/provider': 4.0.10
@@ -1178,15 +1168,6 @@ snapshots:
   '@ai-sdk/provider@4.0.10':
     dependencies:
       json-schema: 0.4.0
-
-  '@anthropic-ai/sdk@0.115.0(zod@4.4.3)':
-    dependencies:
-      json-schema-to-ts: 3.1.1
-      standardwebhooks: 1.0.0
-    optionalDependencies:
-      zod: 4.4.3
-
-  '@babel/runtime@7.29.7': {}
 
   '@cfworker/json-schema@4.1.1': {}
 
@@ -1330,29 +1311,38 @@ snapshots:
 
   '@langchain/protocol@0.0.18': {}
 
-  '@langfuse/client@5.10.1(@opentelemetry/api@1.9.1)':
+  '@langfuse/client@5.11.0(@opentelemetry/api@1.9.1)':
     dependencies:
-      '@langfuse/core': 5.10.1(@opentelemetry/api@1.9.1)
-      '@langfuse/tracing': 5.10.1(@opentelemetry/api@1.9.1)
+      '@langfuse/core': 5.11.0(@opentelemetry/api@1.9.1)
+      '@langfuse/tracing': 5.11.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/api': 1.9.1
       mustache: 4.2.0
 
-  '@langfuse/core@5.10.1(@opentelemetry/api@1.9.1)':
+  '@langfuse/core@5.11.0(@opentelemetry/api@1.9.1)':
     dependencies:
       '@opentelemetry/api': 1.9.1
 
-  '@langfuse/otel@5.10.1(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.10.0(@opentelemetry/api@1.9.1))(@opentelemetry/exporter-trace-otlp-http@0.221.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.10.0(@opentelemetry/api@1.9.1))':
+  '@langfuse/otel@5.11.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.10.0(@opentelemetry/api@1.9.1))(@opentelemetry/exporter-trace-otlp-http@0.221.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.10.0(@opentelemetry/api@1.9.1))':
     dependencies:
-      '@langfuse/core': 5.10.1(@opentelemetry/api@1.9.1)
+      '@langfuse/core': 5.11.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/api': 1.9.1
       '@opentelemetry/core': 2.10.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/exporter-trace-otlp-http': 0.221.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/sdk-trace-base': 2.10.0(@opentelemetry/api@1.9.1)
 
-  '@langfuse/tracing@5.10.1(@opentelemetry/api@1.9.1)':
+  '@langfuse/tracing@5.11.0(@opentelemetry/api@1.9.1)':
     dependencies:
-      '@langfuse/core': 5.10.1(@opentelemetry/api@1.9.1)
+      '@langfuse/core': 5.11.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/api': 1.9.1
+
+  '@langfuse/vercel-ai-sdk@5.11.0(@opentelemetry/api@1.9.1)(ai@7.0.93(zod@4.4.3))(zod@4.4.3)':
+    dependencies:
+      '@ai-sdk/otel': 1.0.93(zod@4.4.3)
+      '@langfuse/core': 5.11.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/api': 1.9.1
+      ai: 7.0.93(zod@4.4.3)
+    transitivePeerDependencies:
+      - zod
 
   '@napi-rs/wasm-runtime@1.2.2(@emnapi/core@2.0.0-alpha.3)(@emnapi/runtime@2.0.0-alpha.3)':
     dependencies:
@@ -1573,8 +1563,6 @@ snapshots:
 
   '@rolldown/pluginutils@1.0.1': {}
 
-  '@stablelib/base64@1.0.1': {}
-
   '@standard-schema/spec@1.1.0': {}
 
   '@tybys/wasm-util@0.10.3':
@@ -1708,8 +1696,6 @@ snapshots:
 
   expect-type@1.4.0: {}
 
-  fast-sha256@1.3.0: {}
-
   fdir@6.5.0(picomatch@4.0.5):
     optionalDependencies:
       picomatch: 4.0.5
@@ -1722,11 +1708,6 @@ snapshots:
   js-tiktoken@1.0.21:
     dependencies:
       base64-js: 1.5.1
-
-  json-schema-to-ts@3.1.1:
-    dependencies:
-      '@babel/runtime': 7.29.7
-      ts-algebra: 2.0.0
 
   json-schema@0.4.0: {}
 
@@ -1804,6 +1785,7 @@ snapshots:
     optionalDependencies:
       undici: 7.29.1
       zod: 4.4.3
+    optional: true
 
   p-finally@1.0.0: {}
 
@@ -1866,11 +1848,6 @@ snapshots:
 
   stackback@0.0.2: {}
 
-  standardwebhooks@1.0.0:
-    dependencies:
-      '@stablelib/base64': 1.0.1
-      fast-sha256: 1.3.0
-
   std-env@4.2.0: {}
 
   tinybench@2.9.0: {}
@@ -1883,8 +1860,6 @@ snapshots:
       picomatch: 4.0.5
 
   tinyrainbow@3.1.1: {}
-
-  ts-algebra@2.0.0: {}
 
   tslib@2.8.1:
     optional: true

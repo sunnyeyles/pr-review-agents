@@ -44,7 +44,6 @@ import {
 } from "./run-fixture-review.js";
 import { buildPatch, diffOps, toLines } from "./unified-diff.js";
 
-const MODEL = "harness-test-model";
 
 const configuredAgents = repositoryAgents();
 
@@ -109,7 +108,6 @@ function scriptedDeps(
               "end_turn",
             ),
           ]).model,
-          modelId: MODEL,
           github,
           logger: createCapturingLogger().logger,
         }),
@@ -118,7 +116,6 @@ function scriptedDeps(
       model: makeModel([
         message([textBlock(finalFindingsJson(synthesised))], "end_turn"),
       ]).model,
-      modelId: MODEL,
       agents: configuredAgents,
     }),
   };

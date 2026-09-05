@@ -1,29 +1,45 @@
-/**
- * Provider selection. The one place that knows which adapters exist, so
- * adding a provider is an entry in PROVIDERS and nothing else.
- */
-import { createAnthropicClient, ANTHROPIC_PROVIDER } from "./anthropic.js";
-import { createOpenAiClient, OPENAI_PROVIDER } from "./openai.js";
-import type { ModelClient } from "./types.js";
+// Provider selection: adding a provider is an entry in PROVIDERS and nothing else.
+import { createAnthropic } from "@ai-sdk/anthropic";
+import { createOpenAI } from "@ai-sdk/openai";
+import type { LanguageModel } from "ai";
+
+/** The SDK also accepts a gateway model string; we always build a model object. */
+export type ReviewModel = Extract<LanguageModel, { modelId: string }>;
+
+interface ProviderCreateOptions {
+  apiKey: string;
+  baseUrl: string | undefined;
+  modelId: string;
+}
 
 interface ProviderEntry {
   /** Used when configuration names no model. */
   defaultModel: string;
   /** Environment variable this provider's key conventionally arrives in. */
   apiKeyEnv: string;
-  create(options: { apiKey: string; baseUrl?: string | undefined }): ModelClient;
+  create(options: ProviderCreateOptions): ReviewModel;
 }
 
 const PROVIDERS = {
-  [ANTHROPIC_PROVIDER]: {
+  anthropic: {
     defaultModel: "claude-sonnet-5",
     apiKeyEnv: "ANTHROPIC_API_KEY",
-    create: createAnthropicClient,
+    create: ({ apiKey, baseUrl, modelId }: ProviderCreateOptions) =>
+      createAnthropic({
+        apiKey,
+        ...(baseUrl === undefined ? {} : { baseURL: baseUrl }),
+      })(modelId),
   },
-  [OPENAI_PROVIDER]: {
+  openai: {
     defaultModel: "gpt-5",
     apiKeyEnv: "OPENAI_API_KEY",
-    create: createOpenAiClient,
+    // .chat, not the callable: that one speaks the Responses API, which
+    // most OpenAI-compatible gateways behind baseUrl do not implement.
+    create: ({ apiKey, baseUrl, modelId }: ProviderCreateOptions) =>
+      createOpenAI({
+        apiKey,
+        ...(baseUrl === undefined ? {} : { baseURL: baseUrl }),
+      }).chat(modelId),
   },
 } as const satisfies Record<string, ProviderEntry>;
 
@@ -32,7 +48,7 @@ export type ModelProvider = keyof typeof PROVIDERS;
 export const MODEL_PROVIDERS = Object.keys(PROVIDERS) as ModelProvider[];
 
 /** The provider used when configuration names none. */
-export const DEFAULT_MODEL_PROVIDER: ModelProvider = ANTHROPIC_PROVIDER;
+export const DEFAULT_MODEL_PROVIDER: ModelProvider = "anthropic";
 
 /** An unusable provider selection, raised before any model call. */
 export class ModelProviderError extends Error {
@@ -68,17 +84,19 @@ export function apiKeyEnvFor(provider: ModelProvider): string {
   return PROVIDERS[provider].apiKeyEnv;
 }
 
-export interface ModelClientConfig {
+export interface LanguageModelConfig {
   provider: ModelProvider;
   apiKey: string;
   /** Gateway, proxy, or compatible endpoint; the SDK default when absent. */
   baseUrl?: string | undefined;
+  /** Model id from configuration; never hard-coded. */
+  modelId: string;
 }
 
-/** Builds the ModelClient for a configured provider. */
-export function createModelClient(config: ModelClientConfig): ModelClient {
+export function createLanguageModel(config: LanguageModelConfig): ReviewModel {
   return PROVIDERS[config.provider].create({
     apiKey: config.apiKey,
     baseUrl: config.baseUrl,
+    modelId: config.modelId,
   });
 }

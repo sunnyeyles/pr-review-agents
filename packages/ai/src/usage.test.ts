@@ -4,8 +4,8 @@
  */
 import { describe, expect, it } from "vitest";
 
-import type { ModelUsage } from "./model/types.js";
-import { addTokenUsage, emptyTokenUsage } from "./usage.js";
+import type { TokenUsage } from "./usage.js";
+import { addTokenUsage, emptyTokenUsage, toTokenUsage } from "./usage.js";
 
 /** A usage block in the shape an adapter returns, cache counters included. */
 function usage(
@@ -13,7 +13,7 @@ function usage(
   outputTokens: number,
   cacheCreationInputTokens = 0,
   cacheReadInputTokens = 0,
-): ModelUsage {
+): TokenUsage {
   return {
     inputTokens,
     outputTokens,
@@ -107,6 +107,55 @@ describe("addTokenUsage", () => {
         "inputTokens",
         "outputTokens",
       ],
+    );
+  });
+});
+
+/** An SDK usage block; every counter there is optional. */
+function sdkUsage(
+  details: Partial<{
+    total: number;
+    noCache: number;
+    cacheRead: number;
+    cacheWrite: number;
+  }>,
+  outputTokens = 5,
+) {
+  return {
+    inputTokens: details.total,
+    inputTokenDetails: {
+      noCacheTokens: details.noCache,
+      cacheReadTokens: details.cacheRead,
+      cacheWriteTokens: details.cacheWrite,
+    },
+    outputTokens,
+    outputTokenDetails: { textTokens: outputTokens, reasoningTokens: undefined },
+    totalTokens: undefined,
+  };
+}
+
+describe("toTokenUsage", () => {
+  it("takes the uncached remainder, not the cache-inclusive total", () => {
+    expect(
+      toTokenUsage(
+        sdkUsage({ total: 100, noCache: 10, cacheRead: 60, cacheWrite: 30 }),
+      ),
+    ).toEqual(total(10, 30, 60, 5));
+  });
+
+  it("derives the remainder when the provider reports no breakdown", () => {
+    expect(
+      toTokenUsage(sdkUsage({ total: 100, cacheRead: 60, cacheWrite: 30 })),
+    ).toEqual(total(10, 30, 60, 5));
+  });
+
+  it("reports zeros rather than NaN when usage is absent", () => {
+    expect(toTokenUsage(sdkUsage({}, 0))).toEqual(total(0, 0, 0, 0));
+  });
+
+  it("never reports a negative remainder", () => {
+    expect(toTokenUsage(sdkUsage({ total: 10, cacheRead: 60 }))).toEqual(
+      total(0, 0, 60, 5),
     );
   });
 });
