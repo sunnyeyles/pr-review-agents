@@ -43,7 +43,7 @@ afterAll(() => {
 });
 
 const validInputs = {
-  "INPUT_ANTHROPIC-API-KEY": "sk-test-key",
+  "INPUT_API-KEY": "sk-test-key",
   INPUT_MODEL: "claude-test-model",
   "INPUT_GITHUB-TOKEN": "ghs-test-token",
 };
@@ -73,7 +73,7 @@ function pullRequestEvent(overrides: Record<string, unknown> = {}): string {
 interface Harness {
   environment: ActionEnvironment;
   entries: ReturnType<typeof createCapturingLogger>["entries"];
-  anthropicConfigs: { apiKey: string }[];
+  modelConfigs: { provider: string; apiKey: string; baseUrl?: string | undefined }[];
   tokenConfigs: { token: string }[];
   promptClientConfigs: { publicKey: string; secretKey: string; baseUrl: string }[];
   /** Prompt names fetched, in order, across every client built. */
@@ -104,7 +104,7 @@ function harness(
   options: HarnessOptions = {},
 ): Harness {
   const { logger, entries } = createCapturingLogger();
-  const anthropicConfigs: { apiKey: string }[] = [];
+  const modelConfigs: Harness["modelConfigs"] = [];
   const tokenConfigs: { token: string }[] = [];
   const promptClientConfigs: Harness["promptClientConfigs"] = [];
   const promptFetches: Harness["promptFetches"] = [];
@@ -129,7 +129,7 @@ function harness(
 
   return {
     entries,
-    anthropicConfigs,
+    modelConfigs,
     tokenConfigs,
     promptClientConfigs,
     promptFetches,
@@ -147,19 +147,22 @@ function harness(
           ? Promise.reject(eventFile)
           : Promise.resolve(eventFile);
       },
-      createAnthropicClient: (config) => {
-        anthropicConfigs.push({ apiKey: config.apiKey });
+      createModelClient: (config) => {
+        modelConfigs.push({
+          provider: config.provider,
+          apiKey: config.apiKey,
+          baseUrl: config.baseUrl,
+        });
         return {
-          messages: {
-            create: vi.fn(async () => {
-              modelCalls += 1;
-              if (options.modelError !== undefined) {
-                throw options.modelError;
-              }
-              // No findings, so the synthesiser is never reached.
-              return message([textBlock(finalFindingsJson([]))], "end_turn");
-            }),
-          },
+          provider: config.provider,
+          createMessage: vi.fn(async () => {
+            modelCalls += 1;
+            if (options.modelError !== undefined) {
+              throw options.modelError;
+            }
+            // No findings, so the synthesiser is never reached.
+            return message([textBlock(finalFindingsJson([]))], "end_turn");
+          }),
         };
       },
       createTokenClient: (config) => {
@@ -223,9 +226,7 @@ const reviewEnv = {
 
 describe("getInput", () => {
   it("uppercases the input name and preserves dashes", () => {
-    expect(getInput({ "INPUT_ANTHROPIC-API-KEY": "sk-1" }, "anthropic-api-key")).toBe(
-      "sk-1",
-    );
+    expect(getInput({ "INPUT_MODEL-BASE-URL": "u" }, "model-base-url")).toBe("u");
   });
 
   it("replaces spaces with underscores", () => {
@@ -261,7 +262,7 @@ describe("requireInput", () => {
     expect(requireInput({ INPUT_MODEL: " m " }, "model")).toBe("m");
   });
 
-  it.each(["model", "anthropic-api-key", "github-token"])(
+  it.each(["model", "github-token"])(
     "throws naming the %s input when it is missing",
     (name) => {
       expect(() => requireInput({}, name)).toThrow(
@@ -354,27 +355,100 @@ describe("runAction", () => {
     await expect(runAction(environment)).rejects.toThrow(SyntaxError);
   });
 
-  it.each([
-    ["github-token", "INPUT_GITHUB-TOKEN"],
-    ["anthropic-api-key", "INPUT_ANTHROPIC-API-KEY"],
-    ["model", "INPUT_MODEL"],
-  ])("fails when the %s input is missing", async (name, variable) => {
+  it("fails when the github-token input is missing", async () => {
     const env: Record<string, string | undefined> = { ...reviewEnv };
-    delete env[variable];
+    delete env["INPUT_GITHUB-TOKEN"];
     const { environment } = harness(env);
     await expect(runAction(environment)).rejects.toThrow(
-      `Missing required action input: ${name}`,
+      "Missing required action input: github-token",
     );
   });
 
+  it("fails when neither the API key input nor the provider's variable is set", async () => {
+    const env: Record<string, string | undefined> = { ...reviewEnv };
+    delete env["INPUT_API-KEY"];
+    const { environment } = harness(env);
+    await expect(runAction(environment)).rejects.toThrow(
+      "Missing required action input: api-key (or the ANTHROPIC_API_KEY environment variable)",
+    );
+  });
+
+  it("falls back to the selected provider's own key variable", async () => {
+    const env: Record<string, string | undefined> = { ...reviewEnv };
+    delete env["INPUT_API-KEY"];
+    const { environment, modelConfigs } = harness({
+      ...env,
+      "INPUT_MODEL-PROVIDER": "openai",
+      ANTHROPIC_API_KEY: "sk-anthropic-key",
+      OPENAI_API_KEY: "sk-openai-key",
+    });
+
+    await expect(runAction(environment)).resolves.toBeUndefined();
+
+    expect(modelConfigs[0]).toMatchObject({
+      provider: "openai",
+      apiKey: "sk-openai-key",
+    });
+  });
+
+  it("defaults the model id when the model input is empty", async () => {
+    const env: Record<string, string | undefined> = { ...reviewEnv };
+    delete env["INPUT_MODEL"];
+    const { environment, entries } = harness(env);
+
+    await expect(runAction(environment)).resolves.toBeUndefined();
+
+    expect(entries).toContainEqual(
+      expect.objectContaining({
+        event: "review.model_selected",
+        provider: "anthropic",
+        model: "claude-sonnet-5",
+      }),
+    );
+  });
+
+  it("builds the client for the selected provider and base URL", async () => {
+    const { environment, modelConfigs } = harness({
+      ...reviewEnv,
+      "INPUT_MODEL-PROVIDER": "openai",
+      "INPUT_API-KEY": "sk-openai-key",
+      "INPUT_MODEL-BASE-URL": "https://gateway.example/v1",
+      INPUT_MODEL: "gpt-test-model",
+    });
+
+    await expect(runAction(environment)).resolves.toBeUndefined();
+
+    expect(modelConfigs).toEqual([
+      {
+        provider: "openai",
+        apiKey: "sk-openai-key",
+        baseUrl: "https://gateway.example/v1",
+      },
+    ]);
+  });
+
+  it("fails on an unknown provider before building any client", async () => {
+    const { environment, modelConfigs } = harness({
+      ...reviewEnv,
+      "INPUT_MODEL-PROVIDER": "wattson",
+    });
+
+    await expect(runAction(environment)).rejects.toThrow(
+      /Unknown model provider: wattson/,
+    );
+    expect(modelConfigs).toEqual([]);
+  });
+
   it("reads the event file, builds both clients, and reviews", async () => {
-    const { environment, readPaths, anthropicConfigs, tokenConfigs, entries } =
+    const { environment, readPaths, modelConfigs, tokenConfigs, entries } =
       harness(reviewEnv);
 
     await expect(runAction(environment)).resolves.toBeUndefined();
 
     expect(readPaths).toEqual(["/tmp/event.json"]);
-    expect(anthropicConfigs).toEqual([{ apiKey: "sk-test-key" }]);
+    expect(modelConfigs).toEqual([
+      { provider: "anthropic", apiKey: "sk-test-key", baseUrl: undefined },
+    ]);
     expect(tokenConfigs).toEqual([{ token: "ghs-test-token" }]);
     expect(events(entries)).toContain("review.started");
   });
@@ -444,14 +518,14 @@ describe("agent configuration", () => {
   });
 
   it("fails the step when the base commit has no configuration", async () => {
-    const { environment, anthropicConfigs } = harness(reviewEnv, pullRequestEvent(), {
+    const { environment, modelConfigs } = harness(reviewEnv, pullRequestEvent(), {
       config: httpError(404),
     });
 
     await expect(runAction(environment)).rejects.toThrow(
       /No review agents are configured/,
     );
-    expect(anthropicConfigs).toEqual([]);
+    expect(modelConfigs).toEqual([]);
   });
 
   it("fails the step when the configuration is malformed", async () => {
@@ -522,7 +596,7 @@ describe("agent selection", () => {
   it("fails on an unknown name before building the model client", async () => {
     // The whole point of resolving the input first: a typo in the
     // workflow file must not cost a model call.
-    const { environment, anthropicConfigs, modelCalls } = harness({
+    const { environment, modelConfigs, modelCalls } = harness({
       ...reviewEnv,
       INPUT_AGENTS: "secuirty",
     });
@@ -530,7 +604,7 @@ describe("agent selection", () => {
     await expect(runAction(environment)).rejects.toThrow(
       /Unknown review agent: secuirty/,
     );
-    expect(anthropicConfigs).toEqual([]);
+    expect(modelConfigs).toEqual([]);
     expect(modelCalls()).toBe(0);
   });
 });
@@ -696,7 +770,7 @@ describe("Langfuse wiring", () => {
     const { environment, flushCount } = harness(
       { ...reviewEnv, ...langfuseInputs },
       pullRequestEvent(),
-      { prompts: remotePrompts, modelError: new Error("anthropic unavailable") },
+      { prompts: remotePrompts, modelError: new Error("model provider unavailable") },
     );
 
     await expect(runAction(environment)).rejects.toThrow();
@@ -786,7 +860,7 @@ describe("actionEnvironment", () => {
     const environment = actionEnvironment();
     expect(environment.env).toBe(process.env);
     expect(typeof environment.readEventFile).toBe("function");
-    expect(typeof environment.createAnthropicClient).toBe("function");
+    expect(typeof environment.createModelClient).toBe("function");
     expect(typeof environment.createTokenClient).toBe("function");
     expect(typeof environment.createPromptClient).toBe("function");
     expect(typeof environment.createLangfuseRuntime).toBe("function");

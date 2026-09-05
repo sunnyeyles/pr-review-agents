@@ -10,18 +10,21 @@ import {
   DEFAULT_AGENT_CONFIG_PATH,
   DEFAULT_PROMPT_LABEL,
   SYNTHESIS_PROMPT_ID,
-  createAnthropicClient,
   createLangfusePromptClient,
   createReviewAgents,
+  apiKeyEnvFor,
+  createModelClient,
   createSynthesiser,
+  defaultModelFor,
   loadAgentDefinitions,
   loadManagedPrompts,
   resolveAgentDefinitions,
-  type AnthropicClientConfig,
-  type AnthropicLike,
+  resolveModelProvider,
   type LangfusePromptClient,
   type LangfusePromptClientConfig,
   type ManagedPrompts,
+  type ModelClient,
+  type ModelClientConfig,
   type ReadOptionalFile,
   type AgentDefinition,
 } from "@pr-review/ai";
@@ -57,7 +60,7 @@ export interface ActionEnvironment {
   env: Record<string, string | undefined>;
   /** Reads the workflow event payload file as UTF-8 text. */
   readEventFile: (path: string) => Promise<string>;
-  createAnthropicClient: (config: AnthropicClientConfig) => AnthropicLike;
+  createModelClient: (config: ModelClientConfig) => ModelClient;
   createTokenClient: (config: GithubTokenConfig) => GithubInstallationClient;
   /** Builds the managed-prompt retrieval seam. */
   createPromptClient: (config: LangfusePromptClientConfig) => LangfusePromptClient;
@@ -73,7 +76,7 @@ export function actionEnvironment(): ActionEnvironment {
   return {
     env: process.env,
     readEventFile: (filePath) => readFile(filePath, "utf8"),
-    createAnthropicClient,
+    createModelClient,
     createTokenClient,
     createPromptClient: createLangfusePromptClient,
     createLangfuseRuntime,
@@ -175,6 +178,38 @@ async function resolveManagedPrompts(
   }
 }
 
+/** The model client for this run, and the model id to call it with. */
+export interface ModelInputs {
+  model: ModelClient;
+  modelId: string;
+}
+
+/** Builds the run's model client. */
+export function resolveModelInputs(
+  env: Record<string, string | undefined>,
+  environment: Pick<ActionEnvironment, "createModelClient">,
+): ModelInputs {
+  const provider = resolveModelProvider(getInput(env, "model-provider"));
+  const keyEnv = apiKeyEnvFor(provider);
+  // The provider's own variable is the fallback, so a workflow can pass each
+  // provider's secret through `env` rather than picking one in YAML.
+  const apiKey = getInput(env, "api-key") || (env[keyEnv] ?? "").trim();
+  if (apiKey === "") {
+    throw new Error(
+      `Missing required action input: api-key (or the ${keyEnv} environment variable)`,
+    );
+  }
+  const baseUrl = getInput(env, "model-base-url");
+  return {
+    model: environment.createModelClient({
+      provider,
+      apiKey,
+      ...(baseUrl === "" ? {} : { baseUrl }),
+    }),
+    modelId: getInput(env, "model") || defaultModelFor(provider),
+  };
+}
+
 /**
  * Reads repository files at one commit. The agent configuration defines
  * the agents' system prompts, so it is read at the pull request's base
@@ -241,10 +276,11 @@ export async function runAction(
     configuredAgents: configured.map((agent) => agent.category),
   });
 
-  const anthropic: AnthropicLike = environment.createAnthropicClient({
-    apiKey: requireInput(env, "anthropic-api-key"),
+  const { model, modelId } = resolveModelInputs(env, environment);
+  logger.info("review.model_selected", {
+    provider: model.provider,
+    model: modelId,
   });
-  const model = requireInput(env, "model");
 
   const langfuse = resolveLangfuseInputs(env, logger);
   // Tracing starts before the prompt fetch so the fetch's spans are captured.
@@ -266,8 +302,8 @@ export async function runAction(
 
     // Repository-independent, so one instance serves the whole run.
     const synthesiser = createSynthesiser({
-      anthropic,
       model,
+      modelId,
       agents,
       ...(prompts === undefined
         ? {}
@@ -279,8 +315,8 @@ export async function runAction(
         runReviewPipeline(
           createReviewAgents(
             {
-              anthropic,
               model,
+              modelId,
               github: reviewClient,
               ...(prompts === undefined ? {} : { systemPrompts: prompts }),
             },

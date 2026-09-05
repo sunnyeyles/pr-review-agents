@@ -1,16 +1,35 @@
 /**
- * The Anthropic side of the review system: the client seam, prompt
- * management, and the model-calling units under `agents/`. Agents only
- * propose findings; publishing lives in @pr-review/reviewer.
+ * The model side of the review system: the provider-neutral client seam,
+ * prompt management, and the model-calling units under `agents/`. Agents
+ * only propose findings; publishing lives in @pr-review/reviewer.
  */
 export {
-  createAnthropicClient,
-  type AnthropicClientConfig,
-  type AnthropicLike,
-} from "./anthropic.js";
+  createModelClient,
+  defaultModelFor,
+  resolveModelProvider,
+  DEFAULT_MODEL_PROVIDER,
+  MODEL_PROVIDERS,
+  ModelProviderError,
+  apiKeyEnvFor,
+  type ModelClientConfig,
+  type ModelProvider,
+} from "./model/provider.js";
+export { messageText } from "./model/types.js";
+export type {
+  ModelClient,
+  ModelContentBlock,
+  ModelMessage,
+  ModelProviderBlock,
+  ModelRequest,
+  ModelResponse,
+  ModelTextBlock,
+  ModelToolDefinition,
+  ModelToolResultBlock,
+  ModelToolUseBlock,
+  ModelUsage,
+} from "./model/types.js";
 export {
   extractAgentOutput,
-  messageText,
   type AgentOutputResult,
 } from "./agents/output.js";
 export type { ReviewAgent, ReviewContext } from "./agent-contract.js";

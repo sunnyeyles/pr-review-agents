@@ -3,11 +3,14 @@
  * the contract guard, and on into the model call that uses it.
  */
 import { createCapturingLogger } from "@pr-review/logging";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
-import type { AnthropicLike } from "./anthropic.js";
 import {
+  finalFindingsJson,
+  makeModel,
+  message,
   repositoryAgents,
+  textBlock,
   validRemoteSynthesisPrompt,
 } from "./agent-test-support.js";
 import {
@@ -19,29 +22,9 @@ import { loadManagedPrompts, type LangfusePromptClient } from "./prompts.js";
 const configuredAgents = repositoryAgents();
 const SYNTHESIS_SYSTEM_PROMPT = buildSynthesisSystemPrompt(configuredAgents);
 
-/** The message shape the Anthropic seam resolves to. */
-type CreateResult = Awaited<ReturnType<AnthropicLike["messages"]["create"]>>;
-
 /** Records what reached the model and answers with an empty result. */
-function recordingAnthropic(): {
-  anthropic: AnthropicLike;
-  calls: { system?: string }[];
-} {
-  const calls: { system?: string }[] = [];
-  const create = vi.fn((params: { system?: string }) => {
-    calls.push(params);
-    return Promise.resolve({
-      id: "msg_test",
-      type: "message",
-      role: "assistant",
-      model: "claude-test-model",
-      content: [{ type: "text", text: JSON.stringify({ findings: [] }) }],
-      stop_reason: "end_turn",
-      stop_sequence: null,
-      usage: { input_tokens: 1, output_tokens: 1 },
-    } as unknown as CreateResult);
-  });
-  return { anthropic: { messages: { create } } as AnthropicLike, calls };
+function recordingModel() {
+  return makeModel([message([textBlock(finalFindingsJson([]))], "end_turn")]);
 }
 
 function clientReturning(text: string): LangfusePromptClient {
@@ -79,10 +62,10 @@ describe("resolving the synthesis prompt", () => {
     );
     expect(sources.synthesis).toBe("langfuse");
 
-    const { anthropic, calls } = recordingAnthropic();
+    const { model, requests } = recordingModel();
     const synthesiser = createSynthesiser({
-      anthropic,
-      model: "claude-test-model",
+      model,
+      modelId: "test-model",
       agents: configuredAgents,
       systemPrompt: prompts.synthesis,
     });
@@ -100,7 +83,7 @@ describe("resolving the synthesis prompt", () => {
       },
     ]);
 
-    expect(calls[0]?.system).toBe(remote);
+    expect(requests[0]?.system).toBe(remote);
   });
 
   it("hands the in-code prompt to the synthesiser when the fetch fails", async () => {

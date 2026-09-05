@@ -1,28 +1,25 @@
 /**
- * The token-usage accumulator. Pure arithmetic over the `usage` block
- * of an Anthropic response — no client, no network.
+ * The token-usage accumulator. Pure arithmetic over one call's neutral
+ * usage block — no client, no network.
  */
-import type Anthropic from "@anthropic-ai/sdk";
 import { describe, expect, it } from "vitest";
 
+import type { ModelUsage } from "./model/types.js";
 import { addTokenUsage, emptyTokenUsage } from "./usage.js";
 
-/** A usage block in the shape the SDK returns, cache fields included. */
+/** A usage block in the shape an adapter returns, cache counters included. */
 function usage(
   inputTokens: number,
   outputTokens: number,
-  cacheCreationInputTokens: number | null = null,
-  cacheReadInputTokens: number | null = null,
-): Anthropic.Messages.Usage {
+  cacheCreationInputTokens = 0,
+  cacheReadInputTokens = 0,
+): ModelUsage {
   return {
-    input_tokens: inputTokens,
-    output_tokens: outputTokens,
-    cache_creation_input_tokens: cacheCreationInputTokens,
-    cache_read_input_tokens: cacheReadInputTokens,
-    cache_creation: null,
-    server_tool_use: null,
-    service_tier: null,
-  } as Anthropic.Messages.Usage;
+    inputTokens,
+    outputTokens,
+    cacheCreationInputTokens,
+    cacheReadInputTokens,
+  };
 }
 
 /** The four counters, spelled out where a test asserts a whole total. */
@@ -95,9 +92,9 @@ describe("addTokenUsage", () => {
     expect(accumulated).toEqual(total(30, 4_500, 8_300, 24));
   });
 
-  it("treats an absent cache counter as zero, not NaN", () => {
-    // A response from a request with no caching reports null here.
-    expect(addTokenUsage(emptyTokenUsage(), usage(10, 2, null, null))).toEqual(
+  it("leaves the cache counters at zero when a call reported none", () => {
+    // Normalising an absent provider counter is the adapter's job.
+    expect(addTokenUsage(emptyTokenUsage(), usage(10, 2))).toEqual(
       total(10, 0, 0, 2),
     );
   });

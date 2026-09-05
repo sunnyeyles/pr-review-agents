@@ -2,26 +2,8 @@
  * The Zod-validated contract for an agent's final message. Anything else
  * is an agent failure, never a crash.
  */
-import type Anthropic from "@anthropic-ai/sdk";
 import { reviewFindingSchema, type ReviewFinding } from "@pr-review/schemas";
 import { z } from "zod";
-
-/**
- * The concatenated text of one message's content blocks. Typed
- * structurally so a caller can pass `content` without narrowing it.
- */
-export function messageText(content: readonly unknown[]): string {
-  return content
-    .filter(
-      (block): block is Anthropic.Messages.TextBlock =>
-        typeof block === "object" &&
-        block !== null &&
-        "type" in block &&
-        block.type === "text",
-    )
-    .map((block) => block.text)
-    .join("\n");
-}
 
 /** The only output an agent can produce: candidate findings. */
 export const agentOutputSchema = z.object({

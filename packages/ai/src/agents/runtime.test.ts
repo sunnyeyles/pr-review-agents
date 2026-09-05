@@ -2,7 +2,6 @@
  * The shared agent-runtime behaviours — loop, tool wiring, output
  * parsing, failure semantics — exercised through the Correctness agent.
  */
-import type Anthropic from "@anthropic-ai/sdk";
 import { createCapturingLogger } from "@pr-review/logging";
 import { describe, expect, it } from "vitest";
 
@@ -16,16 +15,16 @@ import {
   context,
   finalFindingsJson,
   headSha,
-  makeAnthropic,
   makeFinding,
   makeGithub,
+  makeModel,
   message,
   pullRequest,
   repositoryAgent,
-  systemPromptOf,
   textBlock,
   toolUseBlock,
 } from "../agent-test-support.js";
+import type { ModelResponse } from "../model/types.js";
 
 const correctnessAgent = repositoryAgent("correctness");
 
@@ -42,15 +41,15 @@ const finding = {
 const finalJson = JSON.stringify({ findings: [finding] });
 
 function makeAgent(
-  responses: Anthropic.Messages.Message[],
+  responses: ModelResponse[],
   options: { maxTurns?: number; systemPrompts?: ReviewSystemPrompts } = {},
 ) {
-  const { anthropic, create, requests } = makeAnthropic(responses);
+  const { model, createMessage: create, requests } = makeModel(responses);
   const github = makeGithub();
   const { logger, entries } = createCapturingLogger();
   const agent = createReviewAgent(correctnessAgent, {
-    anthropic,
-    model: "claude-test-model",
+    model,
+    modelId: "claude-test-model",
     github,
     logger,
     ...(options.maxTurns !== undefined ? { maxTurns: options.maxTurns } : {}),
@@ -115,7 +114,7 @@ describe("the Correctness agent", () => {
 
     await agent.run(context);
 
-    const system = systemPromptOf(create.mock.calls[0]?.[0]);
+    const system = create.mock.calls[0]?.[0]?.system ?? "";
     // The hardening rules plus the correctness agent's own focus.
     expect(system).toMatch(/data.*not instructions|never instructions/is);
     expect(system).toMatch(/comments?.*(never|not).*instructions/is);
@@ -152,7 +151,7 @@ describe("the Correctness agent", () => {
       content: [
         {
           type: "tool_result",
-          tool_use_id: "toolu_1",
+          toolUseId: "toolu_1",
           content: "export const sessions = [];\n",
         },
       ],
@@ -178,8 +177,8 @@ describe("the Correctness agent", () => {
       content: [
         expect.objectContaining({
           type: "tool_result",
-          tool_use_id: "toolu_1",
-          is_error: true,
+          toolUseId: "toolu_1",
+          isError: true,
         }),
       ],
     });
@@ -199,8 +198,8 @@ describe("the Correctness agent", () => {
       content: [
         expect.objectContaining({
           type: "tool_result",
-          tool_use_id: "toolu_1",
-          is_error: true,
+          toolUseId: "toolu_1",
+          isError: true,
         }),
       ],
     });
@@ -224,7 +223,7 @@ describe("the Correctness agent", () => {
     const results = secondParams?.messages[2]?.content;
     expect(Array.isArray(results)).toBe(true);
     if (Array.isArray(results)) {
-      expect(results.map((block) => (block as { tool_use_id: string }).tool_use_id)).toEqual(
+      expect(results.map((block) => (block as { toolUseId: string }).toolUseId)).toEqual(
         ["toolu_1", "toolu_2"],
       );
     }
@@ -260,11 +259,11 @@ describe("the Correctness agent", () => {
   });
 
   it("propagates model API failures", async () => {
-    const { anthropic } = makeAnthropic([]);
-    anthropic.messages.create.mockRejectedValueOnce(new Error("529 overloaded"));
+    const { model } = makeModel([]);
+    model.createMessage.mockRejectedValueOnce(new Error("529 overloaded"));
     const agent = createReviewAgent(correctnessAgent, {
-      anthropic,
-      model: "claude-test-model",
+      model,
+      modelId: "claude-test-model",
       github: makeGithub(),
       logger: createCapturingLogger().logger,
     });
@@ -384,12 +383,12 @@ describe("lifecycle events (spec §26)", () => {
   });
 
   it("emits agent.failed when the model API call rejects", async () => {
-    const { anthropic } = makeAnthropic([]);
-    anthropic.messages.create.mockRejectedValueOnce(new Error("529 overloaded"));
+    const { model } = makeModel([]);
+    model.createMessage.mockRejectedValueOnce(new Error("529 overloaded"));
     const { logger, entries } = createCapturingLogger();
     const agent = createReviewAgent(correctnessAgent, {
-      anthropic,
-      model: "claude-test-model",
+      model,
+      modelId: "claude-test-model",
       github: makeGithub(),
       logger,
     });
@@ -413,14 +412,14 @@ describe("lifecycle events (spec §26)", () => {
       "tool_use",
       { inputTokens: 40, outputTokens: 4 },
     );
-    const { anthropic } = makeAnthropic([]);
-    anthropic.messages.create
+    const { model } = makeModel([]);
+    model.createMessage
       .mockImplementationOnce(async () => toolTurn)
       .mockRejectedValueOnce(new Error("529 overloaded"));
     const { logger, entries } = createCapturingLogger();
     const agent = createReviewAgent(correctnessAgent, {
-      anthropic,
-      model: "claude-test-model",
+      model,
+      modelId: "claude-test-model",
       github: makeGithub(),
       logger,
     });
@@ -460,9 +459,7 @@ describe("lifecycle events (spec §26)", () => {
 });
 
 describe("prompt caching", () => {
-  it("marks the system prompt as a cache breakpoint on every turn", async () => {
-    // Render order is tools then system, so the marker on the last
-    // system block caches the tool schemas too.
+  it("asks the provider to cache the stable prefix on every turn", async () => {
     const { agent, create } = makeAgent([
       message([toolUseBlock("toolu_1", "get_diff", {})], "tool_use"),
       message([textBlock(finalJson)], "end_turn"),
@@ -472,26 +469,9 @@ describe("prompt caching", () => {
 
     expect(create).toHaveBeenCalledTimes(2);
     for (const [params] of create.mock.calls) {
-      expect(params.system).toEqual([
-        {
-          type: "text",
-          text: buildReviewSystemPrompt(correctnessAgent),
-          cache_control: { type: "ephemeral" },
-        },
-      ]);
+      expect(params.cachePrefix).toBe(true);
+      expect(params.system).toBe(buildReviewSystemPrompt(correctnessAgent));
     }
-  });
-
-  it("asks for automatic caching of the growing conversation tail", async () => {
-    const { agent, create } = makeAgent([
-      message([textBlock(finalJson)], "end_turn"),
-    ]);
-
-    await agent.run(context);
-
-    expect(create.mock.calls[0]?.[0]?.cache_control).toEqual({
-      type: "ephemeral",
-    });
   });
 
   it("sends a byte-identical prefix between turns, so the cache can hit", async () => {
@@ -506,7 +486,7 @@ describe("prompt caching", () => {
     const [first, second] = requests;
     expect(second?.system).toEqual(first?.system);
     expect(second?.tools).toEqual(first?.tools);
-    expect(second?.cache_control).toEqual(first?.cache_control);
+    expect(second?.cachePrefix).toEqual(first?.cachePrefix);
     expect(second?.messages.slice(0, first?.messages.length)).toEqual(
       first?.messages,
     );
@@ -551,7 +531,7 @@ describe("pre-resolved system prompts", () => {
 
     await agent.run(context);
 
-    expect(systemPromptOf(create.mock.calls[0]?.[0])).toBe(injected);
+    expect(create.mock.calls[0]?.[0]?.system).toBe(injected);
   });
 
   it("falls back to the in-code prompt for an agent that has none", async () => {
@@ -563,7 +543,7 @@ describe("pre-resolved system prompts", () => {
 
     await agent.run(context);
 
-    expect(systemPromptOf(create.mock.calls[0]?.[0])).toBe(
+    expect(create.mock.calls[0]?.[0]?.system).toBe(
       buildReviewSystemPrompt(correctnessAgent),
     );
   });

@@ -1,10 +1,9 @@
 /**
  * Shared fixtures and scripted fakes for the agent tests. Not exported
- * from the package; the Anthropic and GitHub clients are structural fakes.
+ * from the package; the model and GitHub clients are structural fakes.
  */
 import { readFileSync } from "node:fs";
 
-import type Anthropic from "@anthropic-ai/sdk";
 import type {
   ChangedFile,
   GithubInstallationClient,
@@ -14,6 +13,13 @@ import type { ReviewFinding } from "@pr-review/schemas";
 import { vi } from "vitest";
 
 import type { AgentDefinition } from "./agents/definition.js";
+import type {
+  ModelContentBlock,
+  ModelRequest,
+  ModelResponse,
+  ModelTextBlock,
+  ModelToolUseBlock,
+} from "./model/types.js";
 import { parseAgentConfig } from "./agents/config.js";
 import type { ReviewContext } from "./agent-contract.js";
 
@@ -105,19 +111,19 @@ export function finalFindingsJson(findings: readonly ReviewFinding[]): string {
   return JSON.stringify({ findings });
 }
 
-export function textBlock(text: string): Anthropic.Messages.TextBlock {
-  return { type: "text", text, citations: null };
+export function textBlock(text: string): ModelTextBlock {
+  return { type: "text", text };
 }
 
 export function toolUseBlock(
   id: string,
   name: string,
   input: unknown,
-): Anthropic.Messages.ToolUseBlock {
-  return { type: "tool_use", id, name, input, caller: { type: "direct" } };
+): ModelToolUseBlock {
+  return { type: "tool_use", id, name, input };
 }
 
-/** Cache counters default to absent, as an uncached response returns them. */
+/** Cache counters default to zero, as an uncached response reports them. */
 export interface ScriptedUsage {
   inputTokens: number;
   outputTokens: number;
@@ -126,66 +132,41 @@ export interface ScriptedUsage {
 }
 
 export function message(
-  content: Anthropic.Messages.ContentBlock[],
-  stopReason: Anthropic.Messages.Message["stop_reason"],
+  content: ModelContentBlock[],
+  stopReason: string | undefined,
   usage: ScriptedUsage = {
     inputTokens: 1,
     outputTokens: 1,
   },
-): Anthropic.Messages.Message {
+): ModelResponse {
   return {
-    id: "msg_test",
-    type: "message",
-    role: "assistant",
-    model: "claude-test-model",
-    container: null,
     content,
-    stop_reason: stopReason,
-    stop_details: null,
-    stop_sequence: null,
+    stopReason,
     usage: {
-      input_tokens: usage.inputTokens,
-      output_tokens: usage.outputTokens,
-      cache_creation: null,
-      cache_creation_input_tokens: usage.cacheCreationInputTokens ?? null,
-      cache_read_input_tokens: usage.cacheReadInputTokens ?? null,
-      inference_geo: null,
-      output_tokens_details: null,
-      server_tool_use: null,
-      service_tier: null,
+      inputTokens: usage.inputTokens,
+      outputTokens: usage.outputTokens,
+      cacheCreationInputTokens: usage.cacheCreationInputTokens ?? 0,
+      cacheReadInputTokens: usage.cacheReadInputTokens ?? 0,
     },
   };
-}
-
-/** The runtime sends `system` as a block array so it can carry the cache breakpoint. */
-export function systemPromptOf(
-  params: Anthropic.Messages.MessageCreateParamsNonStreaming | undefined,
-): string {
-  const system = params?.system;
-  if (typeof system === "string") {
-    return system;
-  }
-  return (system ?? []).map((block) => block.text).join("");
 }
 
 /**
  * Replays queued responses. `requests` holds deep copies: the agent loop
  * mutates one `messages` array in place, so live args would alias.
  */
-export function makeAnthropic(responses: Anthropic.Messages.Message[]) {
+export function makeModel(responses: ModelResponse[], provider = "test-provider") {
   const queue = [...responses];
-  const requests: Anthropic.Messages.MessageCreateParamsNonStreaming[] = [];
-  const create = vi.fn(
-    async (params: Anthropic.Messages.MessageCreateParamsNonStreaming) => {
-      requests.push(structuredClone(params));
-      const next = queue.shift();
-      if (!next) {
-        throw new Error("fake anthropic client ran out of scripted responses");
-      }
-      return next;
-    },
-  );
-  return { anthropic: { messages: { create } }, create, requests };
+  const requests: ModelRequest[] = [];
+  const createMessage = vi.fn(async (request: ModelRequest) => {
+    requests.push(structuredClone(request) as ModelRequest);
+    const next = queue.shift();
+    if (!next) {
+      throw new Error("fake model client ran out of scripted responses");
+    }
+    return next;
+  });
+  return { model: { provider, createMessage }, createMessage, requests };
 }
 
 export function makeGithub() {

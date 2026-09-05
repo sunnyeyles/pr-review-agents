@@ -17,8 +17,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   finalFindingsJson,
-  makeAnthropic,
   makeFinding,
+  makeModel,
   message,
   repositoryAgents,
   textBlock,
@@ -36,9 +36,8 @@ import {
   type LoadedFixture,
 } from "./fixture.js";
 import {
-  API_KEY_ENV,
-  DEFAULT_MODEL,
   MODEL_ENV,
+  PROVIDER_ENV,
   requireModelAccess,
 } from "./model-access.js";
 import {
@@ -96,7 +95,7 @@ function findingExpectationFor(fixtureName: string): FixtureExpectation {
   return expectation;
 }
 
-/** Real agents and Synthesiser, with only the Anthropic client scripted. */
+/** Real agents and Synthesiser, with only the model client scripted. */
 function scriptedDeps(
   byCategory: Record<string, ReviewFinding[]>,
 ): FixtureReviewDeps {
@@ -105,22 +104,22 @@ function scriptedDeps(
     createAgents: (github: GithubInstallationClient): ReviewAgent[] =>
       configuredAgents.map((agent) =>
         createReviewAgent(agent, {
-          anthropic: makeAnthropic([
+          model: makeModel([
             message(
               [textBlock(finalFindingsJson(byCategory[agent.category] ?? []))],
               "end_turn",
             ),
-          ]).anthropic,
-          model: MODEL,
+          ]).model,
+          modelId: MODEL,
           github,
           logger: createCapturingLogger().logger,
         }),
       ),
     synthesiser: createSynthesiser({
-      anthropic: makeAnthropic([
+      model: makeModel([
         message([textBlock(finalFindingsJson(synthesised))], "end_turn"),
-      ]).anthropic,
-      model: MODEL,
+      ]).model,
+      modelId: MODEL,
       agents: configuredAgents,
     }),
   };
@@ -425,16 +424,35 @@ describe("the full pipeline against a fixture", () => {
 
 describe("model access", () => {
   it("refuses to run without an API key, naming the variable and the command", () => {
-    expect(() => requireModelAccess({})).toThrow(API_KEY_ENV);
-    expect(() => requireModelAccess({ [API_KEY_ENV]: "  " })).toThrow(
+    expect(() => requireModelAccess({})).toThrow("ANTHROPIC_API_KEY");
+    expect(() => requireModelAccess({ ANTHROPIC_API_KEY: "  " })).toThrow(
       /pnpm eval/,
     );
   });
 
-  it("defaults the model to the action's default and lets it be overridden", () => {
-    expect(requireModelAccess({ [API_KEY_ENV]: "x" }).model).toBe(DEFAULT_MODEL);
+  it("names the selected provider's key variable, not Anthropic's", () => {
+    expect(() =>
+      requireModelAccess({ [PROVIDER_ENV]: "openai", ANTHROPIC_API_KEY: "x" }),
+    ).toThrow("OPENAI_API_KEY");
+  });
+
+  it("rejects an unknown provider rather than falling back to the default", () => {
+    expect(() =>
+      requireModelAccess({ [PROVIDER_ENV]: "wattson", ANTHROPIC_API_KEY: "x" }),
+    ).toThrow(/Unknown model provider/);
+  });
+
+  it("defaults the model per provider and lets it be overridden", () => {
+    expect(requireModelAccess({ ANTHROPIC_API_KEY: "x" })).toMatchObject({
+      provider: "anthropic",
+      model: "claude-sonnet-5",
+    });
     expect(
-      requireModelAccess({ [API_KEY_ENV]: "x", [MODEL_ENV]: "other-model" }).model,
+      requireModelAccess({ [PROVIDER_ENV]: "openai", OPENAI_API_KEY: "x" }).model,
+    ).toBe("gpt-5");
+    expect(
+      requireModelAccess({ ANTHROPIC_API_KEY: "x", [MODEL_ENV]: "other-model" })
+        .model,
     ).toBe("other-model");
   });
 });

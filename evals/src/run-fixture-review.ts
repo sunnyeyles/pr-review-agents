@@ -4,7 +4,7 @@
  * repository, and the publish step captures the rendered check run.
  */
 import {
-  createAnthropicClient,
+  createModelClient,
   createReviewAgents,
   createSynthesiser,
   type ReviewAgent,
@@ -63,15 +63,18 @@ export function modelBackedDeps(
   logger: StructuredLogger | undefined,
   agents: readonly AgentDefinition[],
 ): FixtureReviewDeps {
-  const anthropic = createAnthropicClient({ apiKey: access.apiKey });
-  const model = access.model;
+  const model = createModelClient({
+    provider: access.provider,
+    apiKey: access.apiKey,
+  });
+  const modelId = access.model;
   return {
     createAgents: (github, reviewLogger) =>
       createReviewAgents(
-        { anthropic, model, github, logger: reviewLogger },
+        { model, modelId, github, logger: reviewLogger },
         agents,
       ),
-    synthesiser: createSynthesiser({ anthropic, model, agents }),
+    synthesiser: createSynthesiser({ model, modelId, agents }),
     logger,
   };
 }

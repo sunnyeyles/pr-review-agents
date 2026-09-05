@@ -16,6 +16,7 @@
     "@pr-review/github": "workspace:*",
     "@pr-review/logging": "workspace:*",
     "@pr-review/schemas": "workspace:*",
+    "openai": "^7.10.0",
     "yaml": "^2.9.0",
     "zod": "^4.4.3"
   }

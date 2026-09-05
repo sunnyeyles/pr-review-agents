@@ -7,19 +7,28 @@
 # Run this before a release, or after changing a prompt, an agent, the
 # Synthesiser, or the validation chain.
 #
-# Requires an ANTHROPIC_API_KEY repository secret. Unlike the self review, a
-# missing key FAILS this workflow rather than skipping it: somebody asked for
-# an evaluation, and a green run that measured nothing would be a lie.
+# Requires the selected provider's API key as a repository secret
+# (ANTHROPIC_API_KEY or OPENAI_API_KEY). Unlike the self review, a missing key
+# FAILS this workflow rather than skipping it: somebody asked for an
+# evaluation, and a green run that measured nothing would be a lie.
 
 name: Agent evaluations
 
 on:
   workflow_dispatch:
     inputs:
+      provider:
+        description: Model provider to evaluate.
+        required: false
+        type: choice
+        default: anthropic
+        options:
+          - anthropic
+          - openai
       model:
         description: >-
-          Anthropic model id to evaluate. Leave empty to evaluate the model the
-          action defaults to.
+          Model id to evaluate, as the provider spells it. Leave empty to
+          evaluate that provider's default.
         required: false
         default: ""
 
@@ -57,5 +66,7 @@ jobs:
       - name: Run the agent evaluations
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          ANTHROPIC_MODEL: ${{ inputs.model }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          MODEL_PROVIDER: ${{ inputs.provider }}
+          MODEL_ID: ${{ inputs.model }}
         run: pnpm eval
