@@ -407,6 +407,39 @@ number, head SHA, agent name, duration, finding count, and token usage (four
 counters: `inputTokens`, `cacheCreationInputTokens`, `cacheReadInputTokens`,
 `outputTokens`), so a single review is greppable end to end by `headSha`.
 
+With Langfuse configured, one review is one trace: a `review-pull-request`
+root span with every agent's and the synthesiser's observations nested under
+it. `review.published` logs its `traceId`.
+
+### Feedback: thumbs on a comment become scores on the run
+
+Every inline comment the reviewer posts carries a hidden marker naming the
+finding's category and the trace of the run that produced it. A 👍 or 👎 on
+that comment is the cheapest review of the reviewer there is, and
+`.github/workflows/collect-feedback.yml` turns it into a `finding-helpful`
+score (1 or 0) on that trace, weekly or on demand:
+
+```sh
+pnpm collect-feedback -- --dry-run                 # decide everything, write nothing
+pnpm collect-feedback -- --repo owner/name --since-days 30
+```
+
+It needs `GITHUB_TOKEN` and the same `LANGFUSE_*` variables as
+`seed-prompts`, from the environment or `.env.local`. `GITHUB_REPOSITORY`
+stands in for `--repo`, so the workflow needs neither.
+
+Two rules keep the signal honest. Only reactions from people who can **push**
+to the repository count, so a drive-by click on a public repository cannot
+steer the prompts. And an emoji is a click, not text: nothing a reaction
+carries is ever read as an instruction. Comment *replies* are not collected
+for exactly that reason.
+
+The score identifies the reaction (`github-reaction-<id>`), so re-running
+upserts rather than piling up duplicates; a reaction on a comment from a run
+that was not traced is counted in the report but cannot be scored. Nothing
+here touches a review in progress — the loop closes offline, when a person
+reads the scores and decides what a prompt should do differently.
+
 ---
 
 ## Further reading

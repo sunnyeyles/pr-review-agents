@@ -3,7 +3,6 @@
  * it, so it stays out of the shipped action bundle.
  */
 import {
-  DEFAULT_LANGFUSE_BASE_URL,
   DEFAULT_AGENT_CONFIG_PATH,
   DEFAULT_PROMPT_LABEL,
   createLangfusePromptWriter,
@@ -21,32 +20,26 @@ import {
   type StructuredLogger,
 } from "@pr-review/logging";
 
+import {
+  USAGE_EXIT_CODE,
+  missingCredentialsMessage,
+  requireLangfuseConfig,
+  takeValue,
+} from "./cli-env.js";
 import { readOptional } from "./read-optional.js";
 
-/** Environment variables the seeder authenticates with. */
-export const PUBLIC_KEY_ENV = "LANGFUSE_PUBLIC_KEY";
-export const SECRET_KEY_ENV = "LANGFUSE_SECRET_KEY";
-export const BASE_URL_ENV = "LANGFUSE_BASE_URL";
-
-/** Exit code for a usage or credentials problem, before anything ran. */
-export const USAGE_EXIT_CODE = 2;
+export { USAGE_EXIT_CODE };
 
 /** The actionable message shown when either key is absent. */
-export const MISSING_CREDENTIALS_MESSAGE = [
-  `${PUBLIC_KEY_ENV} and ${SECRET_KEY_ENV} must both be set to seed prompts.`,
-  "",
-  "Nothing was published. Both keys are needed: seeding reads the currently",
-  "labelled version before deciding whether to publish, and both calls",
-  "authenticate the same way.",
-  "",
-  "Set them in the environment or in .env.local (gitignored) and re-run:",
-  "",
-  `  ${PUBLIC_KEY_ENV}=…`,
-  `  ${SECRET_KEY_ENV}=…`,
-  `  ${BASE_URL_ENV}=…      # optional; defaults to ${DEFAULT_LANGFUSE_BASE_URL}`,
-  "",
-  "  pnpm seed-prompts --dry-run",
-].join("\n");
+export const MISSING_CREDENTIALS_MESSAGE = missingCredentialsMessage({
+  purpose: "seed prompts",
+  rationale: [
+    "Nothing was published. Both keys are needed: seeding reads the currently",
+    "labelled version before deciding whether to publish, and both calls",
+    "authenticate the same way.",
+  ],
+  command: "pnpm seed-prompts --dry-run",
+});
 
 /** What one invocation was asked to do. */
 export interface SeedArgs {
@@ -62,15 +55,6 @@ export function parseSeedArgs(argv: string[]): SeedArgs {
   let dryRun = false;
   let config = DEFAULT_AGENT_CONFIG_PATH;
 
-  /** Reads `--flag value`, advancing past the value it consumed. */
-  const takeValue = (index: number, flag: string, example: string): string => {
-    const value = argv[index + 1];
-    if (value === undefined || value.startsWith("--")) {
-      throw new Error(`${flag} needs a value, for example ${flag} ${example}`);
-    }
-    return value;
-  };
-
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index] ?? "";
     if (arg === "--") {
@@ -80,12 +64,12 @@ export function parseSeedArgs(argv: string[]): SeedArgs {
     if (arg === "--dry-run") {
       dryRun = true;
     } else if (arg === "--label") {
-      label = takeValue(index, "--label", "staging");
+      label = takeValue(argv, index, "--label", "staging");
       index += 1;
     } else if (arg.startsWith("--label=")) {
       label = arg.slice("--label=".length);
     } else if (arg === "--config") {
-      config = takeValue(index, "--config", DEFAULT_AGENT_CONFIG_PATH);
+      config = takeValue(argv, index, "--config", DEFAULT_AGENT_CONFIG_PATH);
       index += 1;
     } else if (arg.startsWith("--config=")) {
       config = arg.slice("--config=".length);
@@ -106,22 +90,6 @@ export function parseSeedArgs(argv: string[]): SeedArgs {
 }
 
 /** Reads Langfuse credentials. Keys are never logged or echoed. */
-export function requireLangfuseConfig(
-  env: Record<string, string | undefined>,
-): LangfusePromptClientConfig {
-  const publicKey = env[PUBLIC_KEY_ENV]?.trim() ?? "";
-  const secretKey = env[SECRET_KEY_ENV]?.trim() ?? "";
-  if (publicKey === "" || secretKey === "") {
-    throw new Error(MISSING_CREDENTIALS_MESSAGE);
-  }
-  const baseUrl = env[BASE_URL_ENV]?.trim() ?? "";
-  return {
-    publicKey,
-    secretKey,
-    baseUrl: baseUrl === "" ? DEFAULT_LANGFUSE_BASE_URL : baseUrl,
-  };
-}
-
 /** Everything the command reads from outside itself. */
 export interface SeedCliEnvironment {
   env: Record<string, string | undefined>;
@@ -158,7 +126,7 @@ export async function main(
   let agents;
   try {
     args = parseSeedArgs(argv);
-    config = requireLangfuseConfig(env);
+    config = requireLangfuseConfig(env, MISSING_CREDENTIALS_MESSAGE);
     // Seeds exactly the prompts the configured agent set will ask for.
     agents = await loadAgentDefinitions({
       readFile: environment.readConfigFile,

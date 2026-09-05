@@ -4,6 +4,7 @@
  */
 import {
   emptyTokenUsage,
+  traceReview,
   type ReviewAgent,
   type ReviewContext,
   type Synthesiser,
@@ -248,16 +249,37 @@ export interface ReviewPipelineResult {
   synthesisDurationMs?: number;
   /** The final, deterministically validated findings. */
   findings: ReviewFinding[];
+  /** The trace every agent and synthesis span of this run nests under. */
+  traceId?: string | undefined;
 }
 
-/** Throws when every agent failed; a synthesis failure never throws. */
+/**
+ * Throws when every agent failed; a synthesis failure never throws.
+ * The whole run is one trace, so human feedback on a finding can be
+ * scored against the run that produced it.
+ */
 export async function runReviewPipeline(
   agents: readonly ReviewAgent[],
   synthesiser: Synthesiser,
   context: ReviewContext,
 ): Promise<ReviewPipelineResult> {
   const graph = buildReviewGraph(agents, synthesiser);
-  const { joined, synthesis, findings } = await graph.invoke({ context });
+  const { result, traceId } = await traceReview(
+    {
+      input: {
+        repository: `${context.owner}/${context.repo}`,
+        pullRequestNumber: context.pullRequest.number,
+        headSha: context.pullRequest.headSha,
+        agents: agents.map((agent) => agent.name),
+      },
+      output: ({ synthesis, findings }) => ({
+        findingCount: findings.length,
+        synthesisOutcome: synthesis.outcome,
+      }),
+    },
+    () => graph.invoke({ context }),
+  );
+  const { joined, synthesis, findings } = result;
 
   return {
     candidates: joined.candidates,
@@ -275,5 +297,6 @@ export async function runReviewPipeline(
       ? {}
       : { synthesisDurationMs: synthesis.durationMs }),
     findings,
+    traceId,
   };
 }

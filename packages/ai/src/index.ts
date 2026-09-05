@@ -95,3 +95,13 @@ export {
   type GenerationParent,
   type ModelCallTrace,
 } from "./model-tracing.js";
+export {
+  traceReview,
+  type ReviewTraceOptions,
+  type TracedReview,
+} from "./review-tracing.js";
+export {
+  createLangfuseScoreSink,
+  type FeedbackScore,
+  type FeedbackScoreSink,
+} from "./feedback-scores.js";

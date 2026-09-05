@@ -15,5 +15,9 @@
     "@pr-review/github": "workspace:*",
     "@pr-review/logging": "workspace:*",
     "@pr-review/schemas": "workspace:*"
+  },
+  "devDependencies": {
+    "@langfuse/tracing": "^5.10.1",
+    "@opentelemetry/sdk-trace-node": "^2.10.0"
   }
 }

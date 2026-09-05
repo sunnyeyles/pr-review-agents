@@ -292,6 +292,22 @@ describe("reviewPullRequest inline comments", () => {
     });
   });
 
+  it("stamps each comment with the run's trace id so a reaction can be scored", async () => {
+    const traceId = "0af7651916cd43dd8448eb211c80319c";
+    const { deps, client, entries } = makeDeps(
+      reviewResult({ candidates: [finding], traceId }),
+    );
+
+    await reviewPullRequest(target, deps);
+
+    expect(client.createReview.mock.calls[0]?.[0].comments[0]?.body).toContain(
+      `<!-- pr-review-meta: category=${finding.category} trace=${traceId} -->`,
+    );
+    expect(entries).toContainEqual(
+      expect.objectContaining({ event: "review.published", traceId }),
+    );
+  });
+
   it("drops the check run annotations once the comments carry them", async () => {
     const { deps, client } = makeDeps(reviewResult({ candidates: [finding] }));
 
