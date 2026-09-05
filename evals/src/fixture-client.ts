@@ -128,9 +128,7 @@ export function createFixtureClient(fixture: LoadedFixture): FixtureClient {
         );
       }
       record("searchCode", request.query);
-      // Cruder than GitHub's code search, but the property that matters
-      // holds: a query finds the files mentioning the terms. Quotes are
-      // stripped because find_importers quotes its derived stem.
+      // Quotes are stripped because find_importers quotes its derived stem.
       const terms = request.query
         .toLowerCase()
         .replaceAll('"', " ")
@@ -154,9 +152,7 @@ export function createFixtureClient(fixture: LoadedFixture): FixtureClient {
       };
     },
 
-    // A fixture is a file tree, not a repository with commits. Reporting
-    // no history is the honest answer, and the one find_co_changed_files
-    // already documents; fabricating commits would make the eval lie.
+    // A fixture has no commits; inventing history would make the eval lie.
     async listCommitShas(request): Promise<string[]> {
       record("listCommitShas", request.path);
       return [];

@@ -177,12 +177,7 @@ const codeSearchSchema = z.object({
   ),
 });
 
-/**
- * Content fragments, verbatim. GitHub also reports matches on the path
- * property, whose fragment is just the path again; dropping those is what
- * makes the rest "content". What a caller shows a model — trimming,
- * deduplication, size caps — is that caller's decision, not this wrapper's.
- */
+/** Verbatim. Path-property fragments only repeat the path, so they are dropped. */
 function contentFragments(
   textMatches: z.infer<typeof textMatchesSchema>,
 ): string[] {
