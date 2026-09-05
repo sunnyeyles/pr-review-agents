@@ -1,4 +1,8 @@
-import { emptyTokenUsage, type ReviewContext } from "@pr-review/ai";
+import {
+  emptyTokenUsage,
+  type AgentDefinition,
+  type ReviewContext,
+} from "@pr-review/ai";
 import type {
   ChangedFile,
   CreateCheckRunInput,
@@ -19,6 +23,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createActionHandler } from "./handler.js";
 
 const headSha = "6dcb09b5b57875f334f61aebed695e2e4193db5e";
+
+const agents: AgentDefinition[] = [
+  {
+    category: "correctness",
+    role: "Correctness reviewer",
+    focus: "Review only for correctness problems.",
+  },
+];
 
 const pullRequest: PullRequestDetails = {
   number: 42,
@@ -85,12 +97,17 @@ function makeHandler(review: ReviewPipelineResult = reviewResult()) {
     createReview: vi.fn(async (_input: CreateReviewInput) => ({ id: 654 })),
   } satisfies GithubInstallationClient;
   const runReviewPipeline = vi.fn(
-    async (_client: GithubInstallationClient, _context: ReviewContext) => review,
+    async (
+      _client: GithubInstallationClient,
+      _context: ReviewContext,
+      _agents: readonly AgentDefinition[],
+    ) => review,
   );
   const publishReview = vi.fn<PublishReview>(async () => undefined);
   const { logger, entries } = createCapturingLogger();
   const handler = createActionHandler({
     client,
+    agents,
     runReviewPipeline,
     publishReview,
     logger,

@@ -55,7 +55,9 @@ inputs:
       so narrowing the set cuts cost roughly in proportion — use it to iterate
       on one agent without paying for the others. A name the configuration
       does not define fails the step before any model call, rather than
-      quietly running a narrower review.
+      quietly running a narrower review. Naming agents also overrides their
+      `paths`: the run is someone asking for those agents specifically, so a
+      path filter does not then decide for them.
     required: false
     default: all
   agent-config:

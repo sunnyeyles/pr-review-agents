@@ -1,4 +1,4 @@
-import type { ReviewContext } from "@pr-review/ai";
+import type { AgentDefinition, ReviewContext } from "@pr-review/ai";
 import type { GithubInstallationClient } from "@pr-review/github";
 import { createConsoleLogger, type StructuredLogger } from "@pr-review/logging";
 import {
@@ -12,10 +12,13 @@ import {
 interface ActionHandlerDeps {
   /** Token-authenticated read-only client for this repository. */
   client: GithubInstallationClient;
+  /** The run's agent set, already narrowed by the `agents` input. */
+  agents: readonly AgentDefinition[];
   /** Throws when every agent failed, so the workflow step fails and can be re-run. */
   runReviewPipeline: (
     client: GithubInstallationClient,
     context: ReviewContext,
+    agents: readonly AgentDefinition[],
   ) => Promise<ReviewPipelineResult>;
   /** In the entrypoint, the check-run publisher wrapped in the job-summary fallback. */
   publishReview: PublishReview;
@@ -34,6 +37,7 @@ type ActionHandler = (
  */
 export function createActionHandler({
   client,
+  agents,
   runReviewPipeline,
   publishReview,
   logger = createConsoleLogger(),
@@ -42,6 +46,7 @@ export function createActionHandler({
     logger.info("review.started", { ...reviewCorrelation(target), isFork });
     await reviewPullRequest(target, {
       client,
+      agents,
       runReviewPipeline,
       publishReview,
       logger,

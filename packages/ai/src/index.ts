@@ -27,7 +27,9 @@ export {
 } from "./agents/definition.js";
 export {
   createReviewAgents,
+  gateAgentsByPaths,
   resolveAgentDefinitions,
+  type SkippedAgent,
 } from "./agents/agent-set.js";
 export {
   DEFAULT_AGENT_CONFIG_PATH,

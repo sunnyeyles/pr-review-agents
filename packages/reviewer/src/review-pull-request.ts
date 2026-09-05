@@ -3,7 +3,12 @@
  * -> publish. The side-effect boundary is enforced here, once, rather
  * than in each delivery-path wrapper.
  */
-import type { ReviewContext } from "@pr-review/ai";
+import {
+  emptyTokenUsage,
+  gateAgentsByPaths,
+  type AgentDefinition,
+  type ReviewContext,
+} from "@pr-review/ai";
 import {
   httpStatus,
   isPermissionError,
@@ -17,7 +22,11 @@ import {
   type StructuredLogger,
 } from "@pr-review/logging";
 
-import { renderCheckRun, type RenderedCheckRun } from "./render-check-run.js";
+import {
+  renderCheckRun,
+  renderNoAgentMatched,
+  type RenderedCheckRun,
+} from "./render-check-run.js";
 import {
   postedFindingKeys,
   renderReview,
@@ -53,10 +62,13 @@ type PublishReviewComments = (
 interface ReviewPullRequestDeps {
   /** Authenticated read-only GitHub client for this repository. */
   client: GithubInstallationClient;
+  /** The run's agent set, already narrowed by the `agents` input. */
+  agents: readonly AgentDefinition[];
   /** Throws only when every agent failed; a synthesis failure is reported on the result. */
   runReviewPipeline: (
     client: GithubInstallationClient,
     context: ReviewContext,
+    agents: readonly AgentDefinition[],
   ) => Promise<ReviewPipelineResult>;
   /** Defaults to publishing a check run through `client`. */
   publishReview?: PublishReview | undefined;
@@ -185,11 +197,24 @@ function logSynthesisOutcome(
   });
 }
 
+/** The result of a review that never reached the pipeline. */
+function unreviewed(): ReviewPipelineResult {
+  return {
+    candidates: [],
+    agentFailures: [],
+    synthesisedCandidateCount: 0,
+    synthesisOutcome: "skipped",
+    synthesisUsage: emptyTokenUsage(),
+    findings: [],
+  };
+}
+
 /** Throws when the pipeline or the publish step fails; retries are the caller's. */
 export async function reviewPullRequest(
   target: ReviewTarget,
   {
     client,
+    agents,
     runReviewPipeline,
     publishReview,
     publishReviewComments,
@@ -207,20 +232,47 @@ export async function reviewPullRequest(
     client.listChangedFiles(ref),
     client.getDiff(ref),
   ]);
+  const filenames = changedFiles.map((file) => file.filename);
   logger.info("review.loaded", {
     ...fields,
     changedFileCount: changedFiles.length,
     diffLength: diff.length,
   });
 
+  const { active, skipped } = gateAgentsByPaths(agents, filenames);
+  const skippedNames = skipped.map((skip) => skip.agent);
+  for (const skip of skipped) {
+    logger.info("agent.skipped", {
+      ...fields,
+      agent: skip.agent,
+      paths: skip.paths,
+      reason: "no changed file matched",
+    });
+  }
+
+  const publish = publishReview ?? createCheckRunPublisher(client);
+  if (active.length === 0) {
+    logger.info("review.no_agents_matched", {
+      ...fields,
+      changedFileCount: changedFiles.length,
+      skippedAgents: skippedNames,
+    });
+    await publish(target, renderNoAgentMatched(skipped, filenames));
+    return unreviewed();
+  }
+
   // The AI boundary: only the validate node's output reaches GitHub.
-  const review = await runReviewPipeline(client, {
-    owner: target.owner,
-    repo: target.repo,
-    pullRequest,
-    changedFiles,
-    diff,
-  });
+  const review = await runReviewPipeline(
+    client,
+    {
+      owner: target.owner,
+      repo: target.repo,
+      pullRequest,
+      changedFiles,
+      diff,
+    },
+    active,
+  );
   logSynthesisOutcome(logger, target, review);
 
   logger.info("findings.validated", {
@@ -235,6 +287,7 @@ export async function reviewPullRequest(
     review.findings,
     review.agentFailures,
     postedFindingKeys(await listPostedComments(client, ref, target, logger)),
+    skipped,
   );
   const publishComments =
     publishReviewComments ?? createReviewCommentPublisher(client, logger);
@@ -254,13 +307,14 @@ export async function reviewPullRequest(
 
   const rendered = renderCheckRun(review.findings, review.agentFailures, {
     annotate: !commented,
+    skippedAgents: skipped,
   });
-  const publish = publishReview ?? createCheckRunPublisher(client);
   await publish(target, rendered);
 
   logger.info("review.published", {
     ...fields,
     findingCount: review.findings.length,
+    skippedAgents: skippedNames,
   });
 
   return review;

@@ -558,6 +558,7 @@ describe("agent selection", () => {
       event: "review.agents_selected",
       agents: ["correctness", "security", "architecture"],
       configuredAgents: ["correctness", "security", "architecture"],
+      pathFilteredAgents: [],
     });
   });
 
@@ -574,6 +575,7 @@ describe("agent selection", () => {
       event: "review.agents_selected",
       agents: ["correctness", "architecture"],
       configuredAgents: ["correctness", "security", "architecture"],
+      pathFilteredAgents: [],
     });
     expect(modelCalls()).toBe(2);
   });
@@ -606,6 +608,44 @@ describe("agent selection", () => {
     );
     expect(modelConfigs).toEqual([]);
     expect(modelCalls()).toBe(0);
+  });
+});
+
+// The fixture pull request changes only `src/sessions.ts`.
+const gatedConfigYaml = `agents:
+  - category: security
+    role: Security reviewer
+    focus: Review ONLY for security problems.
+    paths:
+      - "packages/github/**"
+`;
+
+describe("path filters", () => {
+  it("costs no model call when nothing matched, and says so on the check run", async () => {
+    const { environment, modelCalls, entries } = harness(
+      reviewEnv,
+      pullRequestEvent(),
+      { config: gatedConfigYaml },
+    );
+
+    await runAction(environment);
+
+    expect(modelCalls()).toBe(0);
+    expect(entries).toContainEqual(
+      expect.objectContaining({ event: "review.no_agents_matched" }),
+    );
+  });
+
+  it("ignores the gate when the workflow named the agent", async () => {
+    const { environment, modelCalls } = harness(
+      { ...reviewEnv, INPUT_AGENTS: "security" },
+      pullRequestEvent(),
+      { config: gatedConfigYaml },
+    );
+
+    await runAction(environment);
+
+    expect(modelCalls()).toBe(1);
   });
 });
 

@@ -175,7 +175,7 @@ Set as `with:` inputs on the Action step ([`apps/action/action.yml`](apps/action
 | `github-token` | no (default `${{ github.token }}`) | Token for the six read-only repository tools and for publishing the check run. |
 | `model` | no (default: the provider's own — `claude-sonnet-5`, `gpt-5`) | Model id the agents and synthesiser use, as the provider spells it. |
 | `model-base-url` | no (default: the provider's own host) | Overrides the provider's API host — a gateway, a proxy, or a compatible endpoint (for `openai`, one that accepts `max_completion_tokens`). |
-| `agents` | no (default `all`) | Which of the configured agents run: `all`, or a comma-separated subset of their names. |
+| `agents` | no (default `all`) | Which of the configured agents run: `all`, or a comma-separated subset of their names. Naming a subset also overrides any [path filters](#path-filters). |
 | `agent-config` | no (default `.github/pr-review-agents.yml`) | Path to the YAML file defining the agents. Required — there is no built-in set. |
 
 ### Model providers
@@ -240,6 +240,59 @@ but the agent body is derived:
   (`packages/ai/src/agents/definition.ts`); the security hardening, the tool
   guidance, and the JSON output contract come with it.
 - Order is significant: it is the order findings reach the synthesiser.
+
+### Path filters
+
+An agent can declare the paths it cares about, and sit out a pull request
+that touches none of them:
+
+```yaml
+agents:
+  - category: security
+    role: Security reviewer
+    focus: Review ONLY for security problems.
+    paths:
+      - "packages/github/**"
+      - "**/auth/**"
+      - "!**/*.test.ts"
+
+  # A built-in gated the same way — `agent:` names it, `paths` gates it.
+  - agent: docs-drift
+    paths: ["docs/**", "README.md"]
+
+  # No `paths`, so it runs on everything, as every agent does today.
+  - correctness
+```
+
+Patterns are globs matched against each changed file's repository-relative
+path: `**` crosses directories, `*` does not, dotfiles match (so `.github/**`
+reads the way it is written), and a `!` prefix subtracts from what the
+positive patterns matched. A list of nothing but negations, an empty list, or
+a pattern that is not repository-relative fails the step at config-parse time
+— each would retire the agent without a word.
+
+**This is a gate, not a narrowing.** An agent one changed file wakes reviews
+the *whole* pull request, on the same diff and the same prompt as always. Two
+reasons: a security-relevant change is routinely exploited through a file that
+does not look security-relevant, and handing each agent its own filtered diff
+would break the prompt-cache prefix the agents share, costing more than the
+skips save.
+
+Skipping is never silent:
+
+| Situation | Result |
+| --- | --- |
+| Some agents skipped, others found nothing | `success` — the summary names each skipped agent and the patterns it waited for |
+| Some agents skipped, others found something | `neutral`, as any review with findings is |
+| **No agent matched at all** | `neutral`, titled "No agent reviewed this pull request", listing every agent, its patterns, and the changed files. Never `success` — a green check on a pull request nothing read is indistinguishable from a clean one |
+
+Every skip is also logged as `agent.skipped` with the agent and its patterns,
+and a review that never ran logs `review.no_agents_matched`.
+
+Naming agents on the `agents` input overrides the gate: `agents: security`
+runs Security whatever the pull request touched, because that input exists so
+a person can force a specific review. `all`, or leaving it unset, leaves the
+configured filters deciding.
 
 The action reads the file from the pull request's **base** commit over the
 API, so no `actions/checkout` step is needed — and, more to the point, a pull
@@ -402,7 +455,8 @@ under lifecycle event names: `review.skipped`, `review.started`,
 `review.loaded`, `agent.started`, `agent.completed`, `agent.failed`,
 `synthesis.started`, `synthesis.skipped`, `synthesis.completed`,
 `synthesis.failed`, `findings.validated`, `review.published`,
-`review.published.degraded`, and `review.failed`. Events carry the repository, PR
+`review.published.degraded`, `agent.skipped`, `review.no_agents_matched`, and
+`review.failed`. Events carry the repository, PR
 number, head SHA, agent name, duration, finding count, and token usage (four
 counters: `inputTokens`, `cacheCreationInputTokens`, `cacheReadInputTokens`,
 `outputTokens`), so a single review is greppable end to end by `headSha`.

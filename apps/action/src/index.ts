@@ -270,10 +270,15 @@ export async function runAction(
     readFile: readAtCommit(client, target, baseSha),
     path: getInput(env, "agent-config") || DEFAULT_AGENT_CONFIG_PATH,
   });
-  const agents = resolveAgentDefinitions(getInput(env, "agents"), configured);
+  const selection = getInput(env, "agents");
+  const agents = resolveAgentDefinitions(selection, configured);
   logger.info("review.agents_selected", {
     agents: agents.map((agent) => agent.category),
     configuredAgents: configured.map((agent) => agent.category),
+    // Empty when the `agents` input named agents: naming one drops its gate.
+    pathFilteredAgents: agents
+      .filter((agent) => agent.paths !== undefined)
+      .map((agent) => agent.category),
   });
 
   const { model, modelId } = resolveModelInputs(env, environment);
@@ -311,7 +316,10 @@ export async function runAction(
     });
     const handler = createActionHandler({
       client,
-      runReviewPipeline: (reviewClient, context) =>
+      agents,
+      // `activeAgents` is the subset the path gate woke, decided once the
+      // changed files are known.
+      runReviewPipeline: (reviewClient, context, activeAgents) =>
         runReviewPipeline(
           createReviewAgents(
             {
@@ -320,7 +328,7 @@ export async function runAction(
               github: reviewClient,
               ...(prompts === undefined ? {} : { systemPrompts: prompts }),
             },
-            agents,
+            activeAgents,
           ),
           synthesiser,
           context,

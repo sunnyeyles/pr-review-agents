@@ -1,4 +1,8 @@
-import { emptyTokenUsage, type ReviewContext } from "@pr-review/ai";
+import {
+  emptyTokenUsage,
+  type AgentDefinition,
+  type ReviewContext,
+} from "@pr-review/ai";
 import type {
   ChangedFile,
   CreateCheckRunInput,
@@ -97,20 +101,42 @@ function reviewResult(
   };
 }
 
+/** An agent definition; `paths` is what the gate reads. */
+function makeAgent(
+  category: string,
+  paths?: readonly string[],
+): AgentDefinition {
+  return {
+    category,
+    role: `${category} reviewer`,
+    focus: `Review only for ${category} problems.`,
+    ...(paths === undefined ? {} : { paths }),
+  };
+}
+
+interface DepsOptions {
+  agents?: readonly AgentDefinition[];
+  publishReview?: PublishReview;
+}
+
 function makeDeps(
   review: ReviewPipelineResult = reviewResult(),
-  publishReview?: PublishReview,
+  { agents = [makeAgent("correctness")], ...options }: DepsOptions = {},
 ) {
   const client = makeClient();
   const runReviewPipeline = vi.fn(
-    async (_client: GithubInstallationClient, _context: ReviewContext) => review,
+    async (
+      _client: GithubInstallationClient,
+      _context: ReviewContext,
+      _agents: readonly AgentDefinition[],
+    ) => review,
   );
   const { logger, entries } = createCapturingLogger();
   return {
     client,
     runReviewPipeline,
     entries,
-    deps: { client, runReviewPipeline, publishReview, logger },
+    deps: { client, agents, runReviewPipeline, logger, ...options },
   };
 }
 
@@ -145,17 +171,24 @@ describe("reviewPullRequest", () => {
   });
 
   it("runs the pipeline against the loaded context with the same client", async () => {
-    const { deps, client, runReviewPipeline } = makeDeps();
+    const agents = [makeAgent("correctness")];
+    const { deps, client, runReviewPipeline } = makeDeps(reviewResult(), {
+      agents,
+    });
 
     await reviewPullRequest(target, deps);
 
-    expect(runReviewPipeline).toHaveBeenCalledExactlyOnceWith(client, {
-      owner: target.owner,
-      repo: target.repo,
-      pullRequest,
-      changedFiles,
-      diff,
-    });
+    expect(runReviewPipeline).toHaveBeenCalledExactlyOnceWith(
+      client,
+      {
+        owner: target.owner,
+        repo: target.repo,
+        pullRequest,
+        changedFiles,
+        diff,
+      },
+      agents,
+    );
   });
 
   it("publishes a check run through the client by default", async () => {
@@ -174,10 +207,9 @@ describe("reviewPullRequest", () => {
 
   it("uses an injected publisher instead of the check run when given one", async () => {
     const publishReview = vi.fn<PublishReview>(async () => undefined);
-    const { deps, client } = makeDeps(
-      reviewResult({ candidates: [finding] }),
+    const { deps, client } = makeDeps(reviewResult({ candidates: [finding] }), {
       publishReview,
-    );
+    });
 
     await reviewPullRequest(target, deps);
 
@@ -259,7 +291,7 @@ describe("reviewPullRequest", () => {
     const publishReview = vi.fn<PublishReview>(async () => {
       throw new Error("check run rejected");
     });
-    const { deps, entries } = makeDeps(reviewResult(), publishReview);
+    const { deps, entries } = makeDeps(reviewResult(), { publishReview });
 
     await expect(reviewPullRequest(target, deps)).rejects.toThrow(
       "check run rejected",
@@ -383,6 +415,138 @@ describe("createCheckRunPublisher", () => {
       headSha: target.headSha,
       conclusion: "success",
       output: rendered.output,
+    });
+  });
+});
+
+/**
+ * The changed file every fixture carries is `src/sessions.ts`, so
+ * `packages/**` is the pattern nothing here matches.
+ */
+describe("reviewPullRequest: path filters", () => {
+  const gated = makeAgent("security", ["packages/**"]);
+  const ungated = makeAgent("correctness");
+
+  it("hands the pipeline only the agents the changed files woke", async () => {
+    const { deps, runReviewPipeline } = makeDeps(reviewResult(), {
+      agents: [ungated, gated],
+    });
+
+    await reviewPullRequest(target, deps);
+
+    expect(runReviewPipeline.mock.calls[0]?.[2]).toEqual([ungated]);
+  });
+
+  it("wakes an agent whose pattern one changed file matches", async () => {
+    const matching = makeAgent("security", ["src/**"]);
+    const { deps, runReviewPipeline } = makeDeps(reviewResult(), {
+      agents: [matching],
+    });
+
+    await reviewPullRequest(target, deps);
+
+    expect(runReviewPipeline.mock.calls[0]?.[2]).toEqual([matching]);
+  });
+
+  it("logs each skipped agent with the paths it waited for", async () => {
+    const { deps, entries } = makeDeps(reviewResult(), {
+      agents: [ungated, gated],
+    });
+
+    await reviewPullRequest(target, deps);
+
+    expect(entries).toContainEqual(
+      expect.objectContaining({
+        event: "agent.skipped",
+        agent: "security",
+        paths: ["packages/**"],
+        repository: "octo-org/example-service",
+      }),
+    );
+  });
+
+  it("names the skipped agent in the published check run", async () => {
+    const { deps, client } = makeDeps(reviewResult({ candidates: [finding] }), {
+      agents: [ungated, gated],
+    });
+
+    await reviewPullRequest(target, deps);
+
+    expect(client.createCheckRun.mock.calls[0]?.[0].output.summary).toMatch(
+      /security review did not run/i,
+    );
+  });
+
+  describe("when no agent matches", () => {
+    const only = { agents: [gated] };
+
+    it("never calls the pipeline, so the review costs nothing", async () => {
+      const { deps, runReviewPipeline } = makeDeps(reviewResult(), only);
+
+      await reviewPullRequest(target, deps);
+
+      expect(runReviewPipeline).not.toHaveBeenCalled();
+    });
+
+    it("still publishes a check run, and never a green one", async () => {
+      // The whole point: a pull request nothing reviewed must not be
+      // indistinguishable from one that came back clean.
+      const { deps, client } = makeDeps(reviewResult(), only);
+
+      await reviewPullRequest(target, deps);
+
+      const published = client.createCheckRun.mock.calls[0]?.[0];
+      expect(published?.conclusion).toBe("neutral");
+      expect(published?.output.title).toBe(
+        "No agent reviewed this pull request",
+      );
+      expect(published?.output.summary).toContain("`packages/**`");
+      expect(published?.output.summary).toContain("`src/sessions.ts`");
+    });
+
+    it("posts no review comments", async () => {
+      const { deps, client } = makeDeps(reviewResult(), only);
+
+      await reviewPullRequest(target, deps);
+
+      expect(client.createReview).not.toHaveBeenCalled();
+      expect(client.listReviewComments).not.toHaveBeenCalled();
+    });
+
+    it("reports the skip to the caller as an empty review", async () => {
+      const { deps } = makeDeps(reviewResult(), only);
+
+      await expect(reviewPullRequest(target, deps)).resolves.toMatchObject({
+        findings: [],
+        candidates: [],
+        agentFailures: [],
+        synthesisOutcome: "skipped",
+      });
+    });
+
+    it("logs the lifecycle of a review that never ran", async () => {
+      const { deps, entries } = makeDeps(reviewResult(), only);
+
+      await reviewPullRequest(target, deps);
+
+      expect(entries.map((entry) => entry["event"])).toEqual([
+        "review.loaded",
+        "agent.skipped",
+        "review.no_agents_matched",
+      ]);
+    });
+
+    it("uses the injected publisher, so the fork fallback still applies", async () => {
+      const publishReview = vi.fn<PublishReview>(async () => undefined);
+      const { deps, client } = makeDeps(reviewResult(), {
+        ...only,
+        publishReview,
+      });
+
+      await reviewPullRequest(target, deps);
+
+      expect(client.createCheckRun).not.toHaveBeenCalled();
+      expect(publishReview).toHaveBeenCalledTimes(1);
     });
   });
 });

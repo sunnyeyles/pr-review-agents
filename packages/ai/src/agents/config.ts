@@ -8,6 +8,7 @@ import { parse as parseYaml } from "yaml";
 import { z } from "zod";
 
 import { agentDefinitionSchema, type AgentDefinition } from "./definition.js";
+import { agentPathsSchema } from "./path-filter.js";
 import { BUILT_IN_AGENT_NAMES, findBuiltInAgent } from "./specialists/index.js";
 
 /** Where the agent configuration is read from unless a path is given. */
@@ -48,23 +49,48 @@ function unknownBuiltInMessage(name: string, path: string): string {
   ].join("\n");
 }
 
+/** A built-in named for its `paths`; `agent` is what distinguishes it. */
+const builtInEntrySchema = z
+  .object({
+    agent: z.string().min(1),
+    paths: agentPathsSchema.optional(),
+  })
+  .strict();
+
+/** True for the `agent:` form, so its errors never read as a bad definition. */
+function namesBuiltIn(entry: unknown): boolean {
+  return typeof entry === "object" && entry !== null && "agent" in entry;
+}
+
 /**
- * One `agents:` entry: the name of a built-in specialist, or a definition
- * written out in full. Errors carry the entry's position, since a list
- * offers nothing else to point at.
+ * One `agents:` entry: the name of a built-in specialist, that name with
+ * its own `paths`, or a definition written out in full. Errors carry the
+ * entry's position, since a list offers nothing else to point at.
  */
 function resolveAgentEntry(
   entry: unknown,
   index: number,
   path: string,
 ): AgentDefinition {
-  if (typeof entry === "string") {
-    const name = entry.trim();
+  // A bare name is the `agent:` form without the paths, so both spellings
+  // resolve down one branch.
+  if (typeof entry === "string" || namesBuiltIn(entry)) {
+    const named = builtInEntrySchema.safeParse(
+      typeof entry === "string" ? { agent: entry } : entry,
+    );
+    if (!named.success) {
+      throw new AgentConfigError(
+        `${path} agents[${index}] is invalid — ${issueList(named.error)}`,
+      );
+    }
+    const name = named.data.agent.trim();
     const builtIn = findBuiltInAgent(name);
     if (builtIn === undefined) {
       throw new AgentConfigError(unknownBuiltInMessage(name, path));
     }
-    return builtIn;
+    return named.data.paths === undefined
+      ? builtIn
+      : { ...builtIn, paths: named.data.paths };
   }
 
   const parsed = agentDefinitionSchema.safeParse(entry);

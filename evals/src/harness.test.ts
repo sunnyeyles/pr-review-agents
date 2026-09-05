@@ -101,6 +101,7 @@ function scriptedDeps(
 ): FixtureReviewDeps {
   const synthesised = Object.values(byCategory).flat();
   return {
+    agents: configuredAgents,
     createAgents: (github: GithubInstallationClient): ReviewAgent[] =>
       configuredAgents.map((agent) =>
         createReviewAgent(agent, {
@@ -402,8 +403,8 @@ describe("the full pipeline against a fixture", () => {
     const deps = scriptedDeps({});
     const review = await runFixtureReview(fixture, {
       ...deps,
-      createAgents: (github, logger) =>
-        deps.createAgents(github, logger).map((agent, index) =>
+      createAgents: (github, logger, agents) =>
+        deps.createAgents(github, logger, agents).map((agent, index) =>
           index === 0
             ? {
                 name: agent.name,
