@@ -13,6 +13,19 @@
         ]
       }
     ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "statusMessage": "Checking comment length",
+            "timeout": 20,
+            "command": "r=\".claude/hooks/comment-length.sh\"; s=\"${CLAUDE_PROJECT_DIR:-.}/$r\"; [ -f \"$s\" ] || { g=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null </dev/null); s=\"${g%/.git}/$r\"; }; [ -f \"$s\" ] || exit 0; bash \"$s\""
+          }
+        ]
+      }
+    ],
     "SessionEnd": [
       {
         "hooks": [
