@@ -63,6 +63,13 @@ function commentBody(finding: ReviewFinding): string {
   return lines.join("\n");
 }
 
+/** Which of renderReview's two silent cases the findings fell into. */
+export function nothingPostedReason(
+  findings: readonly ReviewFinding[],
+): "nothing-to-post" | "already-posted" {
+  return findings.length === 0 ? "nothing-to-post" : "already-posted";
+}
+
 /**
  * undefined when there is nothing worth posting: a clean PR, or one whose
  * findings all stand as comments from an earlier commit.

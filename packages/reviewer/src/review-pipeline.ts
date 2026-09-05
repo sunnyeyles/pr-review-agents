@@ -3,7 +3,6 @@
  * validate in sequence.
  */
 import {
-  emptyTokenUsage,
   type ReviewAgent,
   type ReviewContext,
   type Synthesiser,
@@ -27,7 +26,7 @@ type AgentOutcome =
 
 /** The synthesise step's outcome; the tag decides which fields exist. */
 export type SynthesisState =
-  | { outcome: "skipped"; candidates: unknown[]; usage: TokenUsage }
+  | { outcome: "skipped"; candidates: unknown[] }
   | {
       outcome: "completed";
       candidates: unknown[];
@@ -37,7 +36,6 @@ export type SynthesisState =
   | {
       outcome: "failed";
       candidates: unknown[];
-      usage: TokenUsage;
       error: string;
       errorName: string;
       durationMs: number;
@@ -45,7 +43,7 @@ export type SynthesisState =
 
 /** The outcome of a synthesise step that never ran. */
 export function skippedSynthesis(): SynthesisState {
-  return { outcome: "skipped", candidates: [], usage: emptyTokenUsage() };
+  return { outcome: "skipped", candidates: [] };
 }
 
 /** Runs one agent, recording success or failure; never throws. */
@@ -109,7 +107,6 @@ async function synthesise(
     return {
       outcome: "failed",
       candidates,
-      usage: emptyTokenUsage(),
       error: errorMessage(error),
       errorName: errorName(error),
       durationMs: Date.now() - startedAt,

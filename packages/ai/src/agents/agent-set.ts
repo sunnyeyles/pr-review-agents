@@ -59,6 +59,13 @@ export interface SkippedAgent {
   paths: readonly string[];
 }
 
+/** The skipped agents as the bare names every log event carries. */
+export function skippedAgentNames(
+  skipped: readonly SkippedAgent[],
+): string[] {
+  return skipped.map((skip) => skip.agent);
+}
+
 export interface GatedAgents {
   active: AgentDefinition[];
   skipped: SkippedAgent[];

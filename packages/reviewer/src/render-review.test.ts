@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   findingMarker,
+  nothingPostedReason,
   postedFindingKeys,
   renderReview,
 } from "./render-review.js";
@@ -130,5 +131,15 @@ describe("renderReview", () => {
 
     expect(rendered?.body).toContain("The Security review did not run");
     expect(rendered?.body).toContain("`packages/github/**`");
+  });
+});
+
+describe("nothingPostedReason", () => {
+  it("reports a clean PR as nothing to post", () => {
+    expect(nothingPostedReason([])).toBe("nothing-to-post");
+  });
+
+  it("reports held-back findings as already posted", () => {
+    expect(nothingPostedReason([finding()])).toBe("already-posted");
   });
 });

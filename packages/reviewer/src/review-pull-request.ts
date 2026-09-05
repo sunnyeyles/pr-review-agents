@@ -4,6 +4,7 @@
  */
 import {
   gateAgentsByPaths,
+  skippedAgentNames,
   type AgentDefinition,
   type ReviewContext,
 } from "@pr-review/ai";
@@ -149,7 +150,7 @@ export async function reviewPullRequest(
   });
 
   const { active, skipped } = gateAgentsByPaths(agents, filenames);
-  const skippedNames = skipped.map((skip) => skip.agent);
+  const skippedNames = skippedAgentNames(skipped);
   for (const skip of skipped) {
     logger.info("agent.skipped", {
       ...fields,

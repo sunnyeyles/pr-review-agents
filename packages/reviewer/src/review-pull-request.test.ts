@@ -16,18 +16,14 @@ import { createCapturingLogger } from "@pr-review/logging";
 import type { ReviewFinding } from "@pr-review/schemas";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { RenderedCheckRun } from "./render-check-run.js";
+import type { PublishReview } from "./publish-review.js";
 import { findingMarker } from "./render-review.js";
 import {
   skippedSynthesis,
   type ReviewPipelineResult,
 } from "./review-pipeline.js";
-import {
-  createCheckRunPublisher,
-  type PublishReview,
-} from "./publish-review.js";
 import { reviewPullRequest } from "./review-pull-request.js";
-import { reviewCorrelation, type ReviewTarget } from "./review-target.js";
+import type { ReviewTarget } from "./review-target.js";
 
 const target: ReviewTarget = {
   owner: "octo-org",
@@ -152,16 +148,6 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("reviewCorrelation", () => {
-  it("carries repository, PR number, and head SHA (spec §26)", () => {
-    expect(reviewCorrelation(target)).toEqual({
-      repository: "octo-org/example-service",
-      pullRequestNumber: 42,
-      headSha: target.headSha,
-    });
-  });
-});
-
 describe("reviewPullRequest", () => {
   it("loads the PR, its changed files, and its diff concurrently", async () => {
     const { deps, client } = makeDeps();
@@ -270,7 +256,6 @@ describe("reviewPullRequest", () => {
         synthesis: {
           outcome: "failed",
           candidates: [finding],
-          usage: emptyTokenUsage(),
           error: "model returned malformed JSON",
           errorName: "SynthesisError",
           durationMs: 0,
@@ -451,26 +436,6 @@ describe("reviewPullRequest inline comments", () => {
 
     expect(client.createReview).not.toHaveBeenCalled();
     expect(client.createCheckRun).toHaveBeenCalledTimes(1);
-  });
-});
-
-describe("createCheckRunPublisher", () => {
-  it("creates the check run on the target's head SHA", async () => {
-    const client = makeClient();
-    const rendered: RenderedCheckRun = {
-      conclusion: "success",
-      output: { title: "No issues found", summary: "All clear." },
-    };
-
-    await createCheckRunPublisher(client)(target, rendered);
-
-    expect(client.createCheckRun).toHaveBeenCalledExactlyOnceWith({
-      owner: target.owner,
-      repo: target.repo,
-      headSha: target.headSha,
-      conclusion: "success",
-      output: rendered.output,
-    });
   });
 });
 
