@@ -49,8 +49,8 @@ export interface CodeSearchMatch {
   /** Base name of the matching file. */
   name: string;
   /**
-   * Matching content fragments, in GitHub's order. They carry no line
-   * numbers, and come from the default branch like the index itself.
+   * Matching content fragments, verbatim and in GitHub's order. They carry
+   * no line numbers, and come from the default branch like the index itself.
    */
   snippets: readonly string[];
 }

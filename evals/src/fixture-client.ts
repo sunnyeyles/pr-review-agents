@@ -28,23 +28,16 @@ const FRAGMENT_PADDING = 120;
 /** Stands in for GitHub's text-match fragments: a window around each term. */
 function fragmentsAround(contents: string, terms: string[]): string[] {
   const haystack = contents.toLowerCase();
-  const fragments: string[] = [];
-  for (const term of terms) {
-    const at = haystack.indexOf(term);
-    if (at < 0) {
-      continue;
-    }
-    const fragment = contents
-      .slice(
+  const windows = terms
+    .map((term) => [haystack.indexOf(term), term.length] as const)
+    .filter(([at]) => at >= 0)
+    .map(([at, length]) =>
+      contents.slice(
         Math.max(0, at - FRAGMENT_PADDING),
-        at + term.length + FRAGMENT_PADDING,
-      )
-      .trim();
-    if (!fragments.includes(fragment)) {
-      fragments.push(fragment);
-    }
-  }
-  return fragments;
+        at + length + FRAGMENT_PADDING,
+      ),
+    );
+  return [...new Set(windows)];
 }
 
 /** One recorded read against the fixture repository. */

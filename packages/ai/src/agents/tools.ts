@@ -23,7 +23,7 @@ export interface ReviewToolScope {
 /** Tool results larger than this are truncated to bound token usage. */
 const MAX_TOOL_RESULT_CHARS = 50_000;
 
-// Capped before serialisation, never by truncate(): truncation cuts JSON mid-string.
+// Bounded by these, not by truncate(): truncation would cut the JSON mid-string.
 const MAX_SNIPPETS_PER_MATCH = 2;
 
 const MAX_SNIPPET_CHARS = 400;
@@ -36,28 +36,34 @@ function truncate(content: string): string {
   return truncateWithMarker(content, MAX_TOOL_RESULT_CHARS, TRUNCATION_MARKER);
 }
 
+/** Trimmed, deduplicated, and capped — the snippets the model actually sees. */
+function boundSnippets(snippets: readonly string[]): string[] {
+  const distinct = [...new Set(snippets.map((snippet) => snippet.trim()))];
+  return distinct
+    .filter((snippet) => snippet !== "")
+    .slice(0, MAX_SNIPPETS_PER_MATCH)
+    .map((snippet) =>
+      snippet.length <= MAX_SNIPPET_CHARS
+        ? snippet
+        : snippet.slice(0, MAX_SNIPPET_CHARS) + SNIPPET_TRUNCATION_MARKER,
+    );
+}
+
 /** `searchedFor` is absent unless the caller derived the query it searched. */
 function renderSearchResult(
   result: CodeSearchResult,
   searchedFor?: string,
 ): string {
-  const matches = result.matches.map((match) => ({
-    path: match.path,
-    name: match.name,
-    snippets: match.snippets
-      .slice(0, MAX_SNIPPETS_PER_MATCH)
-      .map((snippet) =>
-        snippet.length <= MAX_SNIPPET_CHARS
-          ? snippet
-          : snippet.slice(0, MAX_SNIPPET_CHARS) + SNIPPET_TRUNCATION_MARKER,
-      ),
-  }));
   return JSON.stringify(
     {
-      ...(searchedFor === undefined ? {} : { searchedFor }),
+      searchedFor,
       totalCount: result.totalCount,
       incompleteResults: result.incompleteResults,
-      matches,
+      matches: result.matches.map((match) => ({
+        path: match.path,
+        name: match.name,
+        snippets: boundSnippets(match.snippets),
+      })),
     },
     null,
     2,
@@ -97,12 +103,10 @@ const searchQuerySchema = z
     'Search terms, e.g. "createSession". Do not include repo:/org:/user: qualifiers.',
   );
 
-/** Segments too common to identify a file; searching one returns only noise. */
-const GENERIC_PATH_SEGMENTS = new Set([
-  "index",
-  "mod",
-  "main",
-  "__init__",
+// Split by position: a file-name list must not judge a directory slot.
+const GENERIC_FILE_STEMS = new Set(["index", "mod", "main", "__init__"]);
+
+const GENERIC_DIRECTORIES = new Set([
   "src",
   "lib",
   "app",
@@ -121,15 +125,21 @@ const SEARCHABLE_STEM = /^[A-Za-z0-9._-]+$/;
 
 /** Basename without its final extension, walking up when that stem is generic. */
 function importerSearchStem(path: string): string {
-  const segments = path.split("/");
-  const file = segments.pop() ?? "";
+  const directories = path.split("/");
+  const file = directories.pop() ?? "";
   const dot = file.lastIndexOf(".");
   const base = dot > 0 ? file.slice(0, dot) : file;
-  for (const candidate of [base, ...segments.reverse()]) {
-    if (
-      !GENERIC_PATH_SEGMENTS.has(candidate.toLowerCase()) &&
-      SEARCHABLE_STEM.test(candidate)
-    ) {
+  const candidates: [string, ReadonlySet<string>][] = [
+    [base, GENERIC_FILE_STEMS],
+    ...directories
+      .toReversed()
+      .map((directory): [string, ReadonlySet<string>] => [
+        directory,
+        GENERIC_DIRECTORIES,
+      ]),
+  ];
+  for (const [candidate, generic] of candidates) {
+    if (!generic.has(candidate.toLowerCase()) && SEARCHABLE_STEM.test(candidate)) {
       return candidate;
     }
   }
@@ -221,12 +231,9 @@ export function createReviewTools(
     search_repository: tool({
       description:
         "Search code within the pull request's repository. Returns matching files with short " +
-        "snippets of the matching code, plus the total number of matches. " +
-        "The search is always scoped to this repository; scope qualifiers are not allowed. " +
-        "IMPORTANT: the index and the snippets are the repository's DEFAULT branch, not this " +
-        "pull request's head. Snippets carry no line numbers, and files this pull request adds " +
-        "or changes are not reflected. Never quote a snippet as the current state of a changed " +
-        "file — re-read it with get_file first.",
+        "snippets of the matching code, and totalCount, the number of matches in the whole " +
+        "repository — far more than the page returned means the query was not selective enough. " +
+        "The search is always scoped to this repository; scope qualifiers are not allowed.",
       inputSchema: z.strictObject({ query: searchQuerySchema }),
       async execute({ query }) {
         const result = await github.searchCode({
@@ -234,7 +241,7 @@ export function createReviewTools(
           repo: scope.repo,
           query,
         });
-        return truncate(renderSearchResult(result));
+        return renderSearchResult(result);
       },
     }),
     find_importers: tool({
@@ -242,10 +249,9 @@ export function createReviewTools(
         "Find files that MENTION this file's name — a cheap proxy for \"what imports it\", NOT a " +
         "resolved import graph. It is a text search for the file's name stem, so results routinely " +
         "include unrelated files using the same word, and MISS importers that alias the path or " +
-        "import the directory. The stem actually searched comes back as searchedFor. " +
-        "IMPORTANT: it searches the repository's DEFAULT branch, so importers this pull request " +
-        "adds are invisible, and an empty result means the search found nothing — not that nothing " +
-        "imports the file. Confirm every result with get_file before relying on it.",
+        "import the directory. The stem actually searched comes back as searchedFor, and a high " +
+        "totalCount means that stem was too common to be meaningful. An empty result means the " +
+        "search found nothing — never that nothing imports the file.",
       inputSchema: z.strictObject({ path: repositoryPathSchema }),
       async execute({ path }) {
         const stem = importerSearchStem(path);
@@ -255,16 +261,14 @@ export function createReviewTools(
           query: `"${stem}"`,
         });
         const subject = path.toLowerCase();
-        return truncate(
-          renderSearchResult(
-            {
-              ...result,
-              matches: result.matches.filter(
-                (match) => match.path.toLowerCase() !== subject,
-              ),
-            },
-            stem,
-          ),
+        return renderSearchResult(
+          {
+            ...result,
+            matches: result.matches.filter(
+              (match) => match.path.toLowerCase() !== subject,
+            ),
+          },
+          stem,
         );
       },
     }),

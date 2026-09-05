@@ -220,13 +220,36 @@ describe("review tool execution", () => {
     });
   });
 
+  it("trims and deduplicates snippets before capping them", async () => {
+    const github = makeGithub();
+    github.searchCode.mockResolvedValueOnce({
+      matches: [
+        {
+          path: "src/a.ts",
+          name: "a.ts",
+          snippets: ["same\n", "  same", "", "different", "third"],
+        },
+      ],
+      totalCount: 1,
+      incompleteResults: false,
+    });
+
+    const result = (await run(createReviewTools(github, scope), "search_repository", {
+      query: "createSession",
+    })) as string;
+
+    // Deduplication precedes the cap, or duplicates would consume the budget.
+    expect(JSON.parse(result).matches[0].snippets).toEqual(["same", "different"]);
+  });
+
   it("caps snippets so an oversized search result is still valid JSON", async () => {
     const github = makeGithub();
     github.searchCode.mockResolvedValueOnce({
       matches: Array.from({ length: 20 }, (_unused, index) => ({
         path: `src/file-${index}.ts`,
         name: `file-${index}.ts`,
-        snippets: Array.from({ length: 5 }, () => "x".repeat(5_000)),
+        // Distinct, so the cap rather than deduplication is what bounds them.
+        snippets: Array.from({ length: 5 }, (_u, n) => `${n}${"x".repeat(5_000)}`),
       })),
       totalCount: 843,
       incompleteResults: true,
@@ -236,7 +259,9 @@ describe("review tool execution", () => {
       query: "createSession",
     })) as string;
 
-    // truncate() would slice the JSON mid-string; the caps must land first.
+    // The caps are the only thing keeping this under the tool result limit,
+    // which no truncation may enforce here: it would cut the JSON mid-string.
+    expect(result.length).toBeLessThan(50_000);
     expect(result).not.toMatch(/truncated/i);
     const payload = JSON.parse(result);
     expect(payload.totalCount).toBe(843);
@@ -247,7 +272,7 @@ describe("review tool execution", () => {
     }
   });
 
-  it("runs find_importers with the file's name stem, quoted, minus itself", async () => {
+  it("names the stem it searched and drops the subject file from its own results", async () => {
     const github = makeGithub();
 
     const result = (await run(createReviewTools(github, scope), "find_importers", {
@@ -266,6 +291,7 @@ describe("review tool execution", () => {
   });
 
   it.each([
+    ["src/sessions.ts", "sessions"],
     ["src/session/index.ts", "session"],
     ["pkg/auth/__init__.py", "auth"],
     ["crates/parser/src/mod.rs", "parser"],

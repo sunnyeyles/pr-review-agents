@@ -158,26 +158,18 @@ const codeSearchSchema = z.object({
 });
 
 /**
- * Content fragments only, deduplicated. GitHub also reports matches on the
- * path property, whose fragment is just the path again.
+ * Content fragments, verbatim. GitHub also reports matches on the path
+ * property, whose fragment is just the path again; dropping those is what
+ * makes the rest "content". What a caller shows a model — trimming,
+ * deduplication, size caps — is that caller's decision, not this wrapper's.
  */
 function contentFragments(
   textMatches: z.infer<typeof textMatchesSchema>,
 ): string[] {
-  const fragments: string[] = [];
-  for (const match of textMatches ?? []) {
-    if (match.property !== undefined && match.property !== "content") {
-      continue;
-    }
-    const fragment = match.fragment?.trim();
-    if (fragment === undefined || fragment === "") {
-      continue;
-    }
-    if (!fragments.includes(fragment)) {
-      fragments.push(fragment);
-    }
-  }
-  return fragments;
+  return (textMatches ?? [])
+    .filter((match) => match.property === undefined || match.property === "content")
+    .map((match) => match.fragment)
+    .filter((fragment) => fragment !== undefined);
 }
 
 /**

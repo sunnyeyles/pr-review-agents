@@ -88,6 +88,22 @@ const codeSearchResponse = {
   ],
 };
 
+/** A one-item search response; `extra` supplies the item's text_matches. */
+function oneItemSearchResponse(extra: Record<string, unknown>) {
+  return {
+    total_count: 1,
+    incomplete_results: false,
+    items: [
+      {
+        name: "a.ts",
+        path: "src/a.ts",
+        repository: { full_name: "octo-org/example-service" },
+        ...extra,
+      },
+    ],
+  };
+}
+
 interface StubOptions {
   filePages?: unknown[][];
   pullData?: unknown;
@@ -435,7 +451,7 @@ describe("searchCode", () => {
         {
           path: "src/sessions.ts",
           name: "sessions.ts",
-          snippets: ["createSession(id);"],
+          snippets: ["  createSession(id);\n"],
         },
       ],
       totalCount: 2,
@@ -462,24 +478,25 @@ describe("searchCode", () => {
   });
 
   it.each([
-    ["no text_matches at all", {}],
-    ["a text match with no fragment", { text_matches: [{ property: "content" }] }],
-    ["only a path-property match", { text_matches: [{ property: "path", fragment: "src/a.ts" }] }],
-  ])("maps %s to an empty snippet list", async (_label, extra) => {
-    const { client } = makeClient({
-      searchData: {
-        total_count: 1,
-        incomplete_results: false,
-        items: [
-          {
-            name: "a.ts",
-            path: "src/a.ts",
-            repository: { full_name: "octo-org/example-service" },
-            ...extra,
-          },
+    ["no text_matches at all", {}, []],
+    ["a text match with no fragment", { text_matches: [{ property: "content" }] }, []],
+    [
+      "only a path-property match",
+      { text_matches: [{ property: "path", fragment: "src/a.ts" }] },
+      [],
+    ],
+    [
+      "content fragments, kept verbatim and in order",
+      {
+        text_matches: [
+          { property: "content", fragment: "  second()\n" },
+          { property: "content", fragment: "first()" },
         ],
       },
-    });
+      ["  second()\n", "first()"],
+    ],
+  ])("maps %s", async (_label, extra, snippets) => {
+    const { client } = makeClient({ searchData: oneItemSearchResponse(extra) });
 
     const result = await client.searchCode({
       owner: "octo-org",
@@ -487,56 +504,13 @@ describe("searchCode", () => {
       query: "createSession",
     });
 
-    expect(result.matches[0]?.snippets).toEqual([]);
-  });
-
-  it("deduplicates identical fragments", async () => {
-    const { client } = makeClient({
-      searchData: {
-        total_count: 1,
-        incomplete_results: false,
-        items: [
-          {
-            name: "a.ts",
-            path: "src/a.ts",
-            repository: { full_name: "octo-org/example-service" },
-            text_matches: [
-              { property: "content", fragment: "same\n" },
-              { property: "content", fragment: "  same" },
-              { property: "content", fragment: "different" },
-            ],
-          },
-        ],
-      },
-    });
-
-    const result = await client.searchCode({
-      owner: "octo-org",
-      repo: "example-service",
-      query: "createSession",
-    });
-
-    expect(result.matches[0]?.snippets).toEqual(["same", "different"]);
+    expect(result.matches[0]?.snippets).toEqual(snippets);
   });
 
   it.each([
     ["items is not an array", { items: "not-an-array" }],
     ["the totals are missing", { items: [] }],
-    [
-      "text_matches is not an array",
-      {
-        total_count: 1,
-        incomplete_results: false,
-        items: [
-          {
-            name: "a.ts",
-            path: "src/a.ts",
-            repository: { full_name: "octo-org/example-service" },
-            text_matches: "nope",
-          },
-        ],
-      },
-    ],
+    ["text_matches is not an array", oneItemSearchResponse({ text_matches: "nope" })],
   ])("rejects a malformed search response: %s", async (_label, searchData) => {
     const { client } = makeClient({ searchData });
 
