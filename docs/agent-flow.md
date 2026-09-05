@@ -302,7 +302,7 @@ confidence score dies — regardless of how confident the model sounded.
 
 ### 5 · Render
 
-`packages/reviewer/src/render-check-run.ts:65` — pure, no I/O.
+`packages/reviewer/src/render-check-run.ts` — pure, no I/O.
 
 | Situation | Conclusion |
 | --- | --- |
@@ -312,12 +312,27 @@ confidence score dies — regardless of how confident the model sounded.
 | An agent was skipped by its `paths` | Unchanged — a skip is configured, not a failure; the summary names it |
 | **No agent matched** | `neutral`, "No agent reviewed this pull request" — the one case where nothing was read at all |
 
-Line-anchored findings also become inline annotations (GitHub caps these at 50
-per request).
+Line-anchored findings can also become inline annotations (GitHub caps these at
+50 per request), but annotations are the *fallback* surface — see below.
 
 ### 6 · Publish
 
-`apps/action/src/summary.ts:59` → `createFallbackPublisher`
+`packages/reviewer/src/publish-review.ts` → `deliverReview`
+
+Inline comments go first, and the check run annotates only what no comment
+carries. Four outcomes, and the check run reads them:
+
+| `comments` | Meaning | Annotations |
+| --- | --- | --- |
+| `posted` | Fresh comments landed on this commit | No |
+| `already-posted` | Every finding was commented on an earlier commit | No |
+| `unavailable` | The token cannot post comments (fork) | Yes |
+| `nothing-to-post` | No findings | N/A |
+
+`review.published` carries both `comments` and `annotated`, so which surface
+carried the review is in the log rather than inferred.
+
+`apps/action/src/summary.ts` → `createFallbackPublisher`
 
 Try the check run first. On a **403 or 404**, fall back to the workflow job
 summary and exit cleanly — that is the fork case, where GitHub hands the
@@ -373,6 +388,8 @@ those may masquerade as a delivered review.
 | A tool call fails | Reported to the model, loop continues |
 | Langfuse unreachable | In-code prompts used; no traces |
 | Check run forbidden (fork) | Job summary instead; step succeeds |
+| Comments forbidden (fork) | Check run annotates instead; step succeeds |
+| Every finding already commented on an earlier commit | No review posted, no annotations; the check run summary still lists them |
 
 ## Lifecycle log events
 

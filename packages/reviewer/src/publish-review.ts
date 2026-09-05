@@ -121,9 +121,12 @@ export function createReviewCommentPublisher(
   };
 }
 
-/** Annotations are the fallback surface: only when no comment carries the finding. */
+/**
+ * Annotations are the fallback surface: only when no comment carries the
+ * finding. An earlier commit's comments still carry it.
+ */
 function annotates(comments: CommentsOutcome): boolean {
-  return comments !== "posted";
+  return comments === "unavailable";
 }
 
 /** Comments first; the check run annotates only what nothing else carries. */
@@ -169,6 +172,8 @@ export async function deliverReview(
     ...fields,
     findingCount: input.findings.length,
     skippedAgents: input.skippedAgents.map((skip) => skip.agent),
+    comments,
+    annotated,
   });
 
   return { comments, commentCount, annotated };

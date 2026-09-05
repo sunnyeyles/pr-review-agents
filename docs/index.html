@@ -1069,15 +1069,32 @@ html { scroll-behavior: smooth; }
         <h2>Publish</h2>
       </div>
       <div class="paths">
+        <span class="chip">packages/reviewer/src/<b>publish-review.ts</b> · deliverReview</span>
         <span class="chip">apps/action/src/<b>summary.ts</b> · createFallbackPublisher</span>
       </div>
       <div class="prose">
         <p>
-          Try the check run first. On a <strong>403 or 404</strong>, write the
+          Inline comments go first, and the check run annotates only what no
+          comment carries — including comments an <em>earlier</em> commit
+          already left. Annotations are the fallback surface, not a duplicate.
+        </p>
+        <p>
+          Then the check run. On a <strong>403 or 404</strong>, write the
           same rendered review to the workflow job summary and exit cleanly —
           that is the fork case, where GitHub hands the workflow a read-only
           token.
         </p>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th><code>comments</code></th><th>Meaning</th><th>Annotations</th></tr></thead>
+          <tbody>
+            <tr><td><code>"posted"</code></td><td>Fresh comments landed on this commit</td><td>No</td></tr>
+            <tr><td><code>"already-posted"</code></td><td>Every finding was commented on an earlier commit</td><td>No</td></tr>
+            <tr><td><code>"unavailable"</code></td><td>The token cannot post comments (fork)</td><td>Yes</td></tr>
+            <tr><td><code>"nothing-to-post"</code></td><td>No findings</td><td>N/A</td></tr>
+          </tbody>
+        </table>
       </div>
 
       <figure class="code">
@@ -1125,6 +1142,8 @@ html { scroll-behavior: smooth; }
             <tr><td>A tool call fails</td><td><span class="badge warn">Continues</span> — reported to the model</td></tr>
             <tr><td>Langfuse unreachable</td><td><span class="badge warn">Continues</span> — in-code prompts, no traces</td></tr>
             <tr><td>Check run forbidden (fork)</td><td><span class="badge warn">Degrades</span> — job summary instead</td></tr>
+            <tr><td>Comments forbidden (fork)</td><td><span class="badge warn">Degrades</span> — the check run annotates instead</td></tr>
+            <tr><td>Every finding already commented on an earlier commit</td><td>No review posted and no annotations; the check run summary still lists them</td></tr>
           </tbody>
         </table>
       </div>

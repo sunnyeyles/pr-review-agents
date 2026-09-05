@@ -361,10 +361,10 @@ provisioned outside GitHub's own secret settings.
 
 ### Token permissions
 
-Repository contents: **read**. Pull requests: **read**. Checks: **write** to
-get inline annotations — omit it and the review still lands, in the job
-summary. The Action never requests write access to file contents, merges, or
-approvals.
+Repository contents: **read**. Pull requests: **write** to get inline comments;
+without it the check run annotates the same lines instead. Checks: **write** —
+omit it and the review still lands, in the job summary. The Action never
+requests write access to file contents, merges, or approvals.
 
 ---
 

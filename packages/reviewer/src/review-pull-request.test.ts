@@ -380,9 +380,53 @@ describe("reviewPullRequest inline comments", () => {
     await reviewPullRequest(target, deps);
 
     expect(client.createReview).not.toHaveBeenCalled();
+  });
+
+  // The bug this replaced: no comment was posted, so the check run
+  // annotated the same lines the earlier commit's comments already hold.
+  it("does not re-annotate a finding whose earlier comment still stands", async () => {
+    const { deps, client } = makeDeps(reviewResult({ candidates: [finding] }));
+    client.listReviewComments.mockResolvedValueOnce([
+      { body: `stale text\n\n${findingMarker(finding)}` },
+    ]);
+
+    await reviewPullRequest(target, deps);
+
     expect(
       client.createCheckRun.mock.calls[0]?.[0].output.annotations,
-    ).toHaveLength(1);
+    ).toBeUndefined();
+  });
+
+  it("names the dedupe as its own outcome, not a failure to post", async () => {
+    const { deps, client, entries } = makeDeps(
+      reviewResult({ candidates: [finding] }),
+    );
+    client.listReviewComments.mockResolvedValueOnce([
+      { body: `stale text\n\n${findingMarker(finding)}` },
+    ]);
+
+    await reviewPullRequest(target, deps);
+
+    expect(entries).toContainEqual(
+      expect.objectContaining({
+        event: "review.published",
+        comments: "already-posted",
+        annotated: false,
+      }),
+    );
+  });
+
+  it("names a clean review nothing-to-post rather than already-posted", async () => {
+    const { deps, entries } = makeDeps();
+
+    await reviewPullRequest(target, deps);
+
+    expect(entries).toContainEqual(
+      expect.objectContaining({
+        event: "review.published",
+        comments: "nothing-to-post",
+      }),
+    );
   });
 
   it("still reviews when the existing comments cannot be read", async () => {
