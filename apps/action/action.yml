@@ -13,15 +13,15 @@ branding:
 inputs:
   model-provider:
     description: >-
-      Which model provider the review agents and Synthesiser call: `anthropic`
-      or `openai`. An unknown name fails the step before any model call.
+      Which model provider the review agents and Synthesiser call: `openai`
+      or `anthropic`. An unknown name fails the step before any model call.
     required: false
-    default: anthropic
+    default: openai
   api-key:
     description: >-
       API key for the selected provider. Store it as a repository or
       organisation secret; never inline it. Defaults to the provider's
-      conventional environment variable (ANTHROPIC_API_KEY, OPENAI_API_KEY)
+      conventional environment variable (OPENAI_API_KEY, ANTHROPIC_API_KEY)
       when left empty, so a workflow can pass the key through `env` instead.
     required: false
     default: ""
@@ -35,9 +35,10 @@ inputs:
     default: ${{ github.token }}
   model:
     description: >-
-      Model id the agents and Synthesiser use, as the selected provider spells
-      it. Leave empty for that provider's default (claude-sonnet-5 on
-      anthropic, gpt-5 on openai).
+      Default model id, as the selected provider spells it. An agent may
+      override it with its own `model` in the agent configuration; the
+      Synthesiser always uses this one. Leave empty for the provider's default
+      (gpt-5.6-luna on openai, claude-haiku-4-5 on anthropic).
     required: false
     default: ""
   model-base-url:

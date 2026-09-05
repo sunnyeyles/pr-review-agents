@@ -42,7 +42,7 @@ jobs:
     steps:
       - uses: sunnyeyles/pr-review-action@v2
         with:
-          api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          api-key: ${{ secrets.OPENAI_API_KEY }}
 ```
 
 Source lives in [`apps/action`](apps/action); `release-action.yml` publishes the
@@ -169,10 +169,10 @@ Set as `with:` inputs on the Action step ([`apps/action/action.yml`](apps/action
 
 | Input | Required | Purpose |
 | --- | --- | --- |
-| `api-key` | yes, as the input or through `env` | Key for the selected provider, which the agents and synthesiser authenticate with. Store as a repository or organisation secret; never inline it. Falls back to the provider's own variable (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`) when left empty, so a workflow can pass keys through `env` instead of choosing one in YAML. |
-| `model-provider` | no (default `anthropic`) | Which provider the agents and synthesiser call: `anthropic` or `openai`. An unknown name fails the step before any model call. |
+| `api-key` | yes, as the input or through `env` | Key for the selected provider, which the agents and synthesiser authenticate with. Store as a repository or organisation secret; never inline it. Falls back to the provider's own variable (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`) when left empty, so a workflow can pass keys through `env` instead of choosing one in YAML. |
+| `model-provider` | no (default `openai`) | Which provider the agents and synthesiser call: `openai` or `anthropic`. An unknown name fails the step before any model call. |
 | `github-token` | no (default `${{ github.token }}`) | Token for the six read-only repository tools and for publishing the check run. |
-| `model` | no (default: the provider's own — `claude-sonnet-5`, `gpt-5`) | Model id the agents and synthesiser use, as the provider spells it. |
+| `model` | no (default: the provider's own — `gpt-5.6-luna`, `claude-haiku-4-5`) | Default model id, as the provider spells it. An agent may [override it](#per-agent-models); the synthesiser always uses this one. |
 | `model-base-url` | no (default: the provider's own host) | Overrides the provider's API host — a gateway, a proxy, or a compatible endpoint (for `openai`, one that accepts `max_completion_tokens`). |
 | `agents` | no (default `all`) | Which of the configured agents run: `all`, or a comma-separated subset of their names. Naming a subset also overrides any [path filters](#path-filters). |
 | `agent-config` | no (default `.github/pr-review-agents.yml`) | Path to the YAML file defining the agents. Required — there is no built-in set. |
@@ -186,9 +186,9 @@ carries its key live in `packages/ai/src/model.ts`, selected by
 
 ```yaml
         with:
-          model-provider: openai
-          api-key: ${{ secrets.OPENAI_API_KEY }}
-          model: gpt-5
+          model-provider: anthropic
+          api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          model: claude-sonnet-5
 ```
 
 `model-base-url` points a provider at a gateway, a proxy, or any endpoint
@@ -240,6 +240,28 @@ but the agent body is derived:
   (`packages/ai/src/agents/definition.ts`); the security hardening, the tool
   guidance, and the JSON output contract come with it.
 - Order is significant: it is the order findings reach the synthesiser.
+
+### Per-agent models
+
+An agent can name the model it runs on. Anything else uses the action's
+`model` input, and so does the synthesiser:
+
+```yaml
+agents:
+  # Cheap: it only checks whether the docs still match the code.
+  - agent: docs-drift
+    model: gpt-5-mini
+
+  # No `model`, so these run on the action's default (`gpt-5.6-luna`).
+  - category: security
+    role: Security reviewer
+    focus: Review ONLY for security problems.
+  - correctness
+```
+
+The provider, the API key, and `model-base-url` are the run's, so every agent
+model must be one the selected provider serves. Set `vars.REVIEW_MODEL` to
+swap the default for a whole repository without touching the workflow.
 
 ### Path filters
 
@@ -344,7 +366,7 @@ the sum of its agents, and narrowing the set cuts that roughly in proportion:
 
 ```yaml
         with:
-          api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          api-key: ${{ secrets.OPENAI_API_KEY }}
           agents: architecture        # or: correctness,security
 ```
 

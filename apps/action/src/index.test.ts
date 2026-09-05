@@ -44,7 +44,7 @@ afterAll(() => {
 
 const validInputs = {
   "INPUT_API-KEY": "sk-test-key",
-  INPUT_MODEL: "claude-test-model",
+  INPUT_MODEL: "gpt-run-model",
   "INPUT_GITHUB-TOKEN": "ghs-test-token",
 };
 
@@ -378,7 +378,7 @@ describe("runAction", () => {
     delete env["INPUT_API-KEY"];
     const { environment } = harness(env);
     await expect(runAction(environment)).rejects.toThrow(
-      "Missing required action input: api-key (or the ANTHROPIC_API_KEY environment variable)",
+      "Missing required action input: api-key (or the OPENAI_API_KEY environment variable)",
     );
   });
 
@@ -387,7 +387,7 @@ describe("runAction", () => {
     delete env["INPUT_API-KEY"];
     const { environment, modelConfigs } = harness({
       ...env,
-      "INPUT_MODEL-PROVIDER": "openai",
+      "INPUT_MODEL-PROVIDER": "anthropic",
       ANTHROPIC_API_KEY: "sk-anthropic-key",
       OPENAI_API_KEY: "sk-openai-key",
     });
@@ -395,8 +395,8 @@ describe("runAction", () => {
     await expect(runAction(environment)).resolves.toBeUndefined();
 
     expect(modelConfigs[0]).toMatchObject({
-      provider: "openai",
-      apiKey: "sk-openai-key",
+      provider: "anthropic",
+      apiKey: "sk-anthropic-key",
     });
   });
 
@@ -410,8 +410,8 @@ describe("runAction", () => {
     expect(entries).toContainEqual(
       expect.objectContaining({
         event: "review.model_selected",
-        provider: "anthropic",
-        model: "claude-sonnet-5",
+        provider: "openai",
+        model: "gpt-5.6-luna",
       }),
     );
   });
@@ -437,6 +437,37 @@ describe("runAction", () => {
     ]);
   });
 
+  const perAgentModelYaml = `agents:
+  - category: security
+    role: Security reviewer
+    focus: Review ONLY for security problems.
+    model: gpt-mini-test
+`;
+
+  it("builds an agent's own model beside the run's default", async () => {
+    const { environment, modelConfigs, entries } = harness(
+      reviewEnv,
+      pullRequestEvent(),
+      { config: perAgentModelYaml },
+    );
+
+    await expect(runAction(environment)).resolves.toBeUndefined();
+
+    // The default is built first, for the Synthesiser and every agent
+    // that names no model of its own.
+    expect(modelConfigs.map((config) => config.modelId)).toEqual([
+      "gpt-run-model",
+      "gpt-mini-test",
+    ]);
+    expect(entries).toContainEqual(
+      expect.objectContaining({
+        event: "review.model_selected",
+        model: "gpt-run-model",
+        agentModels: { security: "gpt-mini-test" },
+      }),
+    );
+  });
+
   it("fails on an unknown provider before building any client", async () => {
     const { environment, modelConfigs } = harness({
       ...reviewEnv,
@@ -458,10 +489,10 @@ describe("runAction", () => {
     expect(readPaths).toEqual(["/tmp/event.json"]);
     expect(modelConfigs).toEqual([
       {
-        provider: "anthropic",
+        provider: "openai",
         apiKey: "sk-test-key",
         baseUrl: undefined,
-        modelId: "claude-test-model",
+        modelId: "gpt-run-model",
       },
     ]);
     expect(tokenConfigs).toEqual([{ token: "ghs-test-token" }]);
