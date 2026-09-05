@@ -10,8 +10,7 @@ import { errorMessage } from "@pr-review/logging";
 
 import type { ModelResponse } from "./model/types.js";
 
-// Langfuse prices usage by key, and each provider's model definitions
-// spell the cache keys their own way; the seam's names are the default.
+// Langfuse prices by key, and each provider spells its cache keys differently.
 const CACHE_USAGE_KEYS: Record<string, { read: string; creation?: string }> = {
   openai: { read: "input_cached_tokens" },
 };

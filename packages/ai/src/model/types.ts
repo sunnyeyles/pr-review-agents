@@ -16,10 +16,7 @@ export interface ModelToolUseBlock {
   input: unknown;
 }
 
-/**
- * State a provider must see again on the next turn — Anthropic thinking
- * blocks, for one. Opaque above the seam; the owning adapter replays it.
- */
+/** Provider state replayed verbatim next turn, e.g. Anthropic thinking. */
 export interface ModelProviderBlock {
   type: "provider";
   provider: string;
@@ -64,11 +61,7 @@ export interface ModelRequest {
   system: string;
   messages: readonly ModelMessage[];
   tools?: readonly ModelToolDefinition[];
-  /**
-   * Asks the provider to cache this request as the prefix of the next one:
-   * system prompt, tool definitions, and the conversation so far.
-   * Providers without prompt caching ignore it.
-   */
+  /** Cache this request as the next turn's prefix, where the provider can. */
   cachePrefix?: boolean;
 }
 

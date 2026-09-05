@@ -51,8 +51,7 @@ function toOpenAiMessages(
         continue;
       }
       for (const block of message.content) {
-        // The API rejects an empty tool message, and has no error flag on
-        // one, so both are spelled out in the content the model reads.
+        // The API rejects empty content and has no error flag.
         const content = block.content === "" ? "(empty)" : block.content;
         out.push({
           role: "tool",
@@ -74,8 +73,7 @@ function toOpenAiMessages(
         type: "function" as const,
         function: {
           name: block.name,
-          // A string input is the model's own unparseable arguments,
-          // replayed as it wrote them rather than re-encoded.
+          // A string is unparseable arguments; replay them as written.
           arguments:
             typeof block.input === "string" ? block.input : JSON.stringify(block.input),
         },

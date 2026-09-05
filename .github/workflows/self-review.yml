@@ -33,9 +33,7 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           MODEL_PROVIDER: ${{ vars.MODEL_PROVIDER }}
-        # Spelled the way the action reads it: trimmed, case-insensitive,
-        # empty meaning Anthropic. Anything else runs so the action can
-        # fail it loudly rather than this step skipping it quietly.
+        # Normalised as the action reads it; unknown names run so it fails loudly.
         run: |
           case "$(printf '%s' "$MODEL_PROVIDER" | tr '[:upper:]' '[:lower:]' | xargs)" in
             "" | anthropic) API_KEY="$ANTHROPIC_API_KEY" ;;
@@ -83,8 +81,7 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         with:
-          # Set vars.MODEL_PROVIDER to review with a different provider;
-          # empty means the action's default, Anthropic.
+          # Set vars.MODEL_PROVIDER to review with a different provider.
           model-provider: ${{ vars.MODEL_PROVIDER }}
           # The agents come from .github/pr-review-agents.yml, read at the
           # pull request's base commit rather than from the checkout above.

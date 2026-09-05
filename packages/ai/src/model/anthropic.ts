@@ -44,8 +44,7 @@ function toAnthropicBlock(
     case "tool_use":
       return { type: "tool_use", id: block.id, name: block.name, input: block.input };
     case "provider":
-      // Thinking blocks go back exactly as they came, or the API rejects
-      // the turn; another provider's state means nothing here.
+      // Thinking must go back unchanged, or the API rejects the turn.
       return block.provider === ANTHROPIC_PROVIDER
         ? (block.block as Anthropic.Messages.ContentBlockParam)
         : undefined;
@@ -127,8 +126,7 @@ export function createAnthropicClient(
       const response = await sdk.messages.create({
         model: request.model,
         max_tokens: request.maxOutputTokens,
-        // The top-level marker lands on the last block, so the whole
-        // conversation is the next turn's cached prefix.
+        // Top-level marker: caches the conversation tail for the next turn.
         ...(cache ? { cache_control: CACHE_CONTROL } : {}),
         // Tools are sent ahead of the system prompt, so one breakpoint on
         // the system block caches both.

@@ -12,7 +12,6 @@ export default function setup(): void {
   try {
     requireModelAccess(process.env);
   } catch (error) {
-    // A misspelt provider is not a missing key; its own message says so.
     if (error instanceof ModelProviderError) {
       throw error;
     }
