@@ -30,7 +30,7 @@ import { postedFindingKeys } from "./render-review.js";
 import {
   skippedSynthesis,
   type ReviewPipelineResult,
-} from "./review-graph.js";
+} from "./review-pipeline.js";
 import { reviewCorrelation, type ReviewTarget } from "./review-target.js";
 
 interface ReviewPullRequestDeps {

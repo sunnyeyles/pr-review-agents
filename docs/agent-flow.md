@@ -34,9 +34,9 @@ flowchart TD
         LOAD["load PR, changed files, diff<br/><code>review-pull-request.ts</code>"]
     end
 
-    LOAD --> GRAPH
+    LOAD --> PIPELINE
 
-    subgraph GRAPH["4 · Review pipeline — review-graph.ts"]
+    subgraph PIPELINE["4 · Review pipeline — review-pipeline.ts"]
         direction TB
         START(["START"])
         START --> A1["&lt;agent 1&gt;"]
@@ -50,13 +50,13 @@ flowchart TD
         VAL --> ENDN(["END"])
     end
 
-    GRAPH --> RENDER["5 · renderReview + renderCheckRun<br/><code>render-review.ts</code> · <code>render-check-run.ts</code>"]
+    PIPELINE --> RENDER["5 · renderReview + renderCheckRun<br/><code>render-review.ts</code> · <code>render-check-run.ts</code>"]
     RENDER --> PUB{"6 · publish"}
     PUB -->|pull-requests: write| COMMENTS["pull request review<br/>+ inline comments"]
     PUB -->|checks: write| CHECK["AI PR Review check run<br/>full summary"]
     PUB -->|403 / 404 on a fork| SUM["workflow job summary<br/><code>summary.ts</code>"]
 
-    style GRAPH fill:transparent
+    style PIPELINE fill:transparent
     style VAL stroke-width:3px
 ```
 
@@ -165,12 +165,12 @@ time the gate runs there is nothing left to hold it back.
 
 ### 4 · The pipeline
 
-`packages/reviewer/src/review-graph.ts` → `runReviewPipeline`
+`packages/reviewer/src/review-pipeline.ts` → `runReviewPipeline`
 
 Every selected agent is started together, so they run concurrently:
 
 ```ts
-// packages/reviewer/src/review-graph.ts
+// packages/reviewer/src/review-pipeline.ts
 const outcomes = await Promise.all(
   agents.map((agent) => runAgent(agent, context)),
 );
@@ -343,7 +343,7 @@ those may masquerade as a delivered review.
 | `apps/action/src/summary.ts` | Fork fallback to the job summary |
 | `apps/action/src/langfuse.ts` | Span export for one run |
 | `packages/reviewer/src/review-pull-request.ts` | One review, end to end |
-| `packages/reviewer/src/review-graph.ts` | The review pipeline |
+| `packages/reviewer/src/review-pipeline.ts` | Agent fan-out, join, synthesise, validate |
 | `packages/reviewer/src/validate-findings.ts` | The trust boundary |
 | `packages/reviewer/src/render-check-run.ts` | Findings → check run payload |
 | `packages/reviewer/src/render-review.ts` | Findings → review body + inline comments |

@@ -8,7 +8,7 @@ import type { ChangedFile } from "@pr-review/github";
 import type { ReviewFinding } from "@pr-review/schemas";
 import { describe, expect, it } from "vitest";
 
-import { runReviewPipeline } from "./review-graph.js";
+import { runReviewPipeline } from "./review-pipeline.js";
 
 const changedFiles: ChangedFile[] = [
   {

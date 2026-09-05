@@ -21,7 +21,7 @@ import { findingMarker } from "./render-review.js";
 import {
   skippedSynthesis,
   type ReviewPipelineResult,
-} from "./review-graph.js";
+} from "./review-pipeline.js";
 import {
   createCheckRunPublisher,
   type PublishReview,

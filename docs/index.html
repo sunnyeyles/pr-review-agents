@@ -829,14 +829,14 @@ html { scroll-behavior: smooth; }
       </div>
     </section>
 
-    <!-- ========== 4 · GRAPH ========== -->
+    <!-- ========== 4 · PIPELINE ========== -->
     <section class="stage" id="s4">
       <div class="stage-head">
         <span class="stage-num">04</span>
         <h2>The pipeline</h2>
       </div>
       <div class="paths">
-        <span class="chip">packages/reviewer/src/<b>review-graph.ts</b></span>
+        <span class="chip">packages/reviewer/src/<b>review-pipeline.ts</b></span>
       </div>
       <div class="prose">
         <p>
@@ -847,7 +847,7 @@ html { scroll-behavior: smooth; }
       </div>
 
       <figure class="code">
-        <div class="code-head"><span class="p">packages/reviewer/src/review-graph.ts</span><span class="ln">runReviewPipeline</span></div>
+        <div class="code-head"><span class="p">packages/reviewer/src/review-pipeline.ts</span><span class="ln">runReviewPipeline</span></div>
 <pre><span class="c-key">const</span> outcomes = <span class="c-key">await</span> Promise.all(
   agents.map((agent) =&gt; runAgent(agent, context)),
 );                                  <span class="c-com">// fan-in: waits for all</span>
@@ -947,7 +947,7 @@ html { scroll-behavior: smooth; }
         </p>
       </div>
       <figure class="code">
-        <div class="code-head"><span class="p">packages/reviewer/src/review-graph.ts</span><span class="ln">join</span></div>
+        <div class="code-head"><span class="p">packages/reviewer/src/review-pipeline.ts</span><span class="ln">join</span></div>
 <pre><span class="c-key">if</span> (agentFailures.length === outcomes.length) {
   <span class="c-key">throw</span> <span class="c-key">new</span> Error(<span class="c-str">`every review agent failed — ${details}`</span>);
 }</pre>
@@ -1179,7 +1179,7 @@ review.started<br>
             <tr><td><code>apps/action/src/summary.ts</code></td><td>Fork fallback to the job summary</td></tr>
             <tr><td><code>apps/action/src/langfuse.ts</code></td><td>Span export for one run</td></tr>
             <tr><td><code>packages/reviewer/src/review-pull-request.ts</code></td><td>One review, end to end</td></tr>
-            <tr><td><code>packages/reviewer/src/review-graph.ts</code></td><td>The review pipeline</td></tr>
+            <tr><td><code>packages/reviewer/src/review-pipeline.ts</code></td><td>Agent fan-out, join, synthesise, validate</td></tr>
             <tr><td><code>packages/reviewer/src/validate-findings.ts</code></td><td>The trust boundary</td></tr>
             <tr><td><code>packages/reviewer/src/render-check-run.ts</code></td><td>Findings → check run payload</td></tr>
             <tr><td><code>packages/reviewer/src/publish-review.ts</code></td><td>Comments then check run; which surface carries the findings</td></tr>

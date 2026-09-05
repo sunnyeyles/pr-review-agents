@@ -5,7 +5,7 @@
 export {
   runReviewPipeline,
   type ReviewPipelineResult,
-} from "./review-graph.js";
+} from "./review-pipeline.js";
 export { validateFindings } from "./validate-findings.js";
 export type { RenderedCheckRun } from "./render-check-run.js";
 export {

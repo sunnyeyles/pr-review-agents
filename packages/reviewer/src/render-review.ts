@@ -13,7 +13,7 @@ import {
   skipNotes,
   summarise,
 } from "./finding-format.js";
-import type { AgentFailure } from "./review-graph.js";
+import type { AgentFailure } from "./review-pipeline.js";
 import {
   compareFindingStrength,
   normaliseTitle,

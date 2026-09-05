@@ -144,7 +144,7 @@ spec.md       The original specification this implementation follows
 
 ### Concurrency
 
-The review pipeline (`packages/reviewer/src/review-graph.ts`) runs every
+The review pipeline (`packages/reviewer/src/review-pipeline.ts`) runs every
 selected agent → `join` → `synthesise` → `validate`. The agents are started
 together with `Promise.all`, so they run concurrently. Inside one agent, the
 tool-calling loop is a plain turn loop over the provider-neutral model seam

@@ -16,7 +16,7 @@ import {
   type RenderedCheckRun,
 } from "./render-check-run.js";
 import { renderReview, type RenderedReview } from "./render-review.js";
-import type { AgentFailure } from "./review-graph.js";
+import type { AgentFailure } from "./review-pipeline.js";
 import { reviewCorrelation, type ReviewTarget } from "./review-target.js";
 
 /** What the comment publisher itself can report. */
