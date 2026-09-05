@@ -289,6 +289,36 @@ describe("the Correctness agent", () => {
     ]);
   });
 
+  it("runs a turn's tool calls concurrently", async () => {
+    let inFlight = 0;
+    let peakInFlight = 0;
+    const slow = async <T>(value: T): Promise<T> => {
+      inFlight += 1;
+      peakInFlight = Math.max(peakInFlight, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      inFlight -= 1;
+      return value;
+    };
+    const { agent, github } = makeAgent([
+      message(
+        [
+          toolUseBlock("toolu_1", "get_file", { path: "src/sessions.ts" }),
+          toolUseBlock("toolu_2", "search_repository", { query: "isAdmin" }),
+        ],
+        "tool_use",
+      ),
+      message([textBlock(finalJson)], "end_turn"),
+    ]);
+    github.getFileContents.mockImplementation(() => slow("export const x = 1;\n"));
+    github.searchCode.mockImplementation(() =>
+      slow({ matches: [], totalCount: 0, incompleteResults: false }),
+    );
+
+    await agent.run(context);
+
+    expect(peakInFlight).toBe(2);
+  });
+
   it("extracts findings from a fenced JSON final message", async () => {
     const fenced = ["My review is complete.", "```json", finalJson, "```"].join("\n");
     const { agent } = makeAgent([message([textBlock(fenced)], "end_turn")]);
