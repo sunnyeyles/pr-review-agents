@@ -34,14 +34,14 @@ flowchart TD
         LOAD["load PR, changed files, diff<br/><code>review-pull-request.ts</code>"]
     end
 
-    LOAD --> GRAPH
+    LOAD --> PIPELINE
 
-    subgraph GRAPH["4 · LangGraph StateGraph — review-graph.ts"]
+    subgraph PIPELINE["4 · Review pipeline — review-pipeline.ts"]
         direction TB
         START(["START"])
-        START --> A1["agent__&lt;agent 1&gt;"]
-        START --> A2["agent__&lt;agent 2&gt;"]
-        START --> A3["agent__&lt;agent n&gt;"]
+        START --> A1["&lt;agent 1&gt;"]
+        START --> A2["&lt;agent 2&gt;"]
+        START --> A3["&lt;agent n&gt;"]
         A1 --> JOIN["join<br/><i>fan-in, agent order</i>"]
         A2 --> JOIN
         A3 --> JOIN
@@ -50,13 +50,13 @@ flowchart TD
         VAL --> ENDN(["END"])
     end
 
-    GRAPH --> RENDER["5 · renderReview + renderCheckRun<br/><code>render-review.ts</code> · <code>render-check-run.ts</code>"]
+    PIPELINE --> RENDER["5 · renderReview + renderCheckRun<br/><code>render-review.ts</code> · <code>render-check-run.ts</code>"]
     RENDER --> PUB{"6 · publish"}
     PUB -->|pull-requests: write| COMMENTS["pull request review<br/>+ inline comments"]
     PUB -->|checks: write| CHECK["AI PR Review check run<br/>full summary"]
     PUB -->|403 / 404 on a fork| SUM["workflow job summary<br/><code>summary.ts</code>"]
 
-    style GRAPH fill:transparent
+    style PIPELINE fill:transparent
     style VAL stroke-width:3px
 ```
 
@@ -156,41 +156,29 @@ the same prompts as always, so the cache prefix they share is untouched. An
 agent with no `paths` is always active.
 
 Every skipped agent is logged as `agent.skipped` and named in the check-run
-summary. When `active` is empty the pipeline is never built — `buildReviewGraph`
+summary. When `active` is empty the pipeline never runs — `runReviewPipeline`
 throws on an empty set, and more to the point a review that ran nothing must
 publish `renderNoAgentMatched`'s neutral check rather than a clean bill of
 health. The `agents` input overrides the gate at the point it is read:
 `resolveAgentDefinitions` returns a named agent without its `paths`, so by the
 time the gate runs there is nothing left to hold it back.
 
-### 4 · The graph
+### 4 · The pipeline
 
-`packages/reviewer/src/review-graph.ts` → `buildReviewGraph` (line 196)
+`packages/reviewer/src/review-pipeline.ts` → `runReviewPipeline`
 
-Agent nodes are added dynamically, one per selected agent, each wired straight
-from `START` so they run concurrently:
+Every selected agent is started together, so they run concurrently:
 
 ```ts
-// packages/reviewer/src/review-graph.ts:197
-const agentNodeNames = agents.map((agent, index) => {
-  const nodeName = `agent__${agent.name}`;
-  graph.addNode(nodeName, agentNode(index, agent));
-  graph.addEdge(START, nodeName);
-  return nodeName;
-});
-
-return graph
-  .addNode("join", makeJoinNode(agents.length))
-  .addEdge(agentNodeNames, "join")   // fan-in: waits for every agent
-  .addNode("synthesise", makeSynthesiseNode(synthesiser))
-  .addEdge("join", "synthesise")
-  .addNode("validate", makeValidateNode(agents.map((a) => a.name)))
-  .addEdge("synthesise", "validate")
-  .addEdge("validate", END)
-  .compile();
+// packages/reviewer/src/review-pipeline.ts
+const outcomes = await Promise.all(
+  agents.map((agent) => runAgent(agent, context)),
+);
+const { candidates, agentFailures } = join(outcomes);
+const synthesis = await synthesise(synthesiser, candidates);
 ```
 
-#### 4a · Each agent node
+#### 4a · Each agent
 
 `packages/ai/src/agents/runtime.ts` → `createReviewAgent` (line 180)
 
@@ -244,12 +232,12 @@ loop keeps going.
 
 #### 4b · `join` — fan-in
 
-`makeJoinNode` (line 118). LangGraph only runs it once every incoming edge's
-source has completed. It re-sorts outcomes by the agent's **input position**,
-never completion order, so the result is deterministic. Then:
+`join`. `Promise.all` resolves once every agent has settled, and preserves the
+agent's **input position**, never completion order, so the result is
+deterministic. Then:
 
 ```ts
-if (agentFailures.length === agentCount) {
+if (agentFailures.length === outcomes.length) {
   throw new Error(`every review agent failed — ${details}`);
 }
 ```
@@ -266,7 +254,7 @@ speculation, corrects severity, and orders results most important first.
 
 Three paths out:
 
-| Path | Trigger | `synthesisOutcome` |
+| Path | Trigger | `synthesis.outcome` |
 | --- | --- | --- |
 | Skipped | Zero candidates — nothing to refine | `"skipped"` |
 | Completed | Model returned valid JSON | `"completed"` |
@@ -302,7 +290,7 @@ confidence score dies — regardless of how confident the model sounded.
 
 ### 5 · Render
 
-`packages/reviewer/src/render-check-run.ts:65` — pure, no I/O.
+`packages/reviewer/src/render-check-run.ts` — pure, no I/O.
 
 | Situation | Conclusion |
 | --- | --- |
@@ -312,12 +300,27 @@ confidence score dies — regardless of how confident the model sounded.
 | An agent was skipped by its `paths` | Unchanged — a skip is configured, not a failure; the summary names it |
 | **No agent matched** | `neutral`, "No agent reviewed this pull request" — the one case where nothing was read at all |
 
-Line-anchored findings also become inline annotations (GitHub caps these at 50
-per request).
+Line-anchored findings can also become inline annotations (GitHub caps these at
+50 per request), but annotations are the *fallback* surface — see below.
 
 ### 6 · Publish
 
-`apps/action/src/summary.ts:59` → `createFallbackPublisher`
+`packages/reviewer/src/publish-review.ts` → `deliverReview`
+
+Inline comments go first, and the check run annotates only what no comment
+carries. Four outcomes, and the check run reads them:
+
+| `comments` | Meaning | Annotations |
+| --- | --- | --- |
+| `posted` | Fresh comments landed on this commit | No |
+| `already-posted` | Every finding was commented on an earlier commit | No |
+| `unavailable` | The token cannot post comments (fork) | Yes |
+| `nothing-to-post` | No findings | N/A |
+
+`review.published` carries both `comments` and `annotated`, so which surface
+carried the review is in the log rather than inferred.
+
+`apps/action/src/summary.ts` → `createFallbackPublisher`
 
 Try the check run first. On a **403 or 404**, fall back to the workflow job
 summary and exit cleanly — that is the fork case, where GitHub hands the
@@ -340,10 +343,11 @@ those may masquerade as a delivered review.
 | `apps/action/src/summary.ts` | Fork fallback to the job summary |
 | `apps/action/src/langfuse.ts` | Span export for one run |
 | `packages/reviewer/src/review-pull-request.ts` | One review, end to end |
-| `packages/reviewer/src/review-graph.ts` | The StateGraph |
+| `packages/reviewer/src/review-pipeline.ts` | Agent fan-out, join, synthesise, validate |
 | `packages/reviewer/src/validate-findings.ts` | The trust boundary |
 | `packages/reviewer/src/render-check-run.ts` | Findings → check run payload |
 | `packages/reviewer/src/render-review.ts` | Findings → review body + inline comments |
+| `packages/reviewer/src/publish-review.ts` | Comments then check run; which surface carries the findings |
 | `.github/pr-review-agents.yml` | The agents this repository reviews with |
 | `packages/ai/src/agents/config.ts` | Reading and validating a repository's agents |
 | `packages/ai/src/agents/definition.ts` | What an agent is, and its shared system prompt |
@@ -372,6 +376,8 @@ those may masquerade as a delivered review.
 | A tool call fails | Reported to the model, loop continues |
 | Langfuse unreachable | In-code prompts used; no traces |
 | Check run forbidden (fork) | Job summary instead; step succeeds |
+| Comments forbidden (fork) | Check run annotates instead; step succeeds |
+| Every finding already commented on an earlier commit | No review posted, no annotations; the check run summary still lists them |
 
 ## Lifecycle log events
 

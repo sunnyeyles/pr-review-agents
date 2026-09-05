@@ -68,7 +68,7 @@ GitHub Action (apps/action)
    ├── load PR, changed files, diff
    │
    ▼
-Review pipeline (LangGraph)
+Review pipeline
    │
    ├─ agent__<agent 1>  ─┐
    ├─ agent__<agent 2>   ├─► join ─► synthesise ─► validate ─► END
@@ -134,7 +134,7 @@ packages/
   ai/         Provider selection (model.ts), prompts, agent
               configuration, and agents/: agent definition, runtime loop,
               read-only tools, synthesiser
-  reviewer/   Review graph, validation chain, check-run rendering
+  reviewer/   Review pipeline, validation chain, check-run rendering
   github/     GitHub client (workflow-token auth) + Octokit calls
   schemas/    Zod schemas: ReviewFinding, the review trigger contract
   logging/    Structured single-line JSON logger
@@ -144,22 +144,21 @@ spec.md       The original specification this implementation follows
 
 ### Concurrency
 
-LangGraph runs the review pipeline
-(`packages/reviewer/src/review-graph.ts`): one node per selected agent → `join`
-→ `synthesise` → `validate`. Every agent node has `START` as its only
-dependency, so they run in the same superstep. Inside a node, one agent's
+The review pipeline (`packages/reviewer/src/review-pipeline.ts`) runs every
+selected agent → `join` → `synthesise` → `validate`. The agents are started
+together with `Promise.all`, so they run concurrently. Inside one agent, the
 tool-calling loop is one `generateText` call
 (`packages/ai/src/agents/runtime.ts`), capped at 12 steps.
 
 ### Partial failure
 
-One failed agent does not fail the review. `join` collects outcomes, re-sorts
-them into the agents' original order (never completion order), and publishes
-what succeeded. Only when *every* agent fails does the graph throw — which
+One failed agent does not fail the review. `join` collects outcomes in the
+agents' original order (never completion order) and publishes what succeeded.
+Only when *every* agent fails does the pipeline throw — which
 fails the workflow step, so the run can be retried from the Actions UI.
 
 Synthesis failure is softer still: it falls back to the raw candidates and
-reports `synthesisOutcome: "failed"` on the result rather than failing the
+reports `synthesis.outcome: "failed"` on the result rather than failing the
 review.
 
 ---
@@ -361,10 +360,10 @@ provisioned outside GitHub's own secret settings.
 
 ### Token permissions
 
-Repository contents: **read**. Pull requests: **read**. Checks: **write** to
-get inline annotations — omit it and the review still lands, in the job
-summary. The Action never requests write access to file contents, merges, or
-approvals.
+Repository contents: **read**. Pull requests: **write** to get inline comments;
+without it the check run annotates the same lines instead. Checks: **write** —
+omit it and the review still lands, in the job summary. The Action never
+requests write access to file contents, merges, or approvals.
 
 ---
 

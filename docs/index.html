@@ -601,7 +601,7 @@ html { scroll-behavior: smooth; }
       <li><a href="#s1"><span class="n">01</span><span>Boot</span></a></li>
       <li><a href="#s2"><span class="n">02</span><span>Inspect event</span></a></li>
       <li><a href="#s3"><span class="n">03</span><span>Load the PR</span></a></li>
-      <li><a href="#s4"><span class="n">04</span><span>The graph</span></a></li>
+      <li><a href="#s4"><span class="n">04</span><span>The pipeline</span></a></li>
       <li><a href="#s5"><span class="n">05</span><span>Render</span></a></li>
       <li><a href="#s6"><span class="n">06</span><span>Publish</span></a></li>
       <li><a href="#fail"><span class="n">—</span><span>Failure modes</span></a></li>
@@ -652,7 +652,7 @@ html { scroll-behavior: smooth; }
         <div class="node">reviewPullRequest<span class="n-sub">load PR + changed files + diff</span></div>
         <div class="link"></div>
 
-        <div class="node terminal">START<span class="n-sub">LangGraph StateGraph</span></div>
+        <div class="node terminal">START<span class="n-sub">runReviewPipeline</span></div>
 
         <div class="fan out"><i></i><i></i><i></i></div>
 
@@ -829,44 +829,35 @@ html { scroll-behavior: smooth; }
       </div>
     </section>
 
-    <!-- ========== 4 · GRAPH ========== -->
+    <!-- ========== 4 · PIPELINE ========== -->
     <section class="stage" id="s4">
       <div class="stage-head">
         <span class="stage-num">04</span>
-        <h2>The graph</h2>
+        <h2>The pipeline</h2>
       </div>
       <div class="paths">
-        <span class="chip">packages/reviewer/src/<b>review-graph.ts</b></span>
+        <span class="chip">packages/reviewer/src/<b>review-pipeline.ts</b></span>
       </div>
       <div class="prose">
         <p>
-          Agent nodes are added dynamically — one per selected agent — each
-          wired straight from <code>START</code> so they run concurrently. The
-          three nodes after them run in sequence once every agent has settled.
+          Every selected agent is started together, so they run concurrently.
+          The three steps after them run in sequence once every agent has
+          settled.
         </p>
       </div>
 
       <figure class="code">
-        <div class="code-head"><span class="p">packages/reviewer/src/review-graph.ts</span><span class="ln">line 196 · buildReviewGraph</span></div>
-<pre><span class="c-key">const</span> agentNodeNames = agents.map((agent, index) =&gt; {
-  <span class="c-key">const</span> nodeName = <span class="c-str">`agent__${agent.name}`</span>;
-  graph.addNode(nodeName, agentNode(index, agent));
-  graph.addEdge(START, nodeName);
-  <span class="c-key">return</span> nodeName;
-});
+        <div class="code-head"><span class="p">packages/reviewer/src/review-pipeline.ts</span><span class="ln">runReviewPipeline</span></div>
+<pre><span class="c-key">const</span> outcomes = <span class="c-key">await</span> Promise.all(
+  agents.map((agent) =&gt; runAgent(agent, context)),
+);                                  <span class="c-com">// fan-in: waits for all</span>
 
-<span class="c-key">return</span> graph
-  .addNode(<span class="c-str">"join"</span>, makeJoinNode(agents.length))
-  .addEdge(agentNodeNames, <span class="c-str">"join"</span>)      <span class="c-com">// fan-in: waits for all</span>
-  .addNode(<span class="c-str">"synthesise"</span>, makeSynthesiseNode(synthesiser))
-  .addEdge(<span class="c-str">"join"</span>, <span class="c-str">"synthesise"</span>)
-  .addNode(<span class="c-str">"validate"</span>, makeValidateNode(names))
-  .addEdge(<span class="c-str">"synthesise"</span>, <span class="c-str">"validate"</span>)
-  .addEdge(<span class="c-str">"validate"</span>, END)
-  .compile();</pre>
+<span class="c-key">const</span> { candidates, agentFailures } = join(outcomes);
+<span class="c-key">const</span> synthesis = <span class="c-key">await</span> synthesise(synthesiser, candidates);
+<span class="c-key">const</span> findings = validateFindings(synthesis.candidates, changedFiles, names);</pre>
       </figure>
 
-      <h3>4a · Each agent node</h3>
+      <h3>4a · Each agent</h3>
       <div class="paths">
         <span class="chip">packages/ai/src/agents/<b>runtime.ts</b> · createReviewAgent</span>
         <span class="chip">packages/ai/src/agents/<b>definition.ts</b> · what an agent is</span>
@@ -949,15 +940,15 @@ html { scroll-behavior: smooth; }
       <h3>4b · <code>join</code> — the fan-in</h3>
       <div class="prose">
         <p>
-          LangGraph only runs this node once every incoming edge's source has
-          completed. It re-sorts outcomes by the agent's <strong>input
-          position</strong>, never completion order, so the result never
-          depends on which agent happened to settle first.
+          <code>Promise.all</code> resolves once every agent has settled, and
+          preserves the agent's <strong>input position</strong>, never
+          completion order, so the result never depends on which agent
+          happened to settle first.
         </p>
       </div>
       <figure class="code">
-        <div class="code-head"><span class="p">packages/reviewer/src/review-graph.ts</span><span class="ln">line 118 · makeJoinNode</span></div>
-<pre><span class="c-key">if</span> (agentFailures.length === agentCount) {
+        <div class="code-head"><span class="p">packages/reviewer/src/review-pipeline.ts</span><span class="ln">join</span></div>
+<pre><span class="c-key">if</span> (agentFailures.length === outcomes.length) {
   <span class="c-key">throw</span> <span class="c-key">new</span> Error(<span class="c-str">`every review agent failed — ${details}`</span>);
 }</pre>
       </figure>
@@ -979,7 +970,7 @@ html { scroll-behavior: smooth; }
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Path</th><th>Trigger</th><th>synthesisOutcome</th></tr></thead>
+          <thead><tr><th>Path</th><th>Trigger</th><th>synthesis.outcome</th></tr></thead>
           <tbody>
             <tr><td>Skipped</td><td>Zero candidates — nothing to refine, so no model call at all</td><td><code>"skipped"</code></td></tr>
             <tr><td>Completed</td><td>Model returned valid JSON</td><td><code>"completed"</code></td></tr>
@@ -1069,15 +1060,32 @@ html { scroll-behavior: smooth; }
         <h2>Publish</h2>
       </div>
       <div class="paths">
+        <span class="chip">packages/reviewer/src/<b>publish-review.ts</b> · deliverReview</span>
         <span class="chip">apps/action/src/<b>summary.ts</b> · createFallbackPublisher</span>
       </div>
       <div class="prose">
         <p>
-          Try the check run first. On a <strong>403 or 404</strong>, write the
+          Inline comments go first, and the check run annotates only what no
+          comment carries — including comments an <em>earlier</em> commit
+          already left. Annotations are the fallback surface, not a duplicate.
+        </p>
+        <p>
+          Then the check run. On a <strong>403 or 404</strong>, write the
           same rendered review to the workflow job summary and exit cleanly —
           that is the fork case, where GitHub hands the workflow a read-only
           token.
         </p>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th><code>comments</code></th><th>Meaning</th><th>Annotations</th></tr></thead>
+          <tbody>
+            <tr><td><code>"posted"</code></td><td>Fresh comments landed on this commit</td><td>No</td></tr>
+            <tr><td><code>"already-posted"</code></td><td>Every finding was commented on an earlier commit</td><td>No</td></tr>
+            <tr><td><code>"unavailable"</code></td><td>The token cannot post comments (fork)</td><td>Yes</td></tr>
+            <tr><td><code>"nothing-to-post"</code></td><td>No findings</td><td>N/A</td></tr>
+          </tbody>
+        </table>
       </div>
 
       <figure class="code">
@@ -1125,6 +1133,8 @@ html { scroll-behavior: smooth; }
             <tr><td>A tool call fails</td><td><span class="badge warn">Continues</span> — reported to the model</td></tr>
             <tr><td>Langfuse unreachable</td><td><span class="badge warn">Continues</span> — in-code prompts, no traces</td></tr>
             <tr><td>Check run forbidden (fork)</td><td><span class="badge warn">Degrades</span> — job summary instead</td></tr>
+            <tr><td>Comments forbidden (fork)</td><td><span class="badge warn">Degrades</span> — the check run annotates instead</td></tr>
+            <tr><td>Every finding already commented on an earlier commit</td><td>No review posted and no annotations; the check run summary still lists them</td></tr>
           </tbody>
         </table>
       </div>
@@ -1169,9 +1179,10 @@ review.started<br>
             <tr><td><code>apps/action/src/summary.ts</code></td><td>Fork fallback to the job summary</td></tr>
             <tr><td><code>apps/action/src/langfuse.ts</code></td><td>Span export for one run</td></tr>
             <tr><td><code>packages/reviewer/src/review-pull-request.ts</code></td><td>One review, end to end</td></tr>
-            <tr><td><code>packages/reviewer/src/review-graph.ts</code></td><td>The StateGraph</td></tr>
+            <tr><td><code>packages/reviewer/src/review-pipeline.ts</code></td><td>Agent fan-out, join, synthesise, validate</td></tr>
             <tr><td><code>packages/reviewer/src/validate-findings.ts</code></td><td>The trust boundary</td></tr>
             <tr><td><code>packages/reviewer/src/render-check-run.ts</code></td><td>Findings → check run payload</td></tr>
+            <tr><td><code>packages/reviewer/src/publish-review.ts</code></td><td>Comments then check run; which surface carries the findings</td></tr>
             <tr><td><code>.github/pr-review-agents.yml</code></td><td>The agents this repository reviews with</td></tr>
             <tr><td><code>packages/ai/src/agents/config.ts</code></td><td>Reading and validating a repository's agents</td></tr>
             <tr><td><code>packages/ai/src/agents/definition.ts</code></td><td>What an agent is, and its shared system prompt</td></tr>

@@ -3,17 +3,14 @@
  * rather than in each delivery-path wrapper.
  */
 import {
-  emptyTokenUsage,
   gateAgentsByPaths,
   type AgentDefinition,
   type ReviewContext,
 } from "@pr-review/ai";
-import {
-  httpStatus,
-  isPermissionError,
-  type ExistingReviewComment,
-  type GithubInstallationClient,
-  type PullRequestRef,
+import type {
+  ExistingReviewComment,
+  GithubInstallationClient,
+  PullRequestRef,
 } from "@pr-review/github";
 import {
   createConsoleLogger,
@@ -22,39 +19,19 @@ import {
 } from "@pr-review/logging";
 
 import {
-  renderCheckRun,
-  renderNoAgentMatched,
-  type RenderedCheckRun,
-} from "./render-check-run.js";
+  createCheckRunPublisher,
+  createReviewCommentPublisher,
+  deliverReview,
+  type PublishReview,
+  type PublishReviewComments,
+} from "./publish-review.js";
+import { renderNoAgentMatched } from "./render-check-run.js";
+import { postedFindingKeys } from "./render-review.js";
 import {
-  postedFindingKeys,
-  renderReview,
-  type RenderedReview,
-} from "./render-review.js";
-import type { ReviewPipelineResult } from "./review-graph.js";
-
-/** The pull request one review runs against. */
-export interface ReviewTarget {
-  owner: string;
-  repo: string;
-  pullRequestNumber: number;
-  headSha: string;
-}
-
-/** Delivers the rendered review; the default publishes a check run. */
-export type PublishReview = (
-  target: ReviewTarget,
-  rendered: RenderedCheckRun,
-) => Promise<void>;
-
-/**
- * Delivers the inline review comments, reporting whether they landed. A false
- * return is not an error: the check run keeps its annotations instead.
- */
-type PublishReviewComments = (
-  target: ReviewTarget,
-  rendered: RenderedReview,
-) => Promise<boolean>;
+  skippedSynthesis,
+  type ReviewPipelineResult,
+} from "./review-pipeline.js";
+import { reviewCorrelation, type ReviewTarget } from "./review-target.js";
 
 interface ReviewPullRequestDeps {
   /** Authenticated read-only GitHub client for this repository. */
@@ -73,67 +50,6 @@ interface ReviewPullRequestDeps {
   publishReviewComments?: PublishReviewComments | undefined;
   /** Every event carries repository, PR number, and head SHA. */
   logger?: StructuredLogger | undefined;
-}
-
-/** The correlation fields every event of one review carries. */
-export function reviewCorrelation(
-  target: ReviewTarget,
-): Record<string, unknown> {
-  return {
-    repository: `${target.owner}/${target.repo}`,
-    pullRequestNumber: target.pullRequestNumber,
-    headSha: target.headSha,
-  };
-}
-
-/** The default delivery: an "AI PR Review" check run on the head SHA. */
-export function createCheckRunPublisher(
-  client: GithubInstallationClient,
-): PublishReview {
-  return async (target, rendered) => {
-    await client.createCheckRun({
-      owner: target.owner,
-      repo: target.repo,
-      headSha: target.headSha,
-      conclusion: rendered.conclusion,
-      output: rendered.output,
-    });
-  };
-}
-
-/**
- * The default delivery for inline comments: one advisory review on the head
- * SHA. Failure is swallowed — a fork's token lacks `pull-requests: write`.
- */
-function createReviewCommentPublisher(
-  client: GithubInstallationClient,
-  logger: StructuredLogger,
-): PublishReviewComments {
-  return async (target, rendered) => {
-    try {
-      await client.createReview({
-        owner: target.owner,
-        repo: target.repo,
-        pullRequestNumber: target.pullRequestNumber,
-        commitSha: target.headSha,
-        body: rendered.body,
-        comments: rendered.comments,
-      });
-      return true;
-    } catch (error) {
-      // Only a permission error degrades. Anything else is rethrown, so a real
-      // bug fails the run instead of falling back forever.
-      if (!isPermissionError(error)) {
-        throw error;
-      }
-      logger.info("review.comments.degraded", {
-        ...reviewCorrelation(target),
-        reason: "workflow token cannot post review comments",
-        status: httpStatus(error),
-      });
-      return false;
-    }
-  };
 }
 
 /** The comments already on the pull request; none if they cannot be read. */
@@ -162,7 +78,8 @@ function logSynthesisOutcome(
   review: ReviewPipelineResult,
 ): void {
   const fields = reviewCorrelation(target);
-  if (review.synthesisOutcome === "skipped") {
+  const { synthesis } = review;
+  if (synthesis.outcome === "skipped") {
     logger.info("synthesis.skipped", { ...fields, reason: "no candidate findings" });
     return;
   }
@@ -171,22 +88,22 @@ function logSynthesisOutcome(
     ...fields,
     candidateCount: review.candidates.length,
   });
-  if (review.synthesisOutcome === "completed") {
+  if (synthesis.outcome === "completed") {
     logger.info("synthesis.completed", {
       ...fields,
       candidateCount: review.candidates.length,
-      refinedCount: review.synthesisedCandidateCount,
-      ...review.synthesisUsage,
-      durationMs: review.synthesisDurationMs,
+      refinedCount: synthesis.candidates.length,
+      ...synthesis.usage,
+      durationMs: synthesis.durationMs,
     });
     return;
   }
 
   logger.error("synthesis.failed", {
     ...fields,
-    error: review.synthesisError,
-    errorName: review.synthesisErrorName,
-    durationMs: review.synthesisDurationMs,
+    error: synthesis.error,
+    errorName: synthesis.errorName,
+    durationMs: synthesis.durationMs,
     fallback: "publishing validated raw findings",
   });
 }
@@ -196,9 +113,7 @@ function unreviewed(): ReviewPipelineResult {
   return {
     candidates: [],
     agentFailures: [],
-    synthesisedCandidateCount: 0,
-    synthesisOutcome: "skipped",
-    synthesisUsage: emptyTokenUsage(),
+    synthesis: skippedSynthesis(),
     findings: [],
   };
 }
@@ -216,7 +131,7 @@ export async function reviewPullRequest(
   }: ReviewPullRequestDeps,
 ): Promise<ReviewPipelineResult> {
   const fields = reviewCorrelation(target);
-  const ref = {
+  const ref: PullRequestRef = {
     owner: target.owner,
     repo: target.repo,
     pullRequestNumber: target.pullRequestNumber,
@@ -255,7 +170,7 @@ export async function reviewPullRequest(
     return unreviewed();
   }
 
-  // The AI boundary: only the validate node's output reaches GitHub.
+  // The AI boundary: only the validate step's output reaches GitHub.
   const review = await runReviewPipeline(
     client,
     {
@@ -271,45 +186,27 @@ export async function reviewPullRequest(
 
   logger.info("findings.validated", {
     ...fields,
-    candidateCount: review.synthesisedCandidateCount,
+    candidateCount: review.synthesis.candidates.length,
     findingCount: review.findings.length,
   });
 
-  // Inline comments go first: whether they landed decides whether the
-  // check run repeats them as annotations against the same lines.
-  const reviewComments = renderReview(
-    review.findings,
-    review.agentFailures,
-    postedFindingKeys(await listPostedComments(client, ref, target, logger)),
-    skipped,
+  await deliverReview(
+    target,
+    {
+      findings: review.findings,
+      agentFailures: review.agentFailures,
+      skippedAgents: skipped,
+      alreadyPosted: postedFindingKeys(
+        await listPostedComments(client, ref, target, logger),
+      ),
+    },
+    {
+      publishCheckRun: publish,
+      publishComments:
+        publishReviewComments ?? createReviewCommentPublisher(client, logger),
+      logger,
+    },
   );
-  const publishComments =
-    publishReviewComments ?? createReviewCommentPublisher(client, logger);
-  const commented =
-    reviewComments === undefined
-      ? false
-      : await publishComments(target, reviewComments);
-
-  if (commented && reviewComments !== undefined) {
-    logger.info("review.comments.published", {
-      ...fields,
-      commentCount: reviewComments.comments.length,
-      carriedInBodyCount:
-        review.findings.length - reviewComments.comments.length,
-    });
-  }
-
-  const rendered = renderCheckRun(review.findings, review.agentFailures, {
-    annotate: !commented,
-    skippedAgents: skipped,
-  });
-  await publish(target, rendered);
-
-  logger.info("review.published", {
-    ...fields,
-    findingCount: review.findings.length,
-    skippedAgents: skippedNames,
-  });
 
   return review;
 }

@@ -18,14 +18,16 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { RenderedCheckRun } from "./render-check-run.js";
 import { findingMarker } from "./render-review.js";
-import type { ReviewPipelineResult } from "./review-graph.js";
+import {
+  skippedSynthesis,
+  type ReviewPipelineResult,
+} from "./review-pipeline.js";
 import {
   createCheckRunPublisher,
-  reviewCorrelation,
-  reviewPullRequest,
   type PublishReview,
-  type ReviewTarget,
-} from "./review-pull-request.js";
+} from "./publish-review.js";
+import { reviewPullRequest } from "./review-pull-request.js";
+import { reviewCorrelation, type ReviewTarget } from "./review-target.js";
 
 const target: ReviewTarget = {
   owner: "octo-org",
@@ -93,9 +95,15 @@ function reviewResult(
   return {
     candidates,
     agentFailures: [],
-    synthesisedCandidateCount: candidates.length,
-    synthesisOutcome: candidates.length === 0 ? "skipped" : "completed",
-    synthesisUsage: emptyTokenUsage(),
+    synthesis:
+      candidates.length === 0
+        ? skippedSynthesis()
+        : {
+            outcome: "completed",
+            candidates,
+            usage: emptyTokenUsage(),
+            durationMs: 0,
+          },
     findings: candidates as ReviewFinding[],
     ...overrides,
   };
@@ -259,9 +267,14 @@ describe("reviewPullRequest", () => {
     const { deps, client, entries } = makeDeps(
       reviewResult({
         candidates: [finding],
-        synthesisOutcome: "failed",
-        synthesisError: "model returned malformed JSON",
-        synthesisErrorName: "SynthesisError",
+        synthesis: {
+          outcome: "failed",
+          candidates: [finding],
+          usage: emptyTokenUsage(),
+          error: "model returned malformed JSON",
+          errorName: "SynthesisError",
+          durationMs: 0,
+        },
       }),
     );
 
@@ -367,9 +380,51 @@ describe("reviewPullRequest inline comments", () => {
     await reviewPullRequest(target, deps);
 
     expect(client.createReview).not.toHaveBeenCalled();
+  });
+
+  it("does not re-annotate a finding whose earlier comment still stands", async () => {
+    const { deps, client } = makeDeps(reviewResult({ candidates: [finding] }));
+    client.listReviewComments.mockResolvedValueOnce([
+      { body: `stale text\n\n${findingMarker(finding)}` },
+    ]);
+
+    await reviewPullRequest(target, deps);
+
     expect(
       client.createCheckRun.mock.calls[0]?.[0].output.annotations,
-    ).toHaveLength(1);
+    ).toBeUndefined();
+  });
+
+  it("names the dedupe as its own outcome, not a failure to post", async () => {
+    const { deps, client, entries } = makeDeps(
+      reviewResult({ candidates: [finding] }),
+    );
+    client.listReviewComments.mockResolvedValueOnce([
+      { body: `stale text\n\n${findingMarker(finding)}` },
+    ]);
+
+    await reviewPullRequest(target, deps);
+
+    expect(entries).toContainEqual(
+      expect.objectContaining({
+        event: "review.published",
+        comments: "already-posted",
+        annotated: false,
+      }),
+    );
+  });
+
+  it("names a clean review nothing-to-post rather than already-posted", async () => {
+    const { deps, entries } = makeDeps();
+
+    await reviewPullRequest(target, deps);
+
+    expect(entries).toContainEqual(
+      expect.objectContaining({
+        event: "review.published",
+        comments: "nothing-to-post",
+      }),
+    );
   });
 
   it("still reviews when the existing comments cannot be read", async () => {
@@ -520,7 +575,7 @@ describe("reviewPullRequest: path filters", () => {
         findings: [],
         candidates: [],
         agentFailures: [],
-        synthesisOutcome: "skipped",
+        synthesis: { outcome: "skipped" },
       });
     });
 

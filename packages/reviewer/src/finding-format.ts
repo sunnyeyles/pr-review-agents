@@ -5,7 +5,7 @@
 import type { SkippedAgent } from "@pr-review/ai";
 import { categoryLabel, type ReviewFinding } from "@pr-review/schemas";
 
-import type { AgentFailure } from "./review-graph.js";
+import type { AgentFailure } from "./review-pipeline.js";
 
 /** `file` alone, or `file:line` when the finding is line-anchored. */
 export function location(finding: ReviewFinding): string {

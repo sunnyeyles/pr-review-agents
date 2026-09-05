@@ -18,7 +18,7 @@ import {
   skipNotes,
   summarise,
 } from "./finding-format.js";
-import type { AgentFailure } from "./review-graph.js";
+import type { AgentFailure } from "./review-pipeline.js";
 import { compareFindingStrength } from "./validate-findings.js";
 
 /** The GitHub checks API accepts at most 50 annotations per request. */

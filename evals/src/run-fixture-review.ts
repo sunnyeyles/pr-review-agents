@@ -127,9 +127,9 @@ export async function runFixtureReview(
       publishReview: async (_target, checkRun) => {
         rendered = checkRun;
       },
-      // Nothing is sent, and false keeps the annotations on the check
-      // run an evaluation judges.
-      publishReviewComments: async () => false,
+      // An evaluation has no comment surface, so the check run keeps the
+      // annotations it judges.
+      publishReviewComments: async () => "unavailable",
       logger,
     },
   );

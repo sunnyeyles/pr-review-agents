@@ -5,13 +5,12 @@
 export {
   runReviewPipeline,
   type ReviewPipelineResult,
-} from "./review-graph.js";
+} from "./review-pipeline.js";
 export { validateFindings } from "./validate-findings.js";
 export type { RenderedCheckRun } from "./render-check-run.js";
 export {
   createCheckRunPublisher,
-  reviewCorrelation,
-  reviewPullRequest,
   type PublishReview,
-  type ReviewTarget,
-} from "./review-pull-request.js";
+} from "./publish-review.js";
+export { reviewPullRequest } from "./review-pull-request.js";
+export { reviewCorrelation, type ReviewTarget } from "./review-target.js";

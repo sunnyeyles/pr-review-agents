@@ -8,7 +8,7 @@ import type { ChangedFile } from "@pr-review/github";
 import type { ReviewFinding } from "@pr-review/schemas";
 import { describe, expect, it } from "vitest";
 
-import { buildReviewGraph, runReviewPipeline } from "./review-graph.js";
+import { runReviewPipeline } from "./review-pipeline.js";
 
 const changedFiles: ChangedFile[] = [
   {
@@ -33,7 +33,7 @@ const context: ReviewContext = {
     headRef: "feature/rate-limit",
     headSha: "6dcb09b5b57875f334f61aebed695e2e4193db5e",
   },
-  // The agents and the validation node both read the changed-file list here.
+  // The agents and the validation step both read the changed-file list here.
   changedFiles,
   diff: "",
 };
@@ -114,7 +114,7 @@ describe("runReviewPipeline: agent fan-out and partial failure (spec §20)", () 
     ]);
   });
 
-  it("starts every agent node before any of them resolves (real concurrency)", async () => {
+  it("starts every agent before any of them resolves (real concurrency)", async () => {
     const starts: string[] = [];
     const resolvers: (() => void)[] = [];
     const gated = (name: string) =>
@@ -131,14 +131,9 @@ describe("runReviewPipeline: agent fan-out and partial failure (spec §20)", () 
       context,
     );
 
-    // Let LangGraph's scheduling reach every agent node without
-    // resolving any: a sequential runner would still be on the first.
-    for (let tick = 0; tick < 50 && starts.length < 3; tick += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    }
-    // Same-superstep invocation order is not promised, so assert set
-    // membership; `join` re-sorts, so the result order is deterministic.
-    expect([...starts].sort()).toEqual(["architecture", "correctness", "security"]);
+    // Every agent has started and none has resolved: a sequential runner
+    // would still be on the first.
+    expect(starts).toEqual(["correctness", "security", "architecture"]);
 
     for (const resolve of resolvers) {
       resolve();
@@ -200,10 +195,10 @@ describe("runReviewPipeline: agent fan-out and partial failure (spec §20)", () 
     ).rejects.toThrow(/correctness.*invalid findings JSON/s);
   });
 
-  it("throws when no agents are configured", () => {
-    expect(() => buildReviewGraph([], passthroughSynthesiser())).toThrow(
-      /at least one review agent/i,
-    );
+  it("throws when no agents are configured", async () => {
+    await expect(
+      runReviewPipeline([], passthroughSynthesiser(), context),
+    ).rejects.toThrow(/at least one review agent/i);
   });
 });
 
@@ -215,8 +210,11 @@ describe("runReviewPipeline: synthesis (spec §16)", () => {
       context,
     );
 
-    expect(result.synthesisOutcome).toBe("skipped");
-    expect(result.synthesisedCandidateCount).toBe(0);
+    expect(result.synthesis).toEqual({
+      outcome: "skipped",
+      candidates: [],
+      usage: emptyTokenUsage(),
+    });
     expect(result.findings).toEqual([]);
   });
 
@@ -236,8 +234,13 @@ describe("runReviewPipeline: synthesis (spec §16)", () => {
       context,
     );
 
-    expect(result.synthesisOutcome).toBe("completed");
-    expect(result.synthesisedCandidateCount).toBe(1);
+    expect(result.synthesis).toMatchObject({
+      outcome: "completed",
+      candidates: [refined],
+      usage: { inputTokens: 10, outputTokens: 5 },
+    });
+    // The tag carries it, so a completed synthesis cannot be missing a duration.
+    expect(result.synthesis).toHaveProperty("durationMs", expect.any(Number));
     expect(result.findings).toEqual([refined]);
   });
 
@@ -255,8 +258,10 @@ describe("runReviewPipeline: synthesis (spec §16)", () => {
       context,
     );
 
-    expect(result.synthesisOutcome).toBe("failed");
-    expect(result.synthesisError).toBe("anthropic unavailable");
+    expect(result.synthesis).toMatchObject({
+      outcome: "failed",
+      error: "anthropic unavailable",
+    });
     // Fallback candidates still flow through the same validation chain.
     expect(result.findings).toEqual([raw]);
   });
