@@ -9,7 +9,7 @@ import {
   parseCollectArgs,
   parseRepository,
 } from "./collect-feedback-cli.js";
-import { USAGE_EXIT_CODE } from "./seed-prompts-cli.js";
+import { USAGE_EXIT_CODE } from "./cli-env.js";
 
 const CREDENTIALS = {
   LANGFUSE_PUBLIC_KEY: "pk-test",

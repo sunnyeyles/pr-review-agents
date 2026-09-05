@@ -198,6 +198,7 @@ describe("collectFeedback", () => {
 
     expect(recorded).toEqual([]);
     expect(report.skippedUntraced).toBe(1);
+    expect(client.listReviewCommentReactions).not.toHaveBeenCalled();
     expect(client.getCollaboratorPermission).not.toHaveBeenCalled();
   });
 

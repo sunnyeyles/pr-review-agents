@@ -21,8 +21,21 @@ import { collectFeedback, type CollectFeedbackReport } from "@pr-review/reviewer
 
 import {
   USAGE_EXIT_CODE,
+  missingCredentialsMessage,
   requireLangfuseConfig,
-} from "./seed-prompts-cli.js";
+  takeValue,
+} from "./cli-env.js";
+
+/** The actionable message shown when either key is absent. */
+export const MISSING_CREDENTIALS_MESSAGE = missingCredentialsMessage({
+  purpose: "record feedback scores",
+  rationale: [
+    "Nothing was recorded. Both keys are needed: scores are written against",
+    "the review run that produced each finding, and every call authenticates",
+    "the same way.",
+  ],
+  command: "pnpm collect-feedback --dry-run",
+});
 
 export const GITHUB_TOKEN_ENV = "GITHUB_TOKEN";
 export const GITHUB_REPOSITORY_ENV = "GITHUB_REPOSITORY";
@@ -45,13 +58,6 @@ export function parseCollectArgs(argv: string[]): CollectArgs {
   let sinceDays = DEFAULT_SINCE_DAYS;
   let dryRun = false;
 
-  const takeValue = (index: number, flag: string, example: string): string => {
-    const value = argv[index + 1];
-    if (value === undefined || value.startsWith("--")) {
-      throw new Error(`${flag} needs a value, for example ${flag} ${example}`);
-    }
-    return value;
-  };
   const parseDays = (value: string): number => {
     const days = Number(value);
     if (!Number.isInteger(days) || days <= 0) {
@@ -68,12 +74,12 @@ export function parseCollectArgs(argv: string[]): CollectArgs {
     if (arg === "--dry-run") {
       dryRun = true;
     } else if (arg === "--repo") {
-      repository = takeValue(index, "--repo", "octo-org/example");
+      repository = takeValue(argv, index, "--repo", "octo-org/example");
       index += 1;
     } else if (arg.startsWith("--repo=")) {
       repository = arg.slice("--repo=".length);
     } else if (arg === "--since-days") {
-      sinceDays = parseDays(takeValue(index, "--since-days", "14"));
+      sinceDays = parseDays(takeValue(argv, index, "--since-days", "14"));
       index += 1;
     } else if (arg.startsWith("--since-days=")) {
       sinceDays = parseDays(arg.slice("--since-days=".length));
@@ -119,14 +125,16 @@ export function collectCliEnvironment(): CollectCliEnvironment {
 }
 
 function describe(report: CollectFeedbackReport, dryRun: boolean): string[] {
-  return [
-    `  pull requests visited      ${report.pullRequestsVisited}`,
-    `  review comments scanned    ${report.commentsScanned}`,
-    `  thumbs reactions found     ${report.reactionsFound}`,
-    `  scores ${dryRun ? "that would land" : "recorded"}      ${report.scoresRecorded}`,
-    `  skipped: untraced run      ${report.skippedUntraced}`,
-    `  skipped: no write access   ${report.skippedNoWriteAccess}`,
+  const rows: [string, number][] = [
+    ["pull requests visited", report.pullRequestsVisited],
+    ["review comments scanned", report.commentsScanned],
+    ["thumbs reactions found", report.reactionsFound],
+    [`scores ${dryRun ? "that would land" : "recorded"}`, report.scoresRecorded],
+    ["skipped: untraced run", report.skippedUntraced],
+    ["skipped: no write access", report.skippedNoWriteAccess],
   ];
+  const width = Math.max(...rows.map(([label]) => label.length));
+  return rows.map(([label, value]) => `  ${label.padEnd(width)}   ${value}`);
 }
 
 /** Returns the exit code rather than exiting; the runner script owns process control. */
@@ -142,7 +150,7 @@ export async function main(
   let token: string;
   try {
     args = parseCollectArgs(argv);
-    langfuse = requireLangfuseConfig(env);
+    langfuse = requireLangfuseConfig(env, MISSING_CREDENTIALS_MESSAGE);
     repository = parseRepository(
       args.repository ?? env[GITHUB_REPOSITORY_ENV] ?? "",
     );

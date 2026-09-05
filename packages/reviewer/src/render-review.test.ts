@@ -146,6 +146,15 @@ describe("renderReview", () => {
       category: "correctness",
     });
   });
+
+  it("notes an agent that did not complete", () => {
+    const rendered = renderReview(
+      [finding()],
+      [{ agent: "architecture", error: "timed out" }],
+    );
+
+    expect(rendered?.body).toContain("The Architecture review did not complete");
+  });
 });
 
 describe("parseFeedbackMarker", () => {
@@ -172,12 +181,4 @@ describe("parseFeedbackMarker", () => {
     ).toBeUndefined();
   });
 
-  it("notes an agent that did not complete", () => {
-    const rendered = renderReview(
-      [finding()],
-      [{ agent: "architecture", error: "timed out" }],
-    );
-
-    expect(rendered?.body).toContain("The Architecture review did not complete");
-  });
 });

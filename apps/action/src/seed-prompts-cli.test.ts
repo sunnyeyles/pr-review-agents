@@ -16,12 +16,12 @@ import {
 import { createCapturingLogger } from "@pr-review/logging";
 import { describe, expect, it, vi } from "vitest";
 
+import { requireLangfuseConfig } from "./cli-env.js";
 import {
   MISSING_CREDENTIALS_MESSAGE,
   USAGE_EXIT_CODE,
   main,
   parseSeedArgs,
-  requireLangfuseConfig,
 } from "./seed-prompts-cli.js";
 
 const CREDENTIALS = {
@@ -125,7 +125,7 @@ describe("parseSeedArgs", () => {
 
 describe("requireLangfuseConfig", () => {
   it("defaults the host but never the keys", () => {
-    expect(requireLangfuseConfig(CREDENTIALS)).toEqual({
+    expect(requireLangfuseConfig(CREDENTIALS, MISSING_CREDENTIALS_MESSAGE)).toEqual({
       publicKey: "pk-test",
       secretKey: "sk-test",
       baseUrl: "https://cloud.langfuse.com",
@@ -134,17 +134,20 @@ describe("requireLangfuseConfig", () => {
 
   it("honours a self-hosted or regional host", () => {
     expect(
-      requireLangfuseConfig({
-        ...CREDENTIALS,
-        LANGFUSE_BASE_URL: "https://jp.cloud.langfuse.com",
-      }).baseUrl,
+      requireLangfuseConfig(
+        { ...CREDENTIALS, LANGFUSE_BASE_URL: "https://jp.cloud.langfuse.com" },
+        MISSING_CREDENTIALS_MESSAGE,
+      ).baseUrl,
     ).toBe("https://jp.cloud.langfuse.com");
   });
 
   it("throws when either key is missing", () => {
-    expect(() => requireLangfuseConfig({})).toThrow(MISSING_CREDENTIALS_MESSAGE);
+    expect(() => requireLangfuseConfig({}, MISSING_CREDENTIALS_MESSAGE)).toThrow(MISSING_CREDENTIALS_MESSAGE);
     expect(() =>
-      requireLangfuseConfig({ LANGFUSE_PUBLIC_KEY: "pk-test" }),
+      requireLangfuseConfig(
+        { LANGFUSE_PUBLIC_KEY: "pk-test" },
+        MISSING_CREDENTIALS_MESSAGE,
+      ),
     ).toThrow(MISSING_CREDENTIALS_MESSAGE);
   });
 });

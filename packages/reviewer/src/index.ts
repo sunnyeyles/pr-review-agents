@@ -15,7 +15,6 @@ export {
   parseFindingMarker,
   renderReview,
   type FeedbackMeta,
-  type RenderReviewOptions,
   type RenderedReview,
 } from "./render-review.js";
 export {

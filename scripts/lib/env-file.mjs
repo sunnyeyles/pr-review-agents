@@ -1,7 +1,6 @@
 /**
  * Reads .env.local into a plain object. It is gitignored and holds
- * local credentials — the README already points people there — and a
- * dotenv dependency for one file of `KEY=value` lines is not worth it.
+ * local credentials — the README already points people there.
  *
  * Quotes are stripped and `export ` prefixes tolerated, so a file that
  * can be `source`d in a shell also works here.

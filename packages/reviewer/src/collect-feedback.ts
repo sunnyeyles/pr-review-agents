@@ -15,7 +15,7 @@ import type {
 } from "@pr-review/github";
 import { createConsoleLogger, type StructuredLogger } from "@pr-review/logging";
 
-import { parseFeedbackMarker, postedFindingKeys } from "./render-review.js";
+import { parseFeedbackMarker, parseFindingMarker } from "./render-review.js";
 
 export interface CollectFeedbackOptions {
   repository: RepositoryRef;
@@ -41,15 +41,13 @@ export interface CollectFeedbackReport {
 
 const THUMBS: Record<string, 0 | 1> = { "+1": 1, "-1": 0 };
 
-/** Write and admin are the levels that can push; read and none are not. */
 export function canPush(permission: CollaboratorPermission): boolean {
   return permission === "write" || permission === "admin";
 }
 
 /** A finding key stands in for a title the marker does not carry. */
 function describeFinding(body: string): string {
-  const [key] = postedFindingKeys([{ body }]);
-  return key ?? "unknown finding";
+  return parseFindingMarker(body) ?? "unknown finding";
 }
 
 export async function collectFeedback(
@@ -71,7 +69,6 @@ export async function collectFeedback(
     skippedUntraced: 0,
     skippedNoWriteAccess: 0,
   };
-  // One permission lookup per person per run, however many times they reacted.
   const permissions = new Map<string, Promise<CollaboratorPermission>>();
   const permissionOf = (username: string) => {
     let lookup = permissions.get(username);
@@ -95,10 +92,18 @@ export async function collectFeedback(
       }
       report.commentsScanned += 1;
       // GitHub's tallies are free; the per-reaction listing is a call each.
-      if (comment.thumbsUp === 0 && comment.thumbsDown === 0) {
+      const thumbs = comment.thumbsUp + comment.thumbsDown;
+      if (thumbs === 0) {
+        continue;
+      }
+      const { traceId, category } = meta;
+      if (traceId === undefined) {
+        report.reactionsFound += thumbs;
+        report.skippedUntraced += thumbs;
         continue;
       }
 
+      const finding = describeFinding(comment.body);
       const reactions = await github.listReviewCommentReactions(
         repository,
         comment.id,
@@ -110,10 +115,6 @@ export async function collectFeedback(
         }
         report.reactionsFound += 1;
 
-        if (meta.traceId === undefined) {
-          report.skippedUntraced += 1;
-          continue;
-        }
         if (!canPush(await permissionOf(reaction.user))) {
           report.skippedNoWriteAccess += 1;
           logger.info("feedback.skipped_no_write_access", {
@@ -125,12 +126,11 @@ export async function collectFeedback(
           continue;
         }
 
-        const finding = describeFinding(comment.body);
         const score: FeedbackScore = {
           id: `github-reaction-${reaction.id}`,
-          traceId: meta.traceId,
+          traceId,
           value,
-          comment: `${reaction.content} from ${reaction.user} on ${repositoryName}#${pull.number} (${meta.category}: ${finding})`,
+          comment: `${reaction.content} from ${reaction.user} on ${repositoryName}#${pull.number} (${category}: ${finding})`,
           metadata: {
             repository: repositoryName,
             pullRequestNumber: pull.number,
@@ -138,7 +138,7 @@ export async function collectFeedback(
             reactionId: reaction.id,
             reaction: reaction.content,
             user: reaction.user,
-            category: meta.category,
+            category,
             finding,
           },
         };
@@ -147,8 +147,8 @@ export async function collectFeedback(
           repository: repositoryName,
           pullRequestNumber: pull.number,
           commentId: comment.id,
-          traceId: meta.traceId,
-          category: meta.category,
+          traceId,
+          category,
           value,
         });
         if (!dryRun) {

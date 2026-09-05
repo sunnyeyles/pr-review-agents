@@ -136,23 +136,40 @@ function toPermission(value: string): CollaboratorPermission {
   }
 }
 
+/** Walks a paged endpoint. A short page is the only signal that it was the last. */
+async function* pages<T>(
+  fetchPage: (page: number) => Promise<{ data: unknown }>,
+  schema: { parse: (data: unknown) => T[] },
+): AsyncGenerator<T[]> {
+  for (let page = 1; ; page += 1) {
+    const items = schema.parse((await fetchPage(page)).data);
+    yield items;
+    if (items.length < PER_PAGE) {
+      return;
+    }
+  }
+}
+
 export function createFeedbackClient(
   octokit: FeedbackOctokitLike,
 ): GithubFeedbackClient {
   return {
     async listPullRequestsUpdatedSince(repository, since) {
       const pulls: RecentPullRequest[] = [];
-      for (let page = 1; ; page += 1) {
-        const response = await octokit.rest.pulls.list({
-          owner: repository.owner,
-          repo: repository.repo,
-          state: "all",
-          sort: "updated",
-          direction: "desc",
-          per_page: PER_PAGE,
-          page,
-        });
-        const pagePulls = pullListSchema.parse(response.data);
+      const source = pages(
+        (page) =>
+          octokit.rest.pulls.list({
+            owner: repository.owner,
+            repo: repository.repo,
+            state: "all",
+            sort: "updated",
+            direction: "desc",
+            per_page: PER_PAGE,
+            page,
+          }),
+        pullListSchema,
+      );
+      for await (const pagePulls of source) {
         for (const pull of pagePulls) {
           const updatedAt = new Date(pull.updated_at);
           // Sorted newest first, so the first stale one ends the walk.
@@ -161,23 +178,24 @@ export function createFeedbackClient(
           }
           pulls.push({ number: pull.number, updatedAt });
         }
-        if (pagePulls.length < PER_PAGE) {
-          return pulls;
-        }
       }
+      return pulls;
     },
 
     async listReactedReviewComments(ref) {
       const comments: ReactedReviewComment[] = [];
-      for (let page = 1; ; page += 1) {
-        const response = await octokit.rest.pulls.listReviewComments({
-          owner: ref.owner,
-          repo: ref.repo,
-          pull_number: ref.pullRequestNumber,
-          per_page: PER_PAGE,
-          page,
-        });
-        const pageComments = reactedCommentsSchema.parse(response.data);
+      const source = pages(
+        (page) =>
+          octokit.rest.pulls.listReviewComments({
+            owner: ref.owner,
+            repo: ref.repo,
+            pull_number: ref.pullRequestNumber,
+            per_page: PER_PAGE,
+            page,
+          }),
+        reactedCommentsSchema,
+      );
+      for await (const pageComments of source) {
         for (const comment of pageComments) {
           comments.push({
             id: comment.id,
@@ -186,24 +204,24 @@ export function createFeedbackClient(
             thumbsDown: comment.reactions?.["-1"] ?? 0,
           });
         }
-        if (pageComments.length < PER_PAGE) {
-          return comments;
-        }
       }
+      return comments;
     },
 
     async listReviewCommentReactions(repository, commentId) {
       const reactions: CommentReaction[] = [];
-      for (let page = 1; ; page += 1) {
-        const response =
-          await octokit.rest.reactions.listForPullRequestReviewComment({
+      const source = pages(
+        (page) =>
+          octokit.rest.reactions.listForPullRequestReviewComment({
             owner: repository.owner,
             repo: repository.repo,
             comment_id: commentId,
             per_page: PER_PAGE,
             page,
-          });
-        const pageReactions = reactionsSchema.parse(response.data);
+          }),
+        reactionsSchema,
+      );
+      for await (const pageReactions of source) {
         for (const reaction of pageReactions) {
           // A deleted account leaves a reaction nobody can be held to.
           if (reaction.user !== null) {
@@ -214,10 +232,8 @@ export function createFeedbackClient(
             });
           }
         }
-        if (pageReactions.length < PER_PAGE) {
-          return reactions;
-        }
       }
+      return reactions;
     },
 
     async getCollaboratorPermission(repository, username) {
