@@ -13,12 +13,6 @@
 
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%94%8E%3C/text%3E%3C/svg%3E">
 
-<style>
-/* minimal reset — the Artifact host supplies one; GitHub Pages does not */
-*, *::before, *::after { box-sizing: border-box; }
-body, h1, h2, h3, p, ol, ul, figure, pre { margin: 0; }
-img, svg { display: block; max-width: 100%; }
-</style>
 <title>Propose, Refine, Decide</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -26,194 +20,114 @@ img, svg { display: block; max-width: 100%; }
 
 <style>
 /* ============================================================
-   TOKENS — light is the bare :root; dark redefines tokens only
+   TOKENS — one palette; light-dark() picks the side
    ============================================================ */
 :root {
-  --paper:      #F3F5F7;
-  --surface:    #FFFFFF;
-  --surface-2:  #EAEEF2;
-  --ink:        #10151C;
-  --slate:      #5A6878;
-  --slate-dim:  #8C99A7;
-  --rule:       #CFD8E1;
-  --rule-soft:  #E1E7ED;
+  color-scheme: light dark;
 
-  --accent:     #B4133F;
-  --accent-ink: #FFFFFF;
-  --accent-wash:#FBE9EE;
+  --paper:      light-dark(#F3F5F7, #0C1116);
+  --surface:    light-dark(#FFFFFF, #141B23);
+  --surface-2:  light-dark(#EAEEF2, #1B242E);
+  --ink:        light-dark(#10151C, #DFE6ED);
+  --slate:      light-dark(#5A6878, #93A2B2);
+  --slate-dim:  light-dark(#8C99A7, #6C7B8B);
+  --rule:       light-dark(#CFD8E1, #2A3642);
+  --rule-soft:  light-dark(#E1E7ED, #202A34);
 
-  --agent-c:     #12666A;   /* correctness — teal   */
-  --agent-s:     #B4133F;   /* security    — crimson*/
-  --agent-a:     #7E5A12;   /* architecture— bronze */
+  --accent:     light-dark(#B4133F, #FF5B80);
+  --accent-ink: light-dark(#FFFFFF, #1A0710);
+  --accent-wash:light-dark(#FBE9EE, #2A1119);
 
-  --code-bg:    #10151C;
-  --code-fg:    #DCE4EC;
+  --agent-c:    light-dark(#12666A, #4FBDB6);  /* correctness  — teal    */
+  --agent-s:    light-dark(#B4133F, #FF5B80);  /* security     — crimson */
+  --agent-a:    light-dark(#7E5A12, #D9A94A);  /* architecture — bronze  */
+
+  --code-bg:    light-dark(#10151C, #070B0F);
+  --code-fg:    light-dark(#DCE4EC, #D3DCE5);
   --code-com:   #7C8B9B;
   --code-str:   #6ECFC4;
   --code-key:   #FF7D9E;
   --code-num:   #E9B872;
 
-  --ok:         #12666A;
-  --warn:       #8A6010;
-  --stop:       #B4133F;
+  --ok:   var(--agent-c);
+  --warn: light-dark(#8A6010, #D9A94A);
+  --stop: var(--agent-s);
 
-  --shadow: 0 1px 2px rgba(16,21,28,.05), 0 8px 24px -12px rgba(16,21,28,.18);
+  --shade-1: light-dark(rgba(16,21,28,.05), rgba(0,0,0,.4));
+  --shade-2: light-dark(rgba(16,21,28,.18), rgba(0,0,0,.7));
+  --shadow: 0 1px 2px var(--shade-1), 0 9px 27px -13px var(--shade-2);
 
   --measure: 67ch;
-  --step--1: clamp(.78rem, .76rem + .1vw, .84rem);
   --step-0:  clamp(1.02rem, .99rem + .16vw, 1.12rem);
   --step-1:  clamp(1.24rem, 1.17rem + .34vw, 1.45rem);
   --step-2:  clamp(1.55rem, 1.4rem + .72vw, 2.05rem);
   --step-3:  clamp(2.1rem, 1.7rem + 1.9vw, 3.5rem);
 }
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --paper:      #0C1116;
-    --surface:    #141B23;
-    --surface-2:  #1B242E;
-    --ink:        #DFE6ED;
-    --slate:      #93A2B2;
-    --slate-dim:  #6C7B8B;
-    --rule:       #2A3642;
-    --rule-soft:  #202A34;
-
-    --accent:     #FF5B80;
-    --accent-ink: #1A0710;
-    --accent-wash:#2A1119;
-
-    --agent-c:     #4FBDB6;
-    --agent-s:     #FF5B80;
-    --agent-a:     #D9A94A;
-
-    --code-bg:    #070B0F;
-    --code-fg:    #D3DCE5;
-
-    --ok:         #4FBDB6;
-    --warn:       #D9A94A;
-    --stop:       #FF5B80;
-
-    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px -14px rgba(0,0,0,.7);
-  }
-}
-
-:root[data-theme="dark"] {
-  --paper:      #0C1116;
-  --surface:    #141B23;
-  --surface-2:  #1B242E;
-  --ink:        #DFE6ED;
-  --slate:      #93A2B2;
-  --slate-dim:  #6C7B8B;
-  --rule:       #2A3642;
-  --rule-soft:  #202A34;
-
-  --accent:     #FF5B80;
-  --accent-ink: #1A0710;
-  --accent-wash:#2A1119;
-
-  --agent-c:     #4FBDB6;
-  --agent-s:     #FF5B80;
-  --agent-a:     #D9A94A;
-
-  --code-bg:    #070B0F;
-  --code-fg:    #D3DCE5;
-
-  --ok:         #4FBDB6;
-  --warn:       #D9A94A;
-  --stop:       #FF5B80;
-
-  --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px -14px rgba(0,0,0,.7);
-}
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"]  { color-scheme: dark; }
 
 /* ============================================================
    BASE
    ============================================================ */
-* { box-sizing: border-box; }
+*, *::before, *::after { box-sizing: border-box; }
+body, h1, h2, h3, p, ol, ul, figure, pre { margin: 0; }
+img, svg { display: block; max-width: 100%; }
 
 body {
-  margin: 0;
-  background: var(--paper);
-  color: var(--ink);
+  background: var(--paper); color: var(--ink);
   font-family: "Newsreader", "Iowan Old Style", Georgia, serif;
-  font-size: var(--step-0);
-  font-optical-sizing: auto;
-  line-height: 1.62;
+  font-size: var(--step-0); font-optical-sizing: auto; line-height: 1.62;
   -webkit-font-smoothing: antialiased;
 }
 
 a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
-a:focus-visible, summary:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 3px;
-  border-radius: 2px;
-}
+a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 2px; }
 
-h1, h2, h3 { text-wrap: balance; line-height: 1.15; margin: 0; font-weight: 600; }
-p { margin: 0; }
+h1, h2, h3 { text-wrap: balance; line-height: 1.15; font-weight: 600; }
 
 /* mono utility face — every label, path, number, and code sample */
-.mono, code, pre, th, .rail, .eyebrow, .chip, .stat-n, .badge {
+.mono, code, pre, th, .rail, .eyebrow, .chip, .stat-n, .stat-l, .badge, .node,
+.agent, .agents-note, .diagram-note, .stage-num, .code-head, ol.rules li::before, .foot {
   font-family: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
   font-feature-settings: "ss01", "cv02";
 }
 
 .eyebrow {
-  font-size: .68rem;
-  letter-spacing: .16em;
-  text-transform: uppercase;
-  color: var(--slate-dim);
-  font-weight: 500;
+  font-size: .68rem; letter-spacing: .16em; text-transform: uppercase;
+  color: var(--slate-dim); font-weight: 500;
 }
 
 /* ============================================================
    SHELL — sticky mono rail + single reading column
    ============================================================ */
 .shell {
-  max-width: 1240px;
-  margin: 0 auto;
+  max-width: 1240px; margin: 0 auto;
   padding: 0 clamp(1.1rem, 4vw, 2.5rem) 6rem;
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 0 4rem;
+  display: grid; grid-template-columns: 1fr; gap: 0 4rem;
 }
+.col { grid-column: 1; min-width: 0; }
 
 @media (min-width: 1060px) {
   .shell { grid-template-columns: 13rem minmax(0, 1fr); }
   .rail { display: block; }
+  .col { grid-column: 2; }
 }
 
 .rail {
-  display: none;
-  grid-column: 1;
-  position: sticky;
-  top: 0;
-  align-self: start;
-  padding-top: 5.2rem;
-  font-size: .7rem;
-  line-height: 1.5;
+  display: none; grid-column: 1; position: sticky; top: 0; align-self: start;
+  padding-top: 5.2rem; font-size: .7rem; line-height: 1.5;
 }
 .rail-title {
-  letter-spacing: .16em;
-  text-transform: uppercase;
-  color: var(--slate-dim);
-  padding-bottom: .7rem;
-  border-bottom: 1px solid var(--rule);
-  margin-bottom: .9rem;
+  letter-spacing: .16em; text-transform: uppercase; color: var(--slate-dim);
+  padding-bottom: .7rem; border-bottom: 1px solid var(--rule); margin-bottom: .9rem;
 }
 .rail ol { list-style: none; margin: 0; padding: 0; display: grid; gap: .55rem; }
 .rail a {
-  color: var(--slate);
-  text-decoration: none;
-  display: grid;
-  grid-template-columns: 1.6rem 1fr;
-  gap: .35rem;
-  align-items: baseline;
+  color: var(--slate); text-decoration: none;
+  display: grid; grid-template-columns: 1.6rem 1fr; gap: .35rem; align-items: baseline;
 }
 .rail a:hover { color: var(--accent); }
 .rail .n { color: var(--slate-dim); font-variant-numeric: tabular-nums; }
-
-.col { grid-column: 1; min-width: 0; }
-@media (min-width: 1060px) { .col { grid-column: 2; } }
 
 .prose { max-width: var(--measure); }
 .prose p + p { margin-top: .85rem; }
@@ -223,98 +137,54 @@ p { margin: 0; }
    ============================================================ */
 .hero { padding: clamp(3rem, 8vw, 5.6rem) 0 0; }
 .hero h1 {
-  font-size: var(--step-3);
-  font-weight: 500;
-  letter-spacing: -.022em;
-  margin: .55rem 0 0;
+  font-size: var(--step-3); font-weight: 500;
+  letter-spacing: -.022em; margin: .55rem 0 0;
 }
 .hero h1 em { font-style: italic; color: var(--accent); }
 .lede {
-  max-width: 46ch;
-  margin-top: 1.1rem;
-  font-size: var(--step-1);
-  color: var(--slate);
-  line-height: 1.5;
+  max-width: 46ch; margin-top: 1.1rem;
+  font-size: var(--step-1); color: var(--slate); line-height: 1.5;
 }
 .thesis {
-  margin-top: 1.6rem;
-  padding-left: 1.1rem;
-  border-left: 2px solid var(--accent);
-  max-width: 52ch;
-  font-size: var(--step-0);
+  margin-top: 1.6rem; padding-left: 1.1rem;
+  border-left: 2px solid var(--accent); max-width: 52ch;
 }
-.thesis strong { font-weight: 600; }
 
-/* stat strip */
 .stats {
   margin-top: 3rem;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
-  gap: 1px;
-  background: var(--rule);
-  border: 1px solid var(--rule);
-  border-radius: 3px;
-  overflow: hidden;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: 1px;
+  background: var(--rule); border: 1px solid var(--rule);
+  border-radius: 3px; overflow: hidden;
 }
 .stat { background: var(--surface); padding: .95rem 1.1rem; }
 .stat-n {
-  font-size: 1.5rem;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  color: var(--ink);
-  display: block;
-  line-height: 1.1;
+  display: block; font-size: 1.5rem; font-weight: 600;
+  font-variant-numeric: tabular-nums; line-height: 1.1;
 }
 .stat-l {
-  display: block;
-  margin-top: .3rem;
-  font-size: .68rem;
-  letter-spacing: .1em;
-  text-transform: uppercase;
-  color: var(--slate-dim);
-  font-family: "JetBrains Mono", ui-monospace, monospace;
+  display: block; margin-top: .3rem; font-size: .68rem;
+  letter-spacing: .1em; text-transform: uppercase; color: var(--slate-dim);
 }
 
 /* ============================================================
    PIPELINE DIAGRAM — CSS only, fully responsive
    ============================================================ */
 .diagram {
-  margin: 3.4rem 0 0;
-  padding: 2.2rem clamp(.8rem, 3vw, 2rem);
-  background: var(--surface);
-  border: 1px solid var(--rule);
-  border-radius: 4px;
-  box-shadow: var(--shadow);
-  overflow-x: auto;
+  margin: 3.4rem 0 0; padding: 2.2rem clamp(.8rem, 3vw, 2rem);
+  background: var(--surface); border: 1px solid var(--rule); border-radius: 4px;
+  box-shadow: var(--shadow); overflow-x: auto;
 }
 .diagram-inner { min-width: 460px; max-width: 720px; margin: 0 auto; }
 
 .node {
-  background: var(--surface-2);
-  border: 1px solid var(--rule);
-  border-radius: 3px;
-  padding: .6rem .85rem;
-  text-align: center;
-  font-family: "JetBrains Mono", ui-monospace, monospace;
-  font-size: .76rem;
-  line-height: 1.45;
+  background: var(--surface-2); border: 1px solid var(--rule); border-radius: 3px;
+  padding: .6rem .85rem; text-align: center; font-size: .76rem; line-height: 1.45;
 }
-.node .n-sub {
-  display: block;
-  font-size: .66rem;
-  color: var(--slate-dim);
-  margin-top: .12rem;
-}
-.node.terminal {
-  background: transparent;
-  border-style: dashed;
-  color: var(--slate);
-}
+.node .n-sub { display: block; font-size: .66rem; color: var(--slate-dim); margin-top: .12rem; }
+.node.terminal { background: transparent; border-style: dashed; color: var(--slate); }
 .node.trust {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--accent-ink);
-  font-weight: 600;
+  background: var(--accent); border-color: var(--accent);
+  color: var(--accent-ink); font-weight: 600;
 }
 .node.trust .n-sub { color: var(--accent-ink); opacity: .8; }
 
@@ -324,21 +194,10 @@ p { margin: 0; }
 
 /* the agent cards: one column per configured agent, three here by example */
 .agents { display: grid; grid-template-columns: repeat(3, 1fr); gap: .6rem; }
-.agents-note {
-  text-align: center;
-  font-size: .64rem;
-  color: var(--slate-dim);
-  margin-top: .4rem;
-}
+.agents-note { text-align: center; font-size: .64rem; color: var(--slate-dim); margin-top: .4rem; }
 .agent {
-  border: 1px solid var(--rule);
-  border-top: 3px solid var(--lc);
-  border-radius: 3px;
-  background: var(--surface-2);
-  padding: .65rem .5rem;
-  text-align: center;
-  font-family: "JetBrains Mono", ui-monospace, monospace;
-  font-size: .72rem;
+  border: 1px solid var(--rule); border-top: 3px solid var(--lc); border-radius: 3px;
+  background: var(--surface-2); padding: .65rem .5rem; text-align: center; font-size: .72rem;
 }
 .agent b { display: block; color: var(--lc); font-weight: 600; }
 .agent span { display: block; font-size: .64rem; color: var(--slate-dim); margin-top: .15rem; }
@@ -351,44 +210,21 @@ p { margin: 0; }
 .fan { display: grid; grid-template-columns: repeat(3, 1fr); height: 22px; }
 .fan > i { position: relative; display: block; }
 .fan > i::after {
-  content: "";
-  position: absolute;
-  left: calc(50% - 1px);
-  width: 2px;
-  top: 0; bottom: 0;
-  background: var(--rule);
+  content: ""; position: absolute; top: 0; bottom: 0;
+  left: calc(50% - 1px); width: 2px; background: var(--rule);
 }
-.fan.out > i::before {
-  content: "";
-  position: absolute;
-  top: 0; height: 0;
-  border-top: 2px solid var(--rule);
-}
-.fan.out > i:nth-child(1)::before { left: 50%; right: 0; }
-.fan.out > i:nth-child(2)::before { left: 0; right: 0; }
-.fan.out > i:nth-child(3)::before { left: 0; right: 50%; }
-
-.fan.in > i::before {
-  content: "";
-  position: absolute;
-  bottom: 0; height: 0;
-  border-bottom: 2px solid var(--rule);
-}
-.fan.in > i:nth-child(1)::before { left: 50%; right: 0; }
-.fan.in > i:nth-child(2)::before { left: 0; right: 0; }
-.fan.in > i:nth-child(3)::before { left: 0; right: 50%; }
+.fan > i::before { content: ""; position: absolute; height: 0; }
+.fan.out > i::before { top: 0; border-top: 2px solid var(--rule); }
+.fan.in  > i::before { bottom: 0; border-bottom: 2px solid var(--rule); }
+.fan > i:nth-child(1)::before { left: 50%; right: 0; }
+.fan > i:nth-child(2)::before { left: 0; right: 0; }
+.fan > i:nth-child(3)::before { left: 0; right: 50%; }
 
 /* the two publish outcomes */
 .split { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem; }
 .diagram-note {
-  margin-top: 1.4rem;
-  padding-top: 1rem;
-  border-top: 1px solid var(--rule-soft);
-  font-family: "JetBrains Mono", ui-monospace, monospace;
-  font-size: .68rem;
-  color: var(--slate);
-  line-height: 1.6;
-  text-align: center;
+  margin-top: 1.4rem; padding-top: 1rem; border-top: 1px solid var(--rule-soft);
+  font-size: .68rem; color: var(--slate); line-height: 1.6; text-align: center;
 }
 .diagram-note b { color: var(--accent); }
 
@@ -398,46 +234,27 @@ p { margin: 0; }
 .stage { padding-top: clamp(3.4rem, 7vw, 5rem); scroll-margin-top: 1.5rem; }
 .stage-head { display: flex; align-items: baseline; gap: .9rem; flex-wrap: wrap; }
 .stage-num {
-  font-family: "JetBrains Mono", ui-monospace, monospace;
-  font-size: .78rem;
-  font-variant-numeric: tabular-nums;
-  color: var(--accent);
-  font-weight: 600;
-  padding: .12rem .45rem;
-  border: 1px solid var(--accent);
-  border-radius: 2px;
-  line-height: 1.4;
+  font-size: .78rem; font-variant-numeric: tabular-nums; line-height: 1.4;
+  color: var(--accent); font-weight: 600;
+  padding: .12rem .45rem; border: 1px solid var(--accent); border-radius: 2px;
 }
 .stage h2 { font-size: var(--step-2); font-weight: 500; letter-spacing: -.015em; }
-.stage h3 {
-  font-size: var(--step-1);
-  font-weight: 600;
-  margin-top: 2.4rem;
-  letter-spacing: -.01em;
-}
-.stage > .prose { margin-top: 1.1rem; }
+.stage h3 { font-size: var(--step-1); margin-top: 2.4rem; letter-spacing: -.01em; }
+.stage > .prose, .table-wrap + .prose, figure.code + .prose { margin-top: 1.1rem; }
 .stage h3 + .prose { margin-top: .7rem; }
 
 /* file path pill */
 .paths { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: 1rem; }
 .chip {
-  font-size: .7rem;
-  color: var(--slate);
-  background: var(--surface-2);
-  border: 1px solid var(--rule-soft);
-  border-radius: 2px;
-  padding: .2rem .5rem;
-  white-space: nowrap;
+  font-size: .7rem; color: var(--slate); background: var(--surface-2);
+  border: 1px solid var(--rule-soft); border-radius: 2px;
+  padding: .2rem .5rem; white-space: nowrap;
 }
 .chip b { color: var(--ink); font-weight: 600; }
 
-/* inline code */
 p code, li code, td code {
-  font-size: .84em;
-  background: var(--surface-2);
-  border: 1px solid var(--rule-soft);
-  border-radius: 2px;
-  padding: .05em .3em;
+  font-size: .84em; background: var(--surface-2);
+  border: 1px solid var(--rule-soft); border-radius: 2px; padding: .05em .3em;
 }
 
 /* ============================================================
@@ -445,32 +262,18 @@ p code, li code, td code {
    ============================================================ */
 figure.code { margin: 1.5rem 0 0; }
 .code-head {
-  display: flex;
-  justify-content: space-between;
-  gap: 1rem;
-  align-items: center;
-  background: var(--surface-2);
-  border: 1px solid var(--rule);
-  border-bottom: 0;
-  border-radius: 3px 3px 0 0;
-  padding: .42rem .8rem;
-  font-family: "JetBrains Mono", ui-monospace, monospace;
-  font-size: .68rem;
-  color: var(--slate);
+  display: flex; justify-content: space-between; align-items: center; gap: 1rem;
+  background: var(--surface-2); border: 1px solid var(--rule); border-bottom: 0;
+  border-radius: 3px 3px 0 0; padding: .42rem .8rem;
+  font-size: .68rem; color: var(--slate);
 }
 .code-head .p { color: var(--ink); overflow: hidden; text-overflow: ellipsis; }
 .code-head .ln { color: var(--slate-dim); font-variant-numeric: tabular-nums; white-space: nowrap; }
 figure.code pre {
-  margin: 0;
-  background: var(--code-bg);
-  color: var(--code-fg);
-  border: 1px solid var(--rule);
-  border-radius: 0 0 3px 3px;
-  padding: .95rem 1rem;
-  overflow-x: auto;
-  font-size: .78rem;
-  line-height: 1.68;
-  tab-size: 2;
+  background: var(--code-bg); color: var(--code-fg);
+  border: 1px solid var(--rule); border-radius: 0 0 3px 3px;
+  padding: .95rem 1rem; overflow-x: auto;
+  font-size: .78rem; line-height: 1.68; tab-size: 2;
 }
 .c-com { color: var(--code-com); font-style: italic; }
 .c-str { color: var(--code-str); }
@@ -481,114 +284,68 @@ figure.code pre {
    TABLES
    ============================================================ */
 .table-wrap { overflow-x: auto; margin-top: 1.4rem; }
-table {
-  border-collapse: collapse;
-  width: 100%;
-  min-width: 30rem;
-  font-size: .92rem;
-}
+table { border-collapse: collapse; width: 100%; min-width: 30rem; font-size: .92rem; }
 th {
-  text-align: left;
-  font-size: .66rem;
-  letter-spacing: .12em;
-  text-transform: uppercase;
-  color: var(--slate-dim);
-  font-weight: 500;
-  padding: 0 .8rem .5rem 0;
-  border-bottom: 1px solid var(--rule);
+  text-align: left; font-size: .66rem; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--slate-dim); font-weight: 500;
+  padding: 0 .8rem .5rem 0; border-bottom: 1px solid var(--rule);
 }
 td {
-  padding: .6rem .8rem .6rem 0;
-  border-bottom: 1px solid var(--rule-soft);
-  vertical-align: top;
-  color: var(--slate);
+  padding: .6rem .8rem .6rem 0; border-bottom: 1px solid var(--rule-soft);
+  vertical-align: top; color: var(--slate);
 }
 td:first-child { color: var(--ink); }
 tr:last-child td { border-bottom: 0; }
 
 .badge {
-  display: inline-block;
-  font-size: .64rem;
-  letter-spacing: .08em;
-  text-transform: uppercase;
-  font-weight: 600;
-  padding: .15rem .42rem;
-  border-radius: 2px;
-  border: 1px solid currentColor;
-  white-space: nowrap;
+  display: inline-block; font-size: .64rem; letter-spacing: .08em;
+  text-transform: uppercase; font-weight: 600; white-space: nowrap;
+  padding: .15rem .42rem; border: 1px solid currentColor; border-radius: 2px;
 }
 .badge.stop { color: var(--stop); }
 .badge.warn { color: var(--warn); }
 .badge.ok   { color: var(--ok); }
 
-/* ordered rules list, e.g. the six validation steps */
+/* ordered rules list, e.g. the seven validation steps */
 ol.rules { counter-reset: r; list-style: none; margin: 1.3rem 0 0; padding: 0; max-width: var(--measure); }
 ol.rules li {
-  counter-increment: r;
-  position: relative;
-  padding: .55rem 0 .55rem 2.6rem;
-  border-bottom: 1px solid var(--rule-soft);
+  counter-increment: r; position: relative;
+  padding: .55rem 0 .55rem 2.6rem; border-bottom: 1px solid var(--rule-soft);
 }
 ol.rules li:last-child { border-bottom: 0; }
 ol.rules li::before {
-  content: counter(r);
-  position: absolute;
-  left: 0; top: .72rem;
-  font-family: "JetBrains Mono", ui-monospace, monospace;
-  font-size: .68rem;
-  color: var(--accent);
-  border: 1px solid var(--rule);
-  border-radius: 2px;
-  width: 1.5rem;
-  text-align: center;
-  line-height: 1.4;
+  content: counter(r); position: absolute; left: 0; top: .72rem;
+  width: 1.5rem; text-align: center; line-height: 1.4;
+  font-size: .68rem; color: var(--accent);
+  border: 1px solid var(--rule); border-radius: 2px;
 }
 ol.rules b { font-weight: 600; }
 
-/* callout */
 .note {
-  margin-top: 1.4rem;
-  max-width: var(--measure);
-  background: var(--accent-wash);
-  border: 1px solid var(--rule);
-  border-left: 3px solid var(--accent);
-  border-radius: 0 3px 3px 0;
-  padding: .9rem 1.1rem;
-  font-size: .95rem;
+  margin-top: 1.4rem; max-width: var(--measure);
+  background: var(--accent-wash); border: 1px solid var(--rule);
+  border-left: 3px solid var(--accent); border-radius: 0 3px 3px 0;
+  padding: .9rem 1.1rem; font-size: .95rem;
 }
 .note .eyebrow { color: var(--accent); display: block; margin-bottom: .3rem; }
 
-/* log lifecycle */
 .log {
-  margin-top: 1.4rem;
-  background: var(--code-bg);
-  color: var(--code-fg);
-  border: 1px solid var(--rule);
-  border-radius: 3px;
-  padding: 1rem 1.1rem;
-  overflow-x: auto;
-  font-size: .75rem;
-  line-height: 1.85;
+  margin-top: 1.4rem; background: var(--code-bg); color: var(--code-fg);
+  border: 1px solid var(--rule); border-radius: 3px;
+  padding: 1rem 1.1rem; overflow-x: auto; font-size: .75rem; line-height: 1.85;
 }
+.log .dim { color: var(--code-com); }
 
-/* footer */
 .foot {
-  margin-top: 5rem;
-  padding-top: 1.4rem;
-  border-top: 1px solid var(--rule);
-  font-family: "JetBrains Mono", ui-monospace, monospace;
-  font-size: .7rem;
-  color: var(--slate-dim);
-  display: flex;
-  justify-content: space-between;
-  gap: 1rem;
-  flex-wrap: wrap;
+  margin-top: 5rem; padding-top: 1.4rem; border-top: 1px solid var(--rule);
+  font-size: .7rem; color: var(--slate-dim);
+  display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap;
 }
 
+html { scroll-behavior: smooth; }
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }
-html { scroll-behavior: smooth; }
 </style>
 </head>
 <body>
@@ -600,7 +357,7 @@ html { scroll-behavior: smooth; }
     <ol>
       <li><a href="#s1"><span class="n">01</span><span>Boot</span></a></li>
       <li><a href="#s2"><span class="n">02</span><span>Inspect event</span></a></li>
-      <li><a href="#s3"><span class="n">03</span><span>Load the PR</span></a></li>
+      <li><a href="#s3"><span class="n">03</span><span>Load &amp; gate</span></a></li>
       <li><a href="#s4"><span class="n">04</span><span>The pipeline</span></a></li>
       <li><a href="#s5"><span class="n">05</span><span>Render</span></a></li>
       <li><a href="#s6"><span class="n">06</span><span>Publish</span></a></li>
@@ -652,6 +409,9 @@ html { scroll-behavior: smooth; }
         <div class="node">reviewPullRequest<span class="n-sub">load PR + changed files + diff</span></div>
         <div class="link"></div>
 
+        <div class="node">gateAgentsByPaths<span class="n-sub">who wakes · none ⇒ neutral check, no review</span></div>
+        <div class="link"></div>
+
         <div class="node terminal">START<span class="n-sub">runReviewPipeline</span></div>
 
         <div class="fan out"><i></i><i></i><i></i></div>
@@ -674,11 +434,11 @@ html { scroll-behavior: smooth; }
         <div class="node trust">validate<span class="n-sub">the trust boundary · 7 deterministic steps</span></div>
         <div class="link"></div>
 
-        <div class="node">renderCheckRun<span class="n-sub">pure · no I/O</span></div>
+        <div class="node">render<span class="n-sub">pure · no I/O</span></div>
         <div class="link long"></div>
 
         <div class="split">
-          <div class="node">check run<span class="n-sub">+ inline annotations</span></div>
+          <div class="node">review comments<span class="n-sub">then a check run</span></div>
           <div class="node">job summary<span class="n-sub">fork fallback · 403/404</span></div>
         </div>
 
@@ -707,19 +467,29 @@ html { scroll-behavior: smooth; }
         </p>
         <p>
           <code>runAction</code> then resolves configuration in a deliberate
-          order. Agent selection happens <em>first</em>, before a single client
-          exists, because an unrecognised agent name is a typo in a workflow
-          file and must cost nothing to discover.
+          order. Agents are read from the repository <em>first</em>, before the
+          model client exists, because a missing config or a typo'd agent name
+          must cost nothing to discover.
         </p>
       </div>
 
       <figure class="code">
-        <div class="code-head"><span class="p">apps/action/src/index.ts</span><span class="ln">line 187</span></div>
-<pre><span class="c-com">// Resolved before any client is built: a missing config or an</span>
-<span class="c-com">// unrecognised agent name must cost nothing to find.</span>
-<span class="c-key">const</span> configured = <span class="c-key">await</span> loadAgentDefinitions({ readFile, path });
+        <div class="code-head"><span class="p">apps/action/src/index.ts</span><span class="ln">line 267</span></div>
+<pre><span class="c-com">// Resolved before the model client is built, so a bad config fails the</span>
+<span class="c-com">// step rather than producing a review that looks clean.</span>
+<span class="c-key">const</span> configured = <span class="c-key">await</span> loadAgentDefinitions({
+  readFile: readAtCommit(client, target, baseSha),
+  path: getInput(env, <span class="c-str">"agent-config"</span>) || DEFAULT_AGENT_CONFIG_PATH,
+});
 <span class="c-key">const</span> agents = resolveAgentDefinitions(getInput(env, <span class="c-str">"agents"</span>), configured);</pre>
       </figure>
+
+      <div class="prose">
+        <p>
+          The config is read at the <strong>base</strong> commit, so a pull
+          request cannot rewrite the agents that review it.
+        </p>
+      </div>
 
       <div class="note">
         <span class="eyebrow">Why it throws</span>
@@ -727,8 +497,8 @@ html { scroll-behavior: smooth; }
         <code>agents: secuirty</code>, would report nothing —
         indistinguishable from a clean bill of health. So
         <code>loadAgentDefinitions</code> refuses a missing config instead of
-        defaulting, and <code>resolveAgentDefinitions</code> rejects unknown names
-        instead of ignoring them.
+        defaulting, and <code>resolveAgentDefinitions</code> rejects unknown
+        names instead of ignoring them.
       </div>
 
       <div class="table-wrap">
@@ -744,11 +514,56 @@ html { scroll-behavior: smooth; }
           </tbody>
         </table>
       </div>
-      <div class="prose" style="margin-top:1.1rem">
+      <div class="prose">
         <p>
           Tracing starts before the prompt fetch, so the fetch's own spans are
-          captured; prompts resolve before anything that consumes them is
-          built.
+          captured; prompts resolve before anything that consumes them is built.
+        </p>
+      </div>
+
+      <h3>1b · What an <code>agents:</code> entry may be</h3>
+      <div class="paths">
+        <span class="chip">packages/ai/src/agents/<b>config.ts</b></span>
+        <span class="chip">packages/ai/src/agents/<b>specialists/</b></span>
+      </div>
+      <div class="prose">
+        <p>
+          Three spellings, one resolved <code>AgentDefinition</code>. Nothing
+          runs by default: the action reviews with exactly what this file lists,
+          in the order it lists them.
+        </p>
+      </div>
+
+      <figure class="code">
+        <div class="code-head"><span class="p">.github/pr-review-agents.yml</span><span class="ln">the three forms</span></div>
+<pre>agents:
+  - security                         <span class="c-com"># a built-in, as shipped</span>
+
+  - agent: docs-drift                <span class="c-com"># a built-in, path-gated</span>
+    paths: [<span class="c-str">"docs/**"</span>, <span class="c-str">"README.md"</span>, <span class="c-str">"!**/*.test.ts"</span>]
+
+  - category: correctness            <span class="c-com"># written out in full</span>
+    role: Correctness reviewer
+    focus: |
+      Review the pull request ONLY for correctness problems: ...</pre>
+      </figure>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Field</th><th>Required</th><th>Meaning</th></tr></thead>
+          <tbody>
+            <tr><td><code>category</code></td><td><span class="badge stop">Yes</span></td><td>The agent's name <em>and</em> the one finding category it may report. <code>synthesis</code> and <code>all</code> are reserved</td></tr>
+            <tr><td><code>role</code></td><td><span class="badge stop">Yes</span></td><td>How the agent is addressed in its system prompt</td></tr>
+            <tr><td><code>focus</code></td><td><span class="badge stop">Yes</span></td><td>What it reviews for, and what is out of scope</td></tr>
+            <tr><td><code>contextGuidance</code></td><td><span class="badge ok">No</span></td><td>Makes the agent retrieve repository context before it may make a claim</td></tr>
+            <tr><td><code>paths</code></td><td><span class="badge ok">No</span></td><td>Globs deciding whether the agent runs at all. Never reaches a prompt</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="prose">
+        <p>
+          The schema is <code>.strict()</code>: a misspelled optional key is an
+          error, not a silently dropped field.
         </p>
       </div>
     </section>
@@ -786,11 +601,11 @@ html { scroll-behavior: smooth; }
           </tbody>
         </table>
       </div>
-      <div class="prose" style="margin-top:1.1rem">
+      <div class="prose">
         <p>
-          Most workflow triggers are not reviews, so ignoring one quietly has
-          to be a success. A payload that <em>should</em> have parsed and
-          didn't is a bug worth failing over.
+          Most workflow triggers are not reviews, so ignoring one quietly has to
+          be a success. A payload that <em>should</em> have parsed and didn't is
+          a bug worth failing over.
         </p>
       </div>
     </section>
@@ -799,10 +614,11 @@ html { scroll-behavior: smooth; }
     <section class="stage" id="s3">
       <div class="stage-head">
         <span class="stage-num">03</span>
-        <h2>Load the pull request</h2>
+        <h2>Load the pull request, then gate the agents</h2>
       </div>
       <div class="paths">
         <span class="chip">packages/reviewer/src/<b>review-pull-request.ts</b></span>
+        <span class="chip">packages/ai/src/agents/<b>path-filter.ts</b></span>
       </div>
       <div class="prose">
         <p>
@@ -812,12 +628,13 @@ html { scroll-behavior: smooth; }
       </div>
 
       <figure class="code">
-        <div class="code-head"><span class="p">packages/reviewer/src/review-pull-request.ts</span><span class="ln">line 205</span></div>
+        <div class="code-head"><span class="p">packages/reviewer/src/review-pull-request.ts</span><span class="ln">line 140</span></div>
 <pre><span class="c-key">const</span> [pullRequest, changedFiles, diff] = <span class="c-key">await</span> Promise.all([
   client.getPullRequest(ref),
   client.listChangedFiles(ref),
   client.getDiff(ref),
-]);</pre>
+]);
+<span class="c-key">const</span> { active, skipped } = gateAgentsByPaths(agents, filenames);</pre>
       </figure>
 
       <div class="note">
@@ -826,6 +643,29 @@ html { scroll-behavior: smooth; }
         <code>validate</code>. Because both read the same list, validation can
         never check findings against a different set of files than the one the
         agents actually reviewed.
+      </div>
+
+      <h3>3b · <code>paths</code> is a gate, not a filter</h3>
+      <div class="prose">
+        <p>
+          An agent that declares no <code>paths</code> runs on every pull
+          request. An agent that declares some runs only when a changed file
+          matches — and once it wakes it reviews the <strong>whole</strong> pull
+          request, not just the files that matched. Patterns are POSIX only, and
+          a leading <code>!</code> negates.
+        </p>
+        <p>
+          Skipped agents are named on the check run alongside the globs they are
+          waiting on, so a quiet agent is always visible rather than missing.
+        </p>
+      </div>
+      <div class="note">
+        <span class="eyebrow">When nothing matches</span>
+        A pull request no agent matched is never reviewed — and never green.
+        <code>renderNoAgentMatched</code> publishes a <strong>neutral</strong>
+        check listing every skipped agent and what it was waiting on, and the
+        pipeline is never entered. A green check would read as a clean bill of
+        health nobody gave.
       </div>
     </section>
 
@@ -840,9 +680,8 @@ html { scroll-behavior: smooth; }
       </div>
       <div class="prose">
         <p>
-          Every selected agent is started together, so they run concurrently.
-          The three steps after them run in sequence once every agent has
-          settled.
+          Every active agent is started together, so they run concurrently. The
+          three steps after them run in sequence once every agent has settled.
         </p>
       </div>
 
@@ -864,48 +703,54 @@ html { scroll-behavior: smooth; }
       </div>
       <div class="prose">
         <p>
-          Every agent shares one runtime. A <code>AgentDefinition</code> — the
-          three fields a config entry carries — supplies the role, the focus
-          text, and the category. The loop, the six tools, the injection
-          hardening, and the output contract are identical by construction, so
-          a new agent costs a YAML entry and no code.
+          Every agent shares one runtime. An <code>AgentDefinition</code>
+          supplies the role, the focus text, and the category; the loop, the six
+          tools, the injection hardening, and the output contract are identical
+          by construction, so a new agent costs a YAML entry and no code.
+        </p>
+        <p>
+          The loop itself is the AI SDK's. The runtime's job is the
+          <em>boundary</em> around it: cap the turns, notice when the cap was
+          hit, and refuse anything that is not the agent's own category.
         </p>
       </div>
 
       <figure class="code">
-        <div class="code-head"><span class="p">packages/ai/src/agents/runtime.ts</span><span class="ln">line 315</span></div>
-<pre><span class="c-key">for</span> (<span class="c-key">let</span> turn = <span class="c-num">1</span>; ; turn += <span class="c-num">1</span>) {
-  <span class="c-key">const</span> response = <span class="c-key">await</span> callModel();
-  <span class="c-key">const</span> toolUses = toolUseBlocks(response.content);
-  <span class="c-key">if</span> (toolUses.length === <span class="c-num">0</span>) {
-    finalText = textOf(response.content);   <span class="c-com">// this is the answer</span>
-    <span class="c-key">break</span>;
-  }
-  <span class="c-key">if</span> (turn &gt;= maxTurns) {
-    <span class="c-key">throw</span> turnCapExceeded;
-  }
-  messages.push({ role: <span class="c-str">"assistant"</span>, content: response.content });
-  messages.push({ role: <span class="c-str">"user"</span>, content: <span class="c-key">await</span> answerToolUses(toolUses) });
+        <div class="code-head"><span class="p">packages/ai/src/agents/runtime.ts</span><span class="ln">line 155</span></div>
+<pre><span class="c-key">const</span> result = <span class="c-key">await</span> generateText({
+  model: deps.model,
+  instructions: { role: <span class="c-str">"system"</span>, content: systemPrompt, providerOptions },
+  messages: [{ role: <span class="c-str">"user"</span>, content: buildOpeningMessage(context) }],
+  tools: createReviewTools(deps.github, scope),
+  stopWhen: isStepCount(maxTurns),        <span class="c-com">// 12 by default</span>
+  onStepEnd: (step) =&gt; { usage = addTokenUsage(usage, step.usage); },
+});
+
+<span class="c-com">// The SDK stops silently at the cap, still holding tool calls.</span>
+<span class="c-key">if</span> (result.finishReason === <span class="c-str">"tool-calls"</span>) {
+  <span class="c-key">throw</span> <span class="c-key">new</span> AgentRunError(<span class="c-str">"... exceeded the turn cap"</span>);
 }</pre>
       </figure>
 
-      <div class="prose" style="margin-top:1.2rem">
+      <div class="prose">
         <p>
-          The cap bounds <strong>model calls</strong>, not tool round trips. A
-          response with no tool uses always ends the run on the call it arrived
-          on, so the cap can never burn a call the agent is unable to answer.
+          Hitting the cap is a <strong>failure</strong>, not a truncated answer:
+          an agent still mid-tool-call has not reported, and its silence must
+          not be read as "found nothing". The token counter lives outside the
+          <code>try</code>, so an agent that dies mid-loop still reports what it
+          spent.
         </p>
         <p>
           After parsing, the runtime <em>filters</em> findings down to the
           agent's own category. Cross-category leaks are dropped, never
-          re-stamped — re-stamping would fabricate a claim the model never
-          made, while dropping keeps category provenance deterministic.
+          re-stamped — re-stamping would fabricate a claim the model never made,
+          while dropping keeps category provenance deterministic.
         </p>
       </div>
 
       <h3>The six tools</h3>
       <div class="paths">
-        <span class="chip">packages/ai/src/<b>tools.ts</b></span>
+        <span class="chip">packages/ai/src/agents/<b>tools.ts</b></span>
       </div>
       <div class="prose">
         <p>
@@ -927,13 +772,12 @@ html { scroll-behavior: smooth; }
           </tbody>
         </table>
       </div>
-      <div class="prose" style="margin-top:1.1rem">
+      <div class="prose">
         <p>
           Every input is Zod-validated before it touches the GitHub client, and
-          <code>dispatchReviewTool</code> never throws: failures come back as
-          <code>{ ok: false }</code> and reach the model as an error
-          <code>tool_result</code>, so a bad tool call costs a turn rather than
-          the run.
+          a tool never throws: failures come back as <code>{ ok: false }</code>
+          and reach the model as an error <code>tool_result</code>, so a bad
+          tool call costs a turn rather than the run.
         </p>
       </div>
 
@@ -942,17 +786,17 @@ html { scroll-behavior: smooth; }
         <p>
           <code>Promise.all</code> resolves once every agent has settled, and
           preserves the agent's <strong>input position</strong>, never
-          completion order, so the result never depends on which agent
-          happened to settle first.
+          completion order, so the result never depends on which agent happened
+          to settle first.
         </p>
       </div>
       <figure class="code">
         <div class="code-head"><span class="p">packages/reviewer/src/review-pipeline.ts</span><span class="ln">join</span></div>
 <pre><span class="c-key">if</span> (agentFailures.length === outcomes.length) {
-  <span class="c-key">throw</span> <span class="c-key">new</span> Error(<span class="c-str">`every review agent failed — ${details}`</span>);
+  <span class="c-key">throw</span> <span class="c-key">new</span> Error(<span class="c-str">"every review agent failed"</span>);
 }</pre>
       </figure>
-      <div class="prose" style="margin-top:1.1rem">
+      <div class="prose">
         <p>One failed agent does not fail the review. All of them does.</p>
       </div>
 
@@ -978,10 +822,10 @@ html { scroll-behavior: smooth; }
           </tbody>
         </table>
       </div>
-      <div class="prose" style="margin-top:1.1rem">
+      <div class="prose">
         <p>
-          A synthesis failure never fails the review. It is safe to fall back
-          to the raw candidates precisely because the synthesiser's output was
+          A synthesis failure never fails the review. It is safe to fall back to
+          the raw candidates precisely because the synthesiser's output was
           never trusted either — both paths flow through the same chain next.
         </p>
       </div>
@@ -1029,9 +873,15 @@ html { scroll-behavior: smooth; }
       </div>
       <div class="paths">
         <span class="chip">packages/reviewer/src/<b>render-check-run.ts</b></span>
+        <span class="chip">packages/reviewer/src/<b>render-review.ts</b></span>
+        <span class="chip">packages/reviewer/src/<b>finding-format.ts</b></span>
       </div>
       <div class="prose">
-        <p>Pure — the caller owns the actual GitHub API call.</p>
+        <p>
+          Pure — the caller owns the actual GitHub API call. One shared
+          formatter, so a finding reads identically on the check run and in a
+          review comment.
+        </p>
       </div>
       <div class="table-wrap">
         <table>
@@ -1040,10 +890,11 @@ html { scroll-behavior: smooth; }
             <tr><td>No findings, no failures</td><td><span class="badge ok">success</span></td><td>"No issues found"</td></tr>
             <tr><td>Any findings</td><td><span class="badge warn">neutral</span></td><td>Advisory — the app never blocks or approves a merge</td></tr>
             <tr><td>An agent failed, even with zero findings</td><td><span class="badge warn">neutral</span></td><td>An incomplete review must not publish a clean bill of health</td></tr>
+            <tr><td>No agent's paths matched</td><td><span class="badge warn">neutral</span></td><td>Nothing was reviewed; the summary names each skipped agent</td></tr>
           </tbody>
         </table>
       </div>
-      <div class="prose" style="margin-top:1.1rem">
+      <div class="prose">
         <p>
           Line-anchored findings also become inline annotations. Failed agents
           appear in the summary <em>by name only</em> — the error detail was
@@ -1070,10 +921,9 @@ html { scroll-behavior: smooth; }
           already left. Annotations are the fallback surface, not a duplicate.
         </p>
         <p>
-          Then the check run. On a <strong>403 or 404</strong>, write the
-          same rendered review to the workflow job summary and exit cleanly —
-          that is the fork case, where GitHub hands the workflow a read-only
-          token.
+          Then the check run. On a <strong>403 or 404</strong>, write the same
+          rendered review to the workflow job summary and exit cleanly — that is
+          the fork case, where GitHub hands the workflow a read-only token.
         </p>
       </div>
       <div class="table-wrap">
@@ -1089,15 +939,14 @@ html { scroll-behavior: smooth; }
       </div>
 
       <figure class="code">
-        <div class="code-head"><span class="p">apps/action/src/summary.ts</span><span class="ln">line 45 · isPermissionError</span></div>
-<pre><span class="c-com">// Status alone, deliberately. Matching on message text would couple</span>
-<span class="c-com">// the fork fallback to GitHub's wording, which is not part of any</span>
-<span class="c-com">// API contract and has been reworded before.</span>
+        <div class="code-head"><span class="p">packages/github/src/errors.ts</span><span class="ln">line 19 · isPermissionError</span></div>
+<pre><span class="c-com">// Status alone: GitHub's message wording is not part of any API contract.</span>
+<span class="c-com">// 404 too, not just 403 — GitHub hides a private repo from a read-only token.</span>
 <span class="c-key">const</span> status = httpStatus(error);
 <span class="c-key">return</span> status === <span class="c-num">403</span> || status === <span class="c-num">404</span>;</pre>
       </figure>
 
-      <div class="prose" style="margin-top:1.2rem">
+      <div class="prose">
         <p>
           Everything else propagates and fails the step: <code>401</code> is a
           bad token, <code>429</code> is rate limiting, <code>5xx</code> is an
@@ -1105,8 +954,8 @@ html { scroll-behavior: smooth; }
           of those may masquerade as a delivered review.
         </p>
         <p>
-          The cost of being wrong is asymmetric in both directions, which is
-          why the rule is this narrow. Too permissive, and a real GitHub outage
+          The cost of being wrong is asymmetric in both directions, which is why
+          the rule is this narrow. Too permissive, and a real GitHub outage
           renders as a clean review nobody investigates. Too strict, and every
           fork pull request fails CI.
         </p>
@@ -1123,11 +972,13 @@ html { scroll-behavior: smooth; }
         <table>
           <thead><tr><th>Event</th><th>Result</th></tr></thead>
           <tbody>
-            <tr><td>Unknown agent name</td><td><span class="badge stop">Fails</span> before any model call</td></tr>
+            <tr><td>Missing, malformed, or unknown-agent config</td><td><span class="badge stop">Fails</span> before any model call</td></tr>
             <tr><td>Missing API key or token</td><td><span class="badge stop">Fails</span></td></tr>
             <tr><td>Malformed <code>pull_request</code> payload</td><td><span class="badge stop">Fails</span></td></tr>
             <tr><td><strong>Every</strong> agent fails</td><td><span class="badge stop">Fails</span> — re-runnable from the Actions UI</td></tr>
+            <tr><td>An agent hits the 12-turn cap</td><td><span class="badge stop">Fails that agent</span> — silence is not "found nothing"</td></tr>
             <tr><td>Unsupported event or ignored action</td><td><span class="badge ok">Clean no-op</span></td></tr>
+            <tr><td>No agent's <code>paths</code> matched</td><td><span class="badge warn">Neutral check</span> — not reviewed, and not green</td></tr>
             <tr><td>One or two agents fail</td><td><span class="badge warn">Continues</span> — names listed in the check run</td></tr>
             <tr><td>Synthesis fails</td><td><span class="badge warn">Continues</span> — raw candidates published</td></tr>
             <tr><td>A tool call fails</td><td><span class="badge warn">Continues</span> — reported to the model</td></tr>
@@ -1155,12 +1006,22 @@ html { scroll-behavior: smooth; }
         </p>
       </div>
       <div class="log mono">
+review.agents_selected → review.model_selected<br>
 review.started<br>
 &nbsp;&nbsp;→ review.loaded<br>
-&nbsp;&nbsp;&nbsp;&nbsp;→ agent.started ×N&nbsp;&nbsp;→ agent.completed <span style="color:var(--code-com)">/</span> agent.failed ×N<br>
-&nbsp;&nbsp;&nbsp;&nbsp;→ synthesis.started → synthesis.completed <span style="color:var(--code-com)">/</span> .failed <span style="color:var(--code-com)">/</span> .skipped<br>
+&nbsp;&nbsp;&nbsp;&nbsp;→ agent.skipped ×N <span class="dim">/</span> review.no_agents_matched <span class="dim">(then stop)</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;→ agent.started ×N&nbsp;&nbsp;→ agent.completed <span class="dim">/</span> agent.failed ×N<br>
+&nbsp;&nbsp;&nbsp;&nbsp;→ synthesis.started → synthesis.completed <span class="dim">/</span> .failed <span class="dim">/</span> .skipped<br>
 &nbsp;&nbsp;&nbsp;&nbsp;→ findings.validated<br>
-&nbsp;&nbsp;→ review.published <span style="color:var(--code-com)">/</span> review.published.degraded
+&nbsp;&nbsp;→ review.comments.published <span class="dim">/</span> .degraded <span class="dim">/</span> .list_failed<br>
+&nbsp;&nbsp;→ review.published <span class="dim">/</span> review.published.degraded <span class="dim">/</span> review.failed
+      </div>
+      <div class="prose">
+        <p>
+          <code>agent.completed</code> and <code>agent.failed</code> both carry
+          four token counters, not two: where a provider caches, the three input
+          counters bill differently.
+        </p>
       </div>
     </section>
 
@@ -1178,19 +1039,26 @@ review.started<br>
             <tr><td><code>apps/action/src/event.ts</code></td><td>Actions event parsing, the ignore-quietly rule</td></tr>
             <tr><td><code>apps/action/src/summary.ts</code></td><td>Fork fallback to the job summary</td></tr>
             <tr><td><code>apps/action/src/langfuse.ts</code></td><td>Span export for one run</td></tr>
-            <tr><td><code>packages/reviewer/src/review-pull-request.ts</code></td><td>One review, end to end</td></tr>
+            <tr><td><code>packages/reviewer/src/review-pull-request.ts</code></td><td>One review, end to end; the path gate</td></tr>
             <tr><td><code>packages/reviewer/src/review-pipeline.ts</code></td><td>Agent fan-out, join, synthesise, validate</td></tr>
             <tr><td><code>packages/reviewer/src/validate-findings.ts</code></td><td>The trust boundary</td></tr>
+            <tr><td><code>packages/reviewer/src/diff-lines.ts</code></td><td>Which lines a finding may anchor to</td></tr>
             <tr><td><code>packages/reviewer/src/render-check-run.ts</code></td><td>Findings → check run payload</td></tr>
+            <tr><td><code>packages/reviewer/src/render-review.ts</code></td><td>Findings → review body + inline comments</td></tr>
+            <tr><td><code>packages/reviewer/src/finding-format.ts</code></td><td>How a finding reads on every surface</td></tr>
             <tr><td><code>packages/reviewer/src/publish-review.ts</code></td><td>Comments then check run; which surface carries the findings</td></tr>
             <tr><td><code>.github/pr-review-agents.yml</code></td><td>The agents this repository reviews with</td></tr>
             <tr><td><code>packages/ai/src/agents/config.ts</code></td><td>Reading and validating a repository's agents</td></tr>
             <tr><td><code>packages/ai/src/agents/definition.ts</code></td><td>What an agent is, and its shared system prompt</td></tr>
+            <tr><td><code>packages/ai/src/agents/specialists/</code></td><td>The built-ins a config may name: <code>security</code>, <code>docs-drift</code></td></tr>
+            <tr><td><code>packages/ai/src/agents/path-filter.ts</code></td><td>The <code>paths</code> globs, and which agents they wake</td></tr>
             <tr><td><code>packages/ai/src/agents/agent-set.ts</code></td><td>Narrowing an agent set, building its agents</td></tr>
             <tr><td><code>packages/ai/src/agents/synthesiser.ts</code></td><td>The single refining model call</td></tr>
-            <tr><td><code>packages/ai/src/agents/runtime.ts</code></td><td>The shared agentic loop</td></tr>
+            <tr><td><code>packages/ai/src/agents/runtime.ts</code></td><td>The shared agentic loop and its turn cap</td></tr>
             <tr><td><code>packages/ai/src/agents/tools.ts</code></td><td>The six read-only tools</td></tr>
+            <tr><td><code>packages/ai/src/usage.ts</code></td><td>Token accounting for every model call</td></tr>
             <tr><td><code>packages/ai/src/prompts.ts</code></td><td>Managed prompts and their fallback</td></tr>
+            <tr><td><code>packages/github/src/errors.ts</code></td><td>What a 403/404 means for a write</td></tr>
             <tr><td><code>packages/schemas/src/review-finding.ts</code></td><td>The finding contract</td></tr>
           </tbody>
         </table>
