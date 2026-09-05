@@ -32,7 +32,7 @@ export interface ModelAccess {
 }
 
 /** The actionable message shown when the provider's API key is absent. */
-export function missingApiKeyMessage(provider: ModelProvider): string {
+function missingApiKeyMessage(provider: ModelProvider): string {
   const keyEnv = apiKeyEnvFor(provider);
   return [
     `${keyEnv} is not set, so the agent evaluations cannot run against ${provider}.`,

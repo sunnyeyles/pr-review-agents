@@ -116,16 +116,16 @@ describe("cycles via conditional edges", () => {
  * race; the result must be "high" whichever one wins.
  */
 
-export type Severity = "none" | "low" | "medium" | "high";
+type Severity = "none" | "low" | "medium" | "high";
 
 /** Severity ordering, worst last. Useful for comparing two severities. */
-export const SEVERITY_RANK: readonly Severity[] = ["none", "low", "medium", "high"];
+const SEVERITY_RANK: readonly Severity[] = ["none", "low", "medium", "high"];
 
 /**
  * LangGraph folds writes in an order you do not control, so the merge
  * must be order-independent. Max-by-rank is commutative; last-wins is not.
  */
-export const worstSeverityReducer = (left: Severity, right: Severity): Severity =>
+const worstSeverityReducer = (left: Severity, right: Severity): Severity =>
   SEVERITY_RANK.indexOf(right) > SEVERITY_RANK.indexOf(left) ? right : left;
 
 const ScanState = Annotation.Root({

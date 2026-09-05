@@ -1,13 +1,13 @@
 /**
  * One way in, one client out: createTokenClient wraps the workflow token
- * and returns a GithubInstallationClient. OctokitLike is public only
- * because GithubTokenConfig lets a caller inject its own Octokit.
+ * and returns a GithubInstallationClient.
+ *
+ * A name reaches this barrel when something outside the package imports
+ * it; everything else stays reachable by its own module path.
  */
-export type { OctokitLike } from "./app.js";
 export { httpStatus, isPermissionError } from "./errors.js";
 export { createTokenClient, type GithubTokenConfig } from "./token.js";
 export {
-  CHECK_RUN_NAME,
   type AnnotationLevel,
   type ChangedFile,
   type CheckRun,
@@ -15,7 +15,6 @@ export {
   type CheckRunConclusion,
   type CheckRunOutput,
   type CodeSearchMatch,
-  type CodeSearchRequest,
   type CreateCheckRunInput,
   type CreateReviewInput,
   type ExistingReviewComment,

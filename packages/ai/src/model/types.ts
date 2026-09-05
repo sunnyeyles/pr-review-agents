@@ -17,7 +17,7 @@ export interface ModelToolUseBlock {
 }
 
 /** Provider state replayed verbatim next turn, e.g. Anthropic thinking. */
-export interface ModelProviderBlock {
+interface ModelProviderBlock {
   type: "provider";
   provider: string;
   block: unknown;

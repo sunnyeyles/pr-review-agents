@@ -30,7 +30,7 @@ const pullRequestEventSchema = z.object({
 });
 
 /** Either a pull request to review, or a reason this event is not one. */
-export type EventInspection =
+type EventInspection =
   | { review: true; target: ReviewTarget; isFork: boolean; baseSha: string }
   | { review: false; reason: string };
 

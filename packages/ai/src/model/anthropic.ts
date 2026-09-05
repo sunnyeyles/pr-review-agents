@@ -23,7 +23,7 @@ export interface AnthropicSdkLike {
   };
 }
 
-export interface AnthropicClientConfig {
+interface AnthropicClientConfig {
   apiKey: string;
   /** Points the SDK at a gateway or proxy speaking the Anthropic API. */
   baseUrl?: string | undefined;

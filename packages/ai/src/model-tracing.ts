@@ -43,7 +43,7 @@ export interface GenerationParent {
   ): LangfuseGeneration;
 }
 
-export interface ModelCallTrace {
+interface ModelCallTrace {
   provider: string;
   model: string;
   /** Call-shape counts. Never message content — see the logging rules. */
