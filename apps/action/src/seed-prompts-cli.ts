@@ -24,9 +24,9 @@ import {
 import { readOptional } from "./read-optional.js";
 
 /** Environment variables the seeder authenticates with. */
-export const PUBLIC_KEY_ENV = "LANGFUSE_PUBLIC_KEY";
-export const SECRET_KEY_ENV = "LANGFUSE_SECRET_KEY";
-export const BASE_URL_ENV = "LANGFUSE_BASE_URL";
+const PUBLIC_KEY_ENV = "LANGFUSE_PUBLIC_KEY";
+const SECRET_KEY_ENV = "LANGFUSE_SECRET_KEY";
+const BASE_URL_ENV = "LANGFUSE_BASE_URL";
 
 /** Exit code for a usage or credentials problem, before anything ran. */
 export const USAGE_EXIT_CODE = 2;
@@ -49,7 +49,7 @@ export const MISSING_CREDENTIALS_MESSAGE = [
 ].join("\n");
 
 /** What one invocation was asked to do. */
-export interface SeedArgs {
+interface SeedArgs {
   label: string;
   dryRun: boolean;
   /** Agent configuration to seed prompts for. */
@@ -123,7 +123,7 @@ export function requireLangfuseConfig(
 }
 
 /** Everything the command reads from outside itself. */
-export interface SeedCliEnvironment {
+interface SeedCliEnvironment {
   env: Record<string, string | undefined>;
   createWriter: (config: LangfusePromptClientConfig) => LangfusePromptWriter;
   /** Reads the agent configuration; undefined when the file does not exist. */

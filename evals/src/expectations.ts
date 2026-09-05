@@ -12,7 +12,7 @@ import type { FixtureReview } from "./run-fixture-review.js";
  * A region of one changed file, from `startMarker` to `endMarker` or the
  * end of the file. A finding with no line counts as pointing at the file.
  */
-export interface FindingAnchor {
+interface FindingAnchor {
   file: string;
   startMarker: string;
   endMarker?: string;
@@ -30,7 +30,7 @@ export type FixtureExpectation =
   | { kind: "agents-completed"; description: string };
 
 /** The judgement of one expectation against one fixture review. */
-export interface ExpectationOutcome {
+interface ExpectationOutcome {
   passed: boolean;
   /** Why it passed or failed, including the findings that were produced. */
   detail: string;
@@ -96,7 +96,7 @@ function inAnchor(finding: ReviewFinding, anchor: ResolvedAnchor): boolean {
 }
 
 /** One finding rendered for a failure message. */
-export function describeFinding(finding: ReviewFinding): string {
+function describeFinding(finding: ReviewFinding): string {
   const at = finding.line === undefined ? finding.file : `${finding.file}:${finding.line}`;
   return (
     `- [${finding.category}/${finding.severity}/confidence ${finding.confidence}] ` +

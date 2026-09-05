@@ -38,7 +38,7 @@ export class AgentRunError extends Error {
 }
 
 /** Model-call round trips before the agent is declared failed. */
-export const DEFAULT_MAX_TURNS = 12;
+const DEFAULT_MAX_TURNS = 12;
 
 /** Output budget per model call (response text + tool requests). */
 const MAX_OUTPUT_TOKENS = 16_000;
@@ -60,7 +60,7 @@ function truncateDiff(diff: string): string {
 }
 
 /** Builds the opening user message (title + description + files + diff). */
-export function buildOpeningMessage(context: ReviewContext): string {
+function buildOpeningMessage(context: ReviewContext): string {
   const { pullRequest, changedFiles, diff } = context;
   const files = changedFiles
     .slice(0, MAX_LISTED_FILES)

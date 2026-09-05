@@ -111,7 +111,7 @@ export function parseAgentConfig(source: string, path: string): AgentDefinition[
 /** Reads a file, or resolves undefined when it does not exist. */
 export type ReadOptionalFile = (path: string) => Promise<string | undefined>;
 
-export interface LoadAgentDefinitionsOptions {
+interface LoadAgentDefinitionsOptions {
   readFile: ReadOptionalFile;
   /** Defaults to DEFAULT_AGENT_CONFIG_PATH. */
   path?: string | undefined;

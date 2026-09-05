@@ -47,7 +47,7 @@ export async function appendJobSummary(
   return true;
 }
 
-export interface FallbackPublisherDeps {
+interface FallbackPublisherDeps {
   /** The check-run publisher to try first (createCheckRunPublisher). */
   publishCheckRun: PublishReview;
   /** Value of GITHUB_STEP_SUMMARY; absent outside a real runner. */

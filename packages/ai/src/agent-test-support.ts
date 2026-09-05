@@ -124,7 +124,7 @@ export function toolUseBlock(
 }
 
 /** Cache counters default to zero, as an uncached response reports them. */
-export interface ScriptedUsage {
+interface ScriptedUsage {
   inputTokens: number;
   outputTokens: number;
   cacheCreationInputTokens?: number;

@@ -81,7 +81,7 @@ export function buildSynthesisMessage(
   ].join("\n");
 }
 
-export interface SynthesiserDeps {
+interface SynthesiserDeps {
   model: ModelClient;
   /** Model id from configuration; never hard-coded. */
   modelId: string;
@@ -92,7 +92,7 @@ export interface SynthesiserDeps {
 }
 
 /** One synthesis run's refined findings and token usage; skipped runs report zero. */
-export interface SynthesisResult {
+interface SynthesisResult {
   /** Refined findings — still UNTRUSTED candidate data. */
   findings: ReviewFinding[];
   usage: TokenUsage;

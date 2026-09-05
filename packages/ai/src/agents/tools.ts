@@ -20,7 +20,7 @@ export interface ReviewToolScope {
  * The tool input_schema sent to the model. Derived from the Zod schema
  * that validates the same input, so the two cannot drift apart.
  */
-export interface ReviewToolInputSchema {
+interface ReviewToolInputSchema {
   type: "object";
   properties: Record<string, unknown>;
   required?: string[];
@@ -40,7 +40,7 @@ function toolInputSchema(schema: z.ZodType): ReviewToolInputSchema {
   return jsonSchema as ReviewToolInputSchema;
 }
 
-export interface ReviewTool {
+interface ReviewTool {
   name: string;
   description: string;
   inputSchema: ReviewToolInputSchema;
@@ -52,12 +52,12 @@ export interface ReviewTool {
   ): Promise<string>;
 }
 
-export type ToolDispatchResult =
+type ToolDispatchResult =
   | { ok: true; content: string }
   | { ok: false; error: string };
 
 /** Tool results larger than this are truncated to bound token usage. */
-export const MAX_TOOL_RESULT_CHARS = 50_000;
+const MAX_TOOL_RESULT_CHARS = 50_000;
 
 const TRUNCATION_MARKER = "\n[... truncated: result exceeded the size limit]";
 
