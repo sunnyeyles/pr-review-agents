@@ -3,9 +3,9 @@
 # If a change breaks the reviewer, it shows up on the pull request that made it.
 #
 # Requires the selected provider's API key as a repository secret — set
-# vars.MODEL_PROVIDER to pick one, defaulting to Anthropic. Without a key the
-# job is skipped rather than failed, so forks and unconfigured clones stay
-# green.
+# vars.MODEL_PROVIDER to pick one, defaulting to Anthropic. With no key at all
+# the job is skipped rather than failed, so forks and unconfigured clones stay
+# green; the action itself decides which key the provider needs.
 
 name: Self review
 
@@ -30,17 +30,9 @@ jobs:
       - name: Check for a model provider key
         id: key
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          MODEL_PROVIDER: ${{ vars.MODEL_PROVIDER }}
-        # Normalised as the action reads it; unknown names run so it fails loudly.
+          ANY_KEY: ${{ secrets.ANTHROPIC_API_KEY }}${{ secrets.OPENAI_API_KEY }}
         run: |
-          case "$(printf '%s' "$MODEL_PROVIDER" | tr '[:upper:]' '[:lower:]' | xargs)" in
-            "" | anthropic) API_KEY="$ANTHROPIC_API_KEY" ;;
-            openai) API_KEY="$OPENAI_API_KEY" ;;
-            *) API_KEY="unknown provider" ;;
-          esac
-          if [ -n "$API_KEY" ]; then
+          if [ -n "$ANY_KEY" ]; then
             echo "present=true" >> "$GITHUB_OUTPUT"
           else
             echo "::notice::No model provider API key is set — skipping the self review"
