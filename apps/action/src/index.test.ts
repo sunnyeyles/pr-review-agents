@@ -451,6 +451,31 @@ describe("runAction", () => {
     ]);
     expect(tokenConfigs).toEqual([{ token: "ghs-test-token" }]);
     expect(events(entries)).toContain("review.started");
+    expect(entries).toContainEqual(
+      expect.objectContaining({ event: "review.started", isFork: false }),
+    );
+  });
+
+  it("records that the head branch came from a fork", async () => {
+    const { environment, entries } = harness(
+      reviewEnv,
+      pullRequestEvent({
+        pull_request: {
+          number: 42,
+          base: { sha: baseSha },
+          head: {
+            sha: headSha,
+            repo: { full_name: "contributor/example-service" },
+          },
+        },
+      }),
+    );
+
+    await runAction(environment);
+
+    expect(entries).toContainEqual(
+      expect.objectContaining({ event: "review.started", isFork: true }),
+    );
   });
 
   it.each([

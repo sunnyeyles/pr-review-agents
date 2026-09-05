@@ -337,7 +337,6 @@ those may masquerade as a delivered review.
 | --- | --- |
 | `apps/action/src/index.ts` | Inputs, client construction, wiring |
 | `apps/action/src/event.ts` | Actions event parsing, ignore-quietly rule |
-| `apps/action/src/handler.ts` | Event → review handoff |
 | `apps/action/src/summary.ts` | Fork fallback to the job summary |
 | `apps/action/src/langfuse.ts` | Span export for one run |
 | `packages/reviewer/src/review-pull-request.ts` | One review, end to end |
