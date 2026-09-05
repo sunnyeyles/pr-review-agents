@@ -866,7 +866,7 @@ html { scroll-behavior: smooth; }
         <p>
           Every agent shares one runtime. A <code>AgentDefinition</code> — the
           three fields a config entry carries — supplies the role, the focus
-          text, and the category. The loop, the six tools, the injection
+          text, and the category. The loop, the read-only tools, the injection
           hardening, and the output contract are identical by construction, so
           a new agent costs a YAML entry and no code.
         </p>
@@ -903,7 +903,7 @@ html { scroll-behavior: smooth; }
         </p>
       </div>
 
-      <h3>The six tools</h3>
+      <h3>The read-only tools</h3>
       <div class="paths">
         <span class="chip">packages/ai/src/<b>tools.ts</b></span>
       </div>
@@ -923,17 +923,27 @@ html { scroll-behavior: smooth; }
             <tr><td><code>get_diff</code></td><td>The full unified diff</td></tr>
             <tr><td><code>get_file</code></td><td>One file at the <strong>head</strong> SHA — the proposed state</td></tr>
             <tr><td><code>get_base_file</code></td><td>One file at the <strong>base</strong> SHA — before this PR</td></tr>
-            <tr><td><code>search_repository</code></td><td>Code search, always scoped to this repository</td></tr>
+            <tr><td><code>search_repository</code></td><td>Code search with matching snippets, always scoped to this repository</td></tr>
+            <tr><td><code>find_importers</code></td><td>Files mentioning one file's name — a proxy for its importers</td></tr>
+            <tr><td><code>find_co_changed_files</code></td><td>Files edited in the same commits as one file — correlation, not dependency</td></tr>
           </tbody>
         </table>
       </div>
       <div class="prose" style="margin-top:1.1rem">
         <p>
-          Every input is Zod-validated before it touches the GitHub client, and
-          <code>dispatchReviewTool</code> never throws: failures come back as
-          <code>{ ok: false }</code> and reach the model as an error
-          <code>tool_result</code>, so a bad tool call costs a turn rather than
-          the run.
+          The last three read the <strong>default branch</strong> — the first two
+          through GitHub's code search index, the third through commit history.
+          Their results do not reflect this pull request, and their snippets carry
+          no line numbers — so a claim about a changed file still needs
+          <code>get_file</code>.
+        </p>
+      </div>
+      <div class="prose" style="margin-top:1.1rem">
+        <p>
+          Every input is Zod-validated against the tool's own schema before
+          <code>execute</code> runs, so a malformed path never reaches the GitHub
+          client. A tool that rejects reaches the model as an error tool result,
+          so a bad tool call costs a turn rather than the run.
         </p>
       </div>
 
@@ -1189,7 +1199,7 @@ review.started<br>
             <tr><td><code>packages/ai/src/agents/agent-set.ts</code></td><td>Narrowing an agent set, building its agents</td></tr>
             <tr><td><code>packages/ai/src/agents/synthesiser.ts</code></td><td>The single refining model call</td></tr>
             <tr><td><code>packages/ai/src/agents/runtime.ts</code></td><td>The shared agentic loop</td></tr>
-            <tr><td><code>packages/ai/src/agents/tools.ts</code></td><td>The six read-only tools</td></tr>
+            <tr><td><code>packages/ai/src/agents/tools.ts</code></td><td>The read-only tools</td></tr>
             <tr><td><code>packages/ai/src/prompts.ts</code></td><td>Managed prompts and their fallback</td></tr>
             <tr><td><code>packages/schemas/src/review-finding.ts</code></td><td>The finding contract</td></tr>
           </tbody>

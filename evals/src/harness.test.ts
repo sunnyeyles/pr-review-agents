@@ -190,12 +190,18 @@ describe("fixtures", () => {
     const fixture = loadFixture("security-tenant-scope");
     const { client, calls } = createFixtureClient(fixture);
 
-    const matches = await client.searchCode({
+    const result = await client.searchCode({
       owner: fixture.context.owner,
       repo: fixture.context.repo,
       query: "findCustomerById",
     });
-    expect(matches.map((match) => match.path)).toContain("src/data/customers.ts");
+    expect(result.matches.map((match) => match.path)).toContain(
+      "src/data/customers.ts",
+    );
+    // The snippet is what makes a search result usable without a follow-up read.
+    expect(
+      result.matches.flatMap((match) => match.snippets).join("\n"),
+    ).toContain("findCustomerById");
     expect(calls).toEqual([{ method: "searchCode", detail: "findCustomerById" }]);
 
     await expect(

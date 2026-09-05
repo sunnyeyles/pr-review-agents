@@ -35,7 +35,9 @@ const correctnessAgent = repositoryAgent("correctness");
 const securityAgent = repositoryAgent("security");
 const architectureAgent = repositoryAgent("architecture");
 
-const SIX_TOOL_NAMES = [
+const REVIEW_TOOL_NAMES = [
+  "find_co_changed_files",
+  "find_importers",
   "get_base_file",
   "get_diff",
   "get_file",
@@ -228,7 +230,7 @@ describe("prompt wiring", () => {
     }
   });
 
-  it("every agent exposes the identical six read-only tools", async () => {
+  it("every agent exposes the identical read-only tools", async () => {
     for (const agent of configuredAgents) {
       const { deps, calls } = makeDeps([
         message([textBlock(finalFindingsJson([]))], "end_turn"),
@@ -239,7 +241,7 @@ describe("prompt wiring", () => {
       const toolNames = (calls[0]?.tools ?? [])
         .map((tool) => String((tool as { name?: string }).name))
         .sort();
-      expect(toolNames).toEqual(SIX_TOOL_NAMES);
+      expect(toolNames).toEqual(REVIEW_TOOL_NAMES);
     }
   });
 });

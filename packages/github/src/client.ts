@@ -48,6 +48,38 @@ export interface CodeSearchMatch {
   path: string;
   /** Base name of the matching file. */
   name: string;
+  /**
+   * Matching content fragments, verbatim and in GitHub's order. They carry
+   * no line numbers, and come from the default branch like the index itself.
+   */
+  snippets: readonly string[];
+}
+
+/** A code search result set, with the totals GitHub reports alongside it. */
+export interface CodeSearchResult {
+  /** Matches GitHub returned; never more than one page. */
+  matches: CodeSearchMatch[];
+  /** Total matches in the repository, which may exceed `matches.length`. */
+  totalCount: number;
+  /** True when GitHub timed out the query and returned a partial answer. */
+  incompleteResults: boolean;
+}
+
+/** A request for the commits that touched one path, newest first. */
+export interface CommitHistoryRequest {
+  owner: string;
+  repo: string;
+  /** Repository-relative path; only commits touching it are returned. */
+  path: string;
+  /** Commits to return. GitHub caps a page at 100. */
+  limit: number;
+}
+
+/** A request for the files one commit changed. */
+export interface CommitFilesRequest {
+  owner: string;
+  repo: string;
+  sha: string;
 }
 
 /** One changed file in a PR; patch is absent for e.g. binary files. */
@@ -134,7 +166,17 @@ export interface GithubInstallationClient {
   /** Reads one file's decoded contents at a specific SHA. Read-only. */
   getFileContents(request: FileContentsRequest): Promise<string>;
   /** Searches code within the single named repository. Read-only. */
-  searchCode(request: CodeSearchRequest): Promise<CodeSearchMatch[]>;
+  searchCode(request: CodeSearchRequest): Promise<CodeSearchResult>;
+  /**
+   * SHAs of the default branch's commits that touched one path, newest
+   * first. A path added by an unmerged pull request has no history.
+   */
+  listCommitShas(request: CommitHistoryRequest): Promise<string[]>;
+  /**
+   * Repository-relative paths one commit changed. GitHub returns at most
+   * 300 of them, so a sweeping commit comes back silently short.
+   */
+  listCommitFiles(request: CommitFilesRequest): Promise<string[]>;
   /** Every inline review comment already on the pull request. */
   listReviewComments(ref: PullRequestRef): Promise<ExistingReviewComment[]>;
   createCheckRun(input: CreateCheckRunInput): Promise<CheckRun>;

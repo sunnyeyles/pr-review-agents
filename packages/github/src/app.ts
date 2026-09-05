@@ -5,8 +5,10 @@ import {
   type ChangedFile,
   type CheckRun,
   type CheckRunAnnotation,
-  type CodeSearchMatch,
   type CodeSearchRequest,
+  type CodeSearchResult,
+  type CommitFilesRequest,
+  type CommitHistoryRequest,
   type CreateCheckRunInput,
   type CreateReviewInput,
   type ExistingReviewComment,
@@ -66,9 +68,24 @@ export interface OctokitLike {
         path: string;
         ref: string;
       }): Promise<{ data: unknown }>;
+      listCommits(params: {
+        owner: string;
+        repo: string;
+        path: string;
+        per_page: number;
+      }): Promise<{ data: unknown }>;
+      getCommit(params: {
+        owner: string;
+        repo: string;
+        ref: string;
+      }): Promise<{ data: unknown }>;
     };
     search: {
-      code(params: { q: string; per_page: number }): Promise<{ data: unknown }>;
+      code(params: {
+        q: string;
+        per_page: number;
+        mediaType: { format: string };
+      }): Promise<{ data: unknown }>;
     };
     checks: {
       create(params: {
@@ -127,15 +144,48 @@ const fileContentsSchema = z.object({
   content: z.string(),
 });
 
+/**
+ * Absent unless the text-match media type was requested, and every field
+ * within it is optional in GitHub's own schema.
+ */
+const textMatchesSchema = z
+  .array(
+    z.object({
+      property: z.string().optional(),
+      fragment: z.string().optional(),
+    }),
+  )
+  .optional();
+
+const commitListSchema = z.array(z.object({ sha: z.string() }));
+
+/** An empty commit (a merge with no conflicts) carries no files array. */
+const commitFilesSchema = z.object({
+  files: z.array(z.object({ filename: z.string() })).optional(),
+});
+
 const codeSearchSchema = z.object({
+  total_count: z.number(),
+  incomplete_results: z.boolean(),
   items: z.array(
     z.object({
       name: z.string(),
       path: z.string(),
       repository: z.object({ full_name: z.string() }),
+      text_matches: textMatchesSchema,
     }),
   ),
 });
+
+/** Verbatim. Path-property fragments only repeat the path, so they are dropped. */
+function contentFragments(
+  textMatches: z.infer<typeof textMatchesSchema>,
+): string[] {
+  return (textMatches ?? [])
+    .filter((match) => match.property === undefined || match.property === "content")
+    .map((match) => match.fragment)
+    .filter((fragment) => fragment !== undefined);
+}
 
 /**
  * Wraps an authenticated Octokit in the read-only PR client, so
@@ -215,21 +265,53 @@ export function createInstallationClient(
       return Buffer.from(data.content, "base64").toString("utf8");
     },
 
-    async searchCode(request: CodeSearchRequest): Promise<CodeSearchMatch[]> {
+    async searchCode(request: CodeSearchRequest): Promise<CodeSearchResult> {
       const repository = `${request.owner}/${request.repo}`;
       const response = await octokit.rest.search.code({
         q: `${request.query} repo:${repository}`,
         per_page: SEARCH_RESULTS_PER_PAGE,
+        mediaType: { format: "text-match" },
       });
       const data = codeSearchSchema.parse(response.data);
       // The query is already repo-scoped; this filter is belt and braces.
-      return data.items
+      const matches = data.items
         .filter(
           (item) =>
             item.repository.full_name.toLowerCase() ===
             repository.toLowerCase(),
         )
-        .map((item) => ({ path: item.path, name: item.name }));
+        .map((item) => ({
+          path: item.path,
+          name: item.name,
+          snippets: contentFragments(item.text_matches),
+        }));
+      return {
+        matches,
+        totalCount: data.total_count,
+        incompleteResults: data.incomplete_results,
+      };
+    },
+
+    async listCommitShas(request: CommitHistoryRequest): Promise<string[]> {
+      const response = await octokit.rest.repos.listCommits({
+        owner: request.owner,
+        repo: request.repo,
+        path: request.path,
+        per_page: request.limit,
+      });
+      return commitListSchema
+        .parse(response.data)
+        .map((commit) => commit.sha);
+    },
+
+    async listCommitFiles(request: CommitFilesRequest): Promise<string[]> {
+      const response = await octokit.rest.repos.getCommit({
+        owner: request.owner,
+        repo: request.repo,
+        ref: request.sha,
+      });
+      const data = commitFilesSchema.parse(response.data);
+      return (data.files ?? []).map((file) => file.filename);
     },
 
     async createCheckRun(input: CreateCheckRunInput): Promise<CheckRun> {
