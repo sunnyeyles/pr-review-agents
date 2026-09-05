@@ -36,12 +36,12 @@ flowchart TD
 
     LOAD --> GRAPH
 
-    subgraph GRAPH["4 · LangGraph StateGraph — review-graph.ts"]
+    subgraph GRAPH["4 · Review pipeline — review-graph.ts"]
         direction TB
         START(["START"])
-        START --> A1["agent__&lt;agent 1&gt;"]
-        START --> A2["agent__&lt;agent 2&gt;"]
-        START --> A3["agent__&lt;agent n&gt;"]
+        START --> A1["&lt;agent 1&gt;"]
+        START --> A2["&lt;agent 2&gt;"]
+        START --> A3["&lt;agent n&gt;"]
         A1 --> JOIN["join<br/><i>fan-in, agent order</i>"]
         A2 --> JOIN
         A3 --> JOIN
@@ -156,41 +156,29 @@ the same prompts as always, so the cache prefix they share is untouched. An
 agent with no `paths` is always active.
 
 Every skipped agent is logged as `agent.skipped` and named in the check-run
-summary. When `active` is empty the pipeline is never built — `buildReviewGraph`
+summary. When `active` is empty the pipeline never runs — `runReviewPipeline`
 throws on an empty set, and more to the point a review that ran nothing must
 publish `renderNoAgentMatched`'s neutral check rather than a clean bill of
 health. The `agents` input overrides the gate at the point it is read:
 `resolveAgentDefinitions` returns a named agent without its `paths`, so by the
 time the gate runs there is nothing left to hold it back.
 
-### 4 · The graph
+### 4 · The pipeline
 
-`packages/reviewer/src/review-graph.ts` → `buildReviewGraph` (line 196)
+`packages/reviewer/src/review-graph.ts` → `runReviewPipeline`
 
-Agent nodes are added dynamically, one per selected agent, each wired straight
-from `START` so they run concurrently:
+Every selected agent is started together, so they run concurrently:
 
 ```ts
-// packages/reviewer/src/review-graph.ts:197
-const agentNodeNames = agents.map((agent, index) => {
-  const nodeName = `agent__${agent.name}`;
-  graph.addNode(nodeName, agentNode(index, agent));
-  graph.addEdge(START, nodeName);
-  return nodeName;
-});
-
-return graph
-  .addNode("join", makeJoinNode(agents.length))
-  .addEdge(agentNodeNames, "join")   // fan-in: waits for every agent
-  .addNode("synthesise", makeSynthesiseNode(synthesiser))
-  .addEdge("join", "synthesise")
-  .addNode("validate", makeValidateNode(agents.map((a) => a.name)))
-  .addEdge("synthesise", "validate")
-  .addEdge("validate", END)
-  .compile();
+// packages/reviewer/src/review-graph.ts
+const outcomes = await Promise.all(
+  agents.map((agent) => runAgent(agent, context)),
+);
+const { candidates, agentFailures } = join(outcomes);
+const synthesis = await synthesise(synthesiser, candidates);
 ```
 
-#### 4a · Each agent node
+#### 4a · Each agent
 
 `packages/ai/src/agents/runtime.ts` → `createReviewAgent` (line 180)
 
@@ -244,12 +232,12 @@ loop keeps going.
 
 #### 4b · `join` — fan-in
 
-`makeJoinNode` (line 118). LangGraph only runs it once every incoming edge's
-source has completed. It re-sorts outcomes by the agent's **input position**,
-never completion order, so the result is deterministic. Then:
+`join`. `Promise.all` resolves once every agent has settled, and preserves the
+agent's **input position**, never completion order, so the result is
+deterministic. Then:
 
 ```ts
-if (agentFailures.length === agentCount) {
+if (agentFailures.length === outcomes.length) {
   throw new Error(`every review agent failed — ${details}`);
 }
 ```
@@ -355,7 +343,7 @@ those may masquerade as a delivered review.
 | `apps/action/src/summary.ts` | Fork fallback to the job summary |
 | `apps/action/src/langfuse.ts` | Span export for one run |
 | `packages/reviewer/src/review-pull-request.ts` | One review, end to end |
-| `packages/reviewer/src/review-graph.ts` | The StateGraph |
+| `packages/reviewer/src/review-graph.ts` | The review pipeline |
 | `packages/reviewer/src/validate-findings.ts` | The trust boundary |
 | `packages/reviewer/src/render-check-run.ts` | Findings → check run payload |
 | `packages/reviewer/src/render-review.ts` | Findings → review body + inline comments |

@@ -68,7 +68,7 @@ GitHub Action (apps/action)
    ├── load PR, changed files, diff
    │
    ▼
-Review pipeline (LangGraph)
+Review pipeline
    │
    ├─ agent__<agent 1>  ─┐
    ├─ agent__<agent 2>   ├─► join ─► synthesise ─► validate ─► END
@@ -134,7 +134,7 @@ packages/
   ai/         Provider-neutral model seam (model/), prompts, agent
               configuration, and agents/: agent definition, runtime loop,
               read-only tools, synthesiser
-  reviewer/   Review graph, validation chain, check-run rendering
+  reviewer/   Review pipeline, validation chain, check-run rendering
   github/     GitHub client (workflow-token auth) + Octokit calls
   schemas/    Zod schemas: ReviewFinding, the review trigger contract
   logging/    Structured single-line JSON logger
@@ -144,18 +144,17 @@ spec.md       The original specification this implementation follows
 
 ### Concurrency
 
-LangGraph runs the review pipeline
-(`packages/reviewer/src/review-graph.ts`): one node per selected agent → `join`
-→ `synthesise` → `validate`. Every agent node has `START` as its only
-dependency, so they run in the same superstep. Inside a node, one agent's
+The review pipeline (`packages/reviewer/src/review-graph.ts`) runs every
+selected agent → `join` → `synthesise` → `validate`. The agents are started
+together with `Promise.all`, so they run concurrently. Inside one agent, the
 tool-calling loop is a plain turn loop over the provider-neutral model seam
 (`packages/ai/src/agents/runtime.ts`), capped at 12 model calls.
 
 ### Partial failure
 
-One failed agent does not fail the review. `join` collects outcomes, re-sorts
-them into the agents' original order (never completion order), and publishes
-what succeeded. Only when *every* agent fails does the graph throw — which
+One failed agent does not fail the review. `join` collects outcomes in the
+agents' original order (never completion order) and publishes what succeeded.
+Only when *every* agent fails does the pipeline throw — which
 fails the workflow step, so the run can be retried from the Actions UI.
 
 Synthesis failure is softer still: it falls back to the raw candidates and

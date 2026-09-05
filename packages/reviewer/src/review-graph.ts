@@ -1,6 +1,6 @@
 /**
- * The review pipeline as one LangGraph StateGraph: agents run
- * concurrently, then join -> synthesise -> validate in sequence.
+ * The review pipeline: agents run concurrently, then join -> synthesise ->
+ * validate in sequence.
  */
 import {
   emptyTokenUsage,
@@ -11,7 +11,6 @@ import {
 } from "@pr-review/ai";
 import { errorMessage, errorName } from "@pr-review/logging";
 import type { ReviewFinding } from "@pr-review/schemas";
-import { Annotation, END, START, StateGraph } from "@langchain/langgraph";
 
 import { validateFindings } from "./validate-findings.js";
 
@@ -21,28 +20,11 @@ export interface AgentFailure {
   error: string;
 }
 
-/** One agent node's outcome, tagged with its position in the input list. */
+/** One agent's outcome. */
 interface AgentOutcome {
-  index: number;
   name: string;
   candidates?: unknown[];
   error?: string;
-}
-
-/** A channel exactly one node writes. With no default, it must be set at invoke. */
-function lastWins<T>(defaultValue?: () => T) {
-  const reducer = (_left: T, right: T): T => right;
-  return defaultValue === undefined
-    ? Annotation<T>({ reducer })
-    : Annotation<T>({ reducer, default: defaultValue });
-}
-
-/** A channel several nodes append to concurrently, in no fixed order. */
-function appendTo<T>() {
-  return Annotation<T[]>({
-    reducer: (left: T[], right: T[]) => left.concat(right),
-    default: (): T[] => [],
-  });
 }
 
 /** What `join` derives from the agent outcomes. */
@@ -53,7 +35,7 @@ interface JoinedCandidates {
   agentFailures: AgentFailure[];
 }
 
-/** The synthesise node's outcome; the tag decides which fields exist. */
+/** The synthesise step's outcome; the tag decides which fields exist. */
 export type SynthesisState =
   | { outcome: "skipped"; candidates: unknown[]; usage: TokenUsage }
   | {
@@ -76,155 +58,75 @@ export function skippedSynthesis(): SynthesisState {
   return { outcome: "skipped", candidates: [], usage: emptyTokenUsage() };
 }
 
-/** The graph's channels, one per node that writes it. */
-const ReviewGraphState = Annotation.Root({
-  /** Set once at invoke; the single source of truth for the PR's changed files. */
-  context: lastWins<ReviewContext>(),
-  /** Every agent writes in the same superstep, so writes concatenate; `join` re-sorts by `index`. */
-  agentOutcomes: appendTo<AgentOutcome>(),
-  joined: lastWins<JoinedCandidates>(() => ({
-    candidates: [],
-    agentFailures: [],
-  })),
-  synthesis: lastWins<SynthesisState>(skippedSynthesis),
-  /** The final, deterministically validated findings. */
-  findings: lastWins<ReviewFinding[]>(() => []),
-});
-
-type ReviewGraphUpdate = typeof ReviewGraphState.Update;
-type ReviewGraphStateT = typeof ReviewGraphState.State;
-
-/** One node per agent: runs it and records success or failure, never throws. */
-function agentNode(
-  index: number,
+/** Runs one agent, recording success or failure; never throws. */
+async function runAgent(
   agent: ReviewAgent,
-): (state: ReviewGraphStateT) => Promise<ReviewGraphUpdate> {
-  return async (state) => {
-    try {
-      const candidates = await agent.run(state.context);
-      return {
-        agentOutcomes: [{ index, name: agent.name, candidates: [...candidates] }],
-      };
-    } catch (error) {
-      return {
-        agentOutcomes: [{ index, name: agent.name, error: errorMessage(error) }],
-      };
-    }
-  };
+  context: ReviewContext,
+): Promise<AgentOutcome> {
+  try {
+    const candidates = await agent.run(context);
+    return { name: agent.name, candidates: [...candidates] };
+  } catch (error) {
+    return { name: agent.name, error: errorMessage(error) };
+  }
 }
 
 /**
  * Fan-in: derives candidates/failures in the agents' original order —
  * never completion order — and throws when every agent failed.
  */
-function makeJoinNode(agentCount: number) {
-  return (state: ReviewGraphStateT): ReviewGraphUpdate => {
-    const ordered = [...state.agentOutcomes].sort((a, b) => a.index - b.index);
-    const candidates: unknown[] = [];
-    const agentFailures: AgentFailure[] = [];
-    for (const outcome of ordered) {
-      if (outcome.error !== undefined) {
-        agentFailures.push({ agent: outcome.name, error: outcome.error });
-      } else {
-        candidates.push(...(outcome.candidates ?? []));
-      }
+function join(outcomes: readonly AgentOutcome[]): JoinedCandidates {
+  const candidates: unknown[] = [];
+  const agentFailures: AgentFailure[] = [];
+  for (const outcome of outcomes) {
+    if (outcome.error !== undefined) {
+      agentFailures.push({ agent: outcome.name, error: outcome.error });
+    } else {
+      candidates.push(...(outcome.candidates ?? []));
     }
+  }
 
-    if (agentFailures.length === agentCount) {
-      const details = agentFailures
-        .map((failure) => `${failure.agent}: ${failure.error}`)
-        .join("; ");
-      throw new Error(`every review agent failed — ${details}`);
-    }
+  if (agentFailures.length === outcomes.length) {
+    const details = agentFailures
+      .map((failure) => `${failure.agent}: ${failure.error}`)
+      .join("; ");
+    throw new Error(`every review agent failed — ${details}`);
+  }
 
-    return { joined: { candidates, agentFailures } };
-  };
+  return { candidates, agentFailures };
 }
 
 /**
  * "skipped" means the Synthesiser was never invoked. A failure falls
  * back to the raw candidates rather than failing the review.
  */
-function makeSynthesiseNode(synthesiser: Synthesiser) {
-  return async (state: ReviewGraphStateT): Promise<ReviewGraphUpdate> => {
-    const { candidates } = state.joined;
-    if (candidates.length === 0) {
-      return { synthesis: skippedSynthesis() };
-    }
-
-    const startedAt = Date.now();
-    try {
-      const result = await synthesiser.synthesise(candidates);
-      return {
-        synthesis: {
-          outcome: "completed",
-          candidates: result.findings,
-          usage: result.usage,
-          durationMs: Date.now() - startedAt,
-        },
-      };
-    } catch (error) {
-      return {
-        synthesis: {
-          outcome: "failed",
-          candidates,
-          usage: emptyTokenUsage(),
-          error: errorMessage(error),
-          errorName: errorName(error),
-          durationMs: Date.now() - startedAt,
-        },
-      };
-    }
-  };
-}
-
-/**
- * The deterministic validation chain: never trust AI output. The agent
- * names are the only categories the run can legitimately produce.
- */
-function makeValidateNode(categories: readonly string[]) {
-  return (state: ReviewGraphStateT): ReviewGraphUpdate => ({
-    findings: validateFindings(
-      state.synthesis.candidates,
-      state.context.changedFiles,
-      categories,
-    ),
-  });
-}
-
-/** Compiles the graph above for one set of agents and one Synthesiser. */
-export function buildReviewGraph(
-  agents: readonly ReviewAgent[],
+async function synthesise(
   synthesiser: Synthesiser,
-) {
-  if (agents.length === 0) {
-    throw new Error("buildReviewGraph requires at least one review agent");
+  candidates: unknown[],
+): Promise<SynthesisState> {
+  if (candidates.length === 0) {
+    return skippedSynthesis();
   }
 
-  // Node names are pinned to `string`: LangGraph's builder infers a
-  // literal union, which cannot work for a runtime `agents` list.
-  const graph = new StateGraph<
-    typeof ReviewGraphState,
-    ReviewGraphStateT,
-    ReviewGraphUpdate,
-    string
-  >(ReviewGraphState);
-  const agentNodeNames = agents.map((agent, index) => {
-    const nodeName = `agent__${agent.name}`;
-    graph.addNode(nodeName, agentNode(index, agent));
-    graph.addEdge(START, nodeName);
-    return nodeName;
-  });
-
-  return graph
-    .addNode("join", makeJoinNode(agents.length))
-    .addEdge(agentNodeNames, "join")
-    .addNode("synthesise", makeSynthesiseNode(synthesiser))
-    .addEdge("join", "synthesise")
-    .addNode("validate", makeValidateNode(agents.map((agent) => agent.name)))
-    .addEdge("synthesise", "validate")
-    .addEdge("validate", END)
-    .compile();
+  const startedAt = Date.now();
+  try {
+    const result = await synthesiser.synthesise(candidates);
+    return {
+      outcome: "completed",
+      candidates: result.findings,
+      usage: result.usage,
+      durationMs: Date.now() - startedAt,
+    };
+  } catch (error) {
+    return {
+      outcome: "failed",
+      candidates,
+      usage: emptyTokenUsage(),
+      error: errorMessage(error),
+      errorName: errorName(error),
+      durationMs: Date.now() - startedAt,
+    };
+  }
 }
 
 /** The full outcome of one review-pipeline run, for the caller to log and publish. */
@@ -233,7 +135,7 @@ export interface ReviewPipelineResult {
   candidates: unknown[];
   /** Agents that failed while at least one other agent succeeded. */
   agentFailures: AgentFailure[];
-  /** The synthesise node's own outcome; every field it carries is one the tag guarantees. */
+  /** The synthesise step's own outcome; every field it carries is one the tag guarantees. */
   synthesis: SynthesisState;
   /** The final, deterministically validated findings. */
   findings: ReviewFinding[];
@@ -245,13 +147,24 @@ export async function runReviewPipeline(
   synthesiser: Synthesiser,
   context: ReviewContext,
 ): Promise<ReviewPipelineResult> {
-  const graph = buildReviewGraph(agents, synthesiser);
-  const { joined, synthesis, findings } = await graph.invoke({ context });
+  if (agents.length === 0) {
+    throw new Error("runReviewPipeline requires at least one review agent");
+  }
+
+  const outcomes = await Promise.all(
+    agents.map((agent) => runAgent(agent, context)),
+  );
+  const { candidates, agentFailures } = join(outcomes);
+  const synthesis = await synthesise(synthesiser, candidates);
 
   return {
-    candidates: joined.candidates,
-    agentFailures: joined.agentFailures,
+    candidates,
+    agentFailures,
     synthesis,
-    findings,
+    findings: validateFindings(
+      synthesis.candidates,
+      context.changedFiles,
+      agents.map((agent) => agent.name),
+    ),
   };
 }

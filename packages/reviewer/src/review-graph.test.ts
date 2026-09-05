@@ -8,7 +8,7 @@ import type { ChangedFile } from "@pr-review/github";
 import type { ReviewFinding } from "@pr-review/schemas";
 import { describe, expect, it } from "vitest";
 
-import { buildReviewGraph, runReviewPipeline } from "./review-graph.js";
+import { runReviewPipeline } from "./review-graph.js";
 
 const changedFiles: ChangedFile[] = [
   {
@@ -131,14 +131,12 @@ describe("runReviewPipeline: agent fan-out and partial failure (spec §20)", () 
       context,
     );
 
-    // Let LangGraph's scheduling reach every agent node without
-    // resolving any: a sequential runner would still be on the first.
+    // Every agent must have started without any resolving: a sequential
+    // runner would still be on the first.
     for (let tick = 0; tick < 50 && starts.length < 3; tick += 1) {
       await new Promise((resolve) => setTimeout(resolve, 0));
     }
-    // Same-superstep invocation order is not promised, so assert set
-    // membership; `join` re-sorts, so the result order is deterministic.
-    expect([...starts].sort()).toEqual(["architecture", "correctness", "security"]);
+    expect(starts).toEqual(["correctness", "security", "architecture"]);
 
     for (const resolve of resolvers) {
       resolve();
@@ -200,10 +198,10 @@ describe("runReviewPipeline: agent fan-out and partial failure (spec §20)", () 
     ).rejects.toThrow(/correctness.*invalid findings JSON/s);
   });
 
-  it("throws when no agents are configured", () => {
-    expect(() => buildReviewGraph([], passthroughSynthesiser())).toThrow(
-      /at least one review agent/i,
-    );
+  it("throws when no agents are configured", async () => {
+    await expect(
+      runReviewPipeline([], passthroughSynthesiser(), context),
+    ).rejects.toThrow(/at least one review agent/i);
   });
 });
 
