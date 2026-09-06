@@ -12,8 +12,6 @@ import type {
   ReviewTarget,
 } from "@pr-review/reviewer";
 
-export { httpStatus, isPermissionError };
-
 /** Renders the review as markdown for the workflow job summary. */
 export function renderJobSummary(
   target: ReviewTarget,

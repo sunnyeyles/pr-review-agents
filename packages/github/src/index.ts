@@ -1,7 +1,4 @@
-/**
- * One way in, one client out: createTokenClient wraps the workflow token and
- * returns a GithubInstallationClient.
- */
+/** createTokenClient is the one way in; the error helpers classify its failures. */
 export { httpStatus, isPermissionError } from "./errors.js";
 export { createTokenClient, type GithubTokenConfig } from "./token.js";
 export {
@@ -13,8 +10,6 @@ export {
   type CheckRunOutput,
   type CodeSearchMatch,
   type CodeSearchResult,
-  type CommitFilesRequest,
-  type CommitHistoryRequest,
   type CreateCheckRunInput,
   type CreateReviewInput,
   type ExistingReviewComment,

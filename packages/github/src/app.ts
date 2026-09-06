@@ -106,7 +106,7 @@ export interface OctokitLike {
   };
 }
 
-const FILES_PER_PAGE = 100;
+const PAGE_SIZE = 100;
 
 /** Code search results returned per query; agents need hints, not dumps. */
 const SEARCH_RESULTS_PER_PAGE = 20;
@@ -218,12 +218,12 @@ export function createInstallationClient(
           owner: ref.owner,
           repo: ref.repo,
           pull_number: ref.pullRequestNumber,
-          per_page: FILES_PER_PAGE,
+          per_page: PAGE_SIZE,
           page,
         });
         const pageFiles = changedFilesSchema.parse(response.data);
         files.push(...pageFiles);
-        if (pageFiles.length < FILES_PER_PAGE) {
+        if (pageFiles.length < PAGE_SIZE) {
           return files;
         }
       }
@@ -345,12 +345,12 @@ export function createInstallationClient(
           owner: ref.owner,
           repo: ref.repo,
           pull_number: ref.pullRequestNumber,
-          per_page: FILES_PER_PAGE,
+          per_page: PAGE_SIZE,
           page,
         });
         const pageComments = reviewCommentsSchema.parse(response.data);
         comments.push(...pageComments);
-        if (pageComments.length < FILES_PER_PAGE) {
+        if (pageComments.length < PAGE_SIZE) {
           return comments;
         }
       }
