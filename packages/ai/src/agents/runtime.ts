@@ -16,6 +16,7 @@ import { buildReviewSystemPrompt, type AgentDefinition } from "./definition.js";
 import { extractAgentOutput } from "./output.js";
 import type { ReviewModel } from "../model.js";
 import type { ReviewAgent, ReviewContext } from "../agent-contract.js";
+import type { ManagedPrompts } from "../prompts.js";
 import { createReviewTools } from "./tools.js";
 import { truncateWithMarker } from "./truncate.js";
 import { addTokenUsage, emptyTokenUsage, toTokenUsage } from "../usage.js";
@@ -87,9 +88,6 @@ function buildOpeningMessage(context: ReviewContext): string {
   ].join("\n");
 }
 
-/** Keyed by agent category. An agent with no entry uses buildReviewSystemPrompt. */
-export type ReviewSystemPrompts = Readonly<Record<string, string>>;
-
 /** What every review agent needs, regardless of agent. */
 export interface ReviewAgentDeps {
   /** The default model; an agent's own `model` is built with createModel. */
@@ -101,7 +99,7 @@ export interface ReviewAgentDeps {
   /** Receives agent.started / agent.completed / agent.failed. */
   logger?: StructuredLogger | undefined;
   /** Pre-resolved system prompts; missing agents fall back to the in-code prompt. */
-  systemPrompts?: ReviewSystemPrompts | undefined;
+  systemPrompts?: ManagedPrompts | undefined;
 }
 
 /**
@@ -116,6 +114,10 @@ export function createReviewAgent(
   const systemPrompt =
     deps.systemPrompts?.[agent.category] ?? buildReviewSystemPrompt(agent);
   const logger = deps.logger ?? createConsoleLogger();
+  const model =
+    agent.model === undefined || deps.createModel === undefined
+      ? deps.model
+      : deps.createModel(agent.model);
 
   return {
     name: agent.category,
@@ -147,14 +149,14 @@ export function createReviewAgent(
             },
             metadata: {
               agent: agent.category,
-              provider: deps.model.provider,
-              model: deps.model.modelId,
+              provider: model.provider,
+              model: model.modelId,
             },
           });
 
           try {
             const result = await generateText({
-              model: deps.model,
+              model,
               // The system breakpoint pins the shared prefix, tools included;
               // the call-level one below follows the growing tail.
               instructions: {

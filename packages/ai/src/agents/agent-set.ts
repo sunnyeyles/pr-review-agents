@@ -56,13 +56,6 @@ export interface SkippedAgent {
   paths: readonly string[];
 }
 
-/** The skipped agents as the bare names every log event carries. */
-export function skippedAgentNames(
-  skipped: readonly SkippedAgent[],
-): string[] {
-  return skipped.map((skip) => skip.agent);
-}
-
 export interface GatedAgents {
   active: AgentDefinition[];
   skipped: SkippedAgent[];
@@ -98,12 +91,5 @@ export function createReviewAgents(
   deps: ReviewAgentDeps,
   agents: readonly AgentDefinition[],
 ): ReviewAgent[] {
-  return agents.map((agent) => {
-    const modelId = agent.model;
-    const model =
-      modelId === undefined || deps.createModel === undefined
-        ? deps.model
-        : deps.createModel(modelId);
-    return createReviewAgent(agent, { ...deps, model });
-  });
+  return agents.map((agent) => createReviewAgent(agent, deps));
 }

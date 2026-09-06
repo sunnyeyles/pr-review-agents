@@ -5,11 +5,11 @@
 import { createCapturingLogger } from "@pr-review/logging";
 import { describe, expect, it } from "vitest";
 
+import type { ManagedPrompts } from "../prompts.js";
 import { buildReviewSystemPrompt } from "./definition.js";
 import {
   AgentRunError,
   createReviewAgent,
-  type ReviewSystemPrompts,
 } from "./runtime.js";
 import {
   REVIEW_TOOL_NAMES,
@@ -103,7 +103,7 @@ const finalJson = JSON.stringify({ findings: [finding] });
 
 function makeAgent(
   responses: ScriptedResponse[],
-  options: { maxTurns?: number; systemPrompts?: ReviewSystemPrompts } = {},
+  options: { maxTurns?: number; systemPrompts?: ManagedPrompts } = {},
 ) {
   const { model, doGenerate: create, calls } = makeModel(responses);
   const github = makeGithub();

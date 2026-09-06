@@ -16,15 +16,12 @@ export {
 } from "./model.js";
 export type { ReviewAgent, ReviewContext } from "./agent-contract.js";
 export { emptyTokenUsage, type TokenUsage } from "./usage.js";
-export { AgentRunError, createReviewAgent } from "./agents/runtime.js";
-export {
-  type AgentDefinition,
-} from "./agents/definition.js";
+export { createReviewAgent } from "./agents/runtime.js";
+export { type AgentDefinition } from "./agents/definition.js";
 export {
   createReviewAgents,
   gateAgentsByPaths,
   resolveAgentDefinitions,
-  skippedAgentNames,
   type SkippedAgent,
 } from "./agents/agent-set.js";
 export {
@@ -34,7 +31,6 @@ export {
 } from "./agents/config.js";
 export {
   SynthesisError,
-  buildSynthesisSystemPrompt,
   createSynthesiser,
   type Synthesiser,
 } from "./agents/synthesiser.js";

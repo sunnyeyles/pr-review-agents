@@ -2,7 +2,7 @@
  * Delivery: one review across two GitHub surfaces. Comments go first; the
  * check run annotates only what no comment carries.
  */
-import { skippedAgentNames, type SkippedAgent } from "@pr-review/ai";
+import type { SkippedAgent } from "@pr-review/ai";
 import {
   httpStatus,
   isPermissionError,
@@ -144,7 +144,7 @@ export async function deliverReview(
   deps.logger.info("review.published", {
     ...fields,
     findingCount: input.findings.length,
-    skippedAgents: skippedAgentNames(input.skippedAgents),
+    skippedAgents: input.skippedAgents.map((skip) => skip.agent),
     comments,
     annotated,
   });
