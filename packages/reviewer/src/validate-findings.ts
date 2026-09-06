@@ -1,6 +1,6 @@
 /**
  * The validation chain, in order: schema, category, changed file, added line,
- * confidence, dedupe, cap. Dedupe runs first so it cannot waste cap slots.
+ * confidence, dedupe, cap. Dedupe runs before the cap so it cannot waste cap slots.
  */
 import type { ChangedFile } from "@pr-review/github";
 import { wellFormedFindings, type ReviewFinding } from "@pr-review/schemas";

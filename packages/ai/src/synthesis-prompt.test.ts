@@ -11,13 +11,12 @@ import {
   message,
   repositoryAgents,
   textBlock,
-  validRemoteSynthesisPrompt,
+  validRemotePrompt,
 } from "./agent-test-support.js";
 import {
   buildSynthesisSystemPrompt,
   createSynthesiser,
 } from "./agents/synthesiser.js";
-import { SYNTHESIS_PROMPT_ID } from "./agents/definition.js";
 import { inCodePrompts, loadManagedPrompts, type LangfusePromptClient } from "./prompts.js";
 
 const configuredAgents = repositoryAgents();
@@ -42,7 +41,7 @@ describe("the synthesis prompt is not managed", () => {
   it("is never fetched from Langfuse", async () => {
     const client: LangfusePromptClient = {
       getTextPrompt: vi.fn(() =>
-        Promise.resolve(validRemoteSynthesisPrompt("REMOTE")),
+        Promise.resolve(validRemotePrompt("security", "REMOTE")),
       ),
     };
 
@@ -58,9 +57,7 @@ describe("the synthesis prompt is not managed", () => {
   });
 
   it("is not one of the prompts the seeder publishes", () => {
-    expect(Object.keys(inCodePrompts(configuredAgents))).not.toContain(
-      SYNTHESIS_PROMPT_ID,
-    );
+    expect(Object.keys(inCodePrompts(configuredAgents))).not.toContain("synthesis");
   });
 
   it("reaches the model call built from the run's agent set", async () => {

@@ -15,19 +15,15 @@ import {
   renderCheckRun,
   type RenderedCheckRun,
 } from "./render-check-run.js";
-import {
-  nothingPostedReason,
-  renderReview,
-  type RenderedReview,
-} from "./render-review.js";
+import { renderReview, type RenderedReview } from "./render-review.js";
 import type { AgentFailure } from "./review-pipeline.js";
 import { reviewCorrelation, type ReviewTarget } from "./review-target.js";
 
 /** What the comment publisher itself can report. */
-export type CommentsPublished = "posted" | "unavailable";
+type CommentsPublished = "posted" | "unavailable";
 
 /** Why this commit's findings do or do not carry inline comments. */
-export type CommentsOutcome =
+type CommentsOutcome =
   | CommentsPublished
   /** Every finding was already commented on an earlier commit. */
   | "already-posted"
@@ -117,16 +113,11 @@ export async function deliverReview(
   deps: ReviewDeliveryDeps,
 ): Promise<void> {
   const fields = reviewCorrelation(target);
-  const review = renderReview(
-    input.findings,
-    input.agentFailures,
-    input.alreadyPosted,
-    input.skippedAgents,
-  );
+  const review = renderReview(input.findings, input);
 
   let comments: CommentsOutcome;
   if (review === undefined) {
-    comments = nothingPostedReason(input.findings);
+    comments = input.findings.length === 0 ? "nothing-to-post" : "already-posted";
   } else {
     comments = await deps.publishComments(target, review);
     if (comments === "posted") {

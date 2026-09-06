@@ -102,8 +102,14 @@ export function createLangfusePromptClient(
   };
 }
 
-/** The invariants every system prompt must satisfy, wherever it came from. */
-function sharedPromptProblems(text: string): string[] {
+/**
+ * The invariants a review-agent system prompt must satisfy. Losing the output
+ * contract fails silently: the runtime discards off-category findings.
+ */
+export function promptContractProblems(
+  category: FindingCategory,
+  text: string,
+): string[] {
   const problems: string[] = [];
 
   if (!/data.*not instructions|never instructions/is.test(text)) {
@@ -112,20 +118,6 @@ function sharedPromptProblems(text: string): string[] {
   if (!/\bJSON\b/i.test(text)) {
     problems.push("missing-json-contract");
   }
-
-  return problems;
-}
-
-/**
- * The invariants a review-agent system prompt must satisfy. Losing the output
- * contract fails silently: the runtime discards off-category findings.
- */
-export function reviewPromptContractProblems(
-  text: string,
-  category: FindingCategory,
-): string[] {
-  const problems = sharedPromptProblems(text);
-
   if (!/comments?.*(never|not).*instructions/is.test(text)) {
     problems.push("missing-comment-hardening");
   }
@@ -144,11 +136,6 @@ export function reviewPromptContractProblems(
   }
 
   return problems;
-}
-
-/** The contract for one managed prompt; gates both fetched and about-to-be-seeded text. */
-export function promptContractProblems(id: string, text: string): string[] {
-  return reviewPromptContractProblems(text, id);
 }
 
 /** Both the loader's fallback and the seeder's baseline, so the two cannot

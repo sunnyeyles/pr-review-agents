@@ -18,7 +18,6 @@ export type { ReviewAgent, ReviewContext } from "./agent-contract.js";
 export { emptyTokenUsage, type TokenUsage } from "./usage.js";
 export { AgentRunError, createReviewAgent } from "./agents/runtime.js";
 export {
-  SYNTHESIS_PROMPT_ID,
   type AgentDefinition,
 } from "./agents/definition.js";
 export {

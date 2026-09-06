@@ -63,11 +63,11 @@ function commentBody(finding: ReviewFinding): string {
   return lines.join("\n");
 }
 
-/** Which of renderReview's two silent cases the findings fell into. */
-export function nothingPostedReason(
-  findings: readonly ReviewFinding[],
-): "nothing-to-post" | "already-posted" {
-  return findings.length === 0 ? "nothing-to-post" : "already-posted";
+export interface RenderReviewOptions {
+  agentFailures?: readonly AgentFailure[];
+  /** Finding keys already carrying a comment from an earlier commit. */
+  alreadyPosted?: ReadonlySet<string>;
+  skippedAgents?: readonly SkippedAgent[];
 }
 
 /**
@@ -76,9 +76,11 @@ export function nothingPostedReason(
  */
 export function renderReview(
   findings: readonly ReviewFinding[],
-  agentFailures: readonly AgentFailure[] = [],
-  alreadyPosted: ReadonlySet<string> = new Set(),
-  skippedAgents: readonly SkippedAgent[] = [],
+  {
+    agentFailures = [],
+    alreadyPosted = new Set(),
+    skippedAgents = [],
+  }: RenderReviewOptions = {},
 ): RenderedReview | undefined {
   const fresh = findings.filter(
     (finding) => !alreadyPosted.has(findingKey(finding)),

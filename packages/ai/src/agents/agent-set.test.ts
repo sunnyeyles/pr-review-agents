@@ -17,7 +17,7 @@ import {
   resolveAgentDefinitions,
 } from "./agent-set.js";
 import { createReviewAgent, type ReviewAgentDeps } from "./runtime.js";
-import { reviewPromptContractProblems } from "../prompts.js";
+import { promptContractProblems } from "../prompts.js";
 import {
   context,
   finalFindingsJson,
@@ -54,11 +54,11 @@ function makeDeps(responses: ReturnType<typeof message>[]) {
 }
 
 /**
- * The rules live in reviewPromptContractProblems so one definition
+ * The rules live in promptContractProblems so one definition
  * governs both shipped prompts and ones fetched from Langfuse.
  */
 function expectInjectionHardened(system: string, category: FindingCategory): void {
-  expect(reviewPromptContractProblems(system, category)).toEqual([]);
+  expect(promptContractProblems(category, system)).toEqual([]);
 }
 
 describe("agent names", () => {
