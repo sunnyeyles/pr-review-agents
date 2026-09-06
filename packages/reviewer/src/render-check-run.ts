@@ -33,11 +33,8 @@ export interface RenderedCheckRun {
 }
 
 interface RenderCheckRunOptions {
-  /**
-   * Whether line-anchored findings also become inline annotations.
-   * Defaults to true; set false once the review comments carry them.
-   */
-  annotate?: boolean | undefined;
+  /** Whether line-anchored findings also become annotations; false once comments carry them. */
+  annotate: boolean;
   /** Agents whose paths no changed file matched, named in the summary. */
   skippedAgents?: readonly SkippedAgent[] | undefined;
 }
@@ -110,8 +107,8 @@ export function renderNoAgentMatched(
 /** Findings render strongest first; line-anchored ones also become annotations. */
 export function renderCheckRun(
   findings: readonly ReviewFinding[],
-  agentFailures: readonly AgentFailure[] = [],
-  options: RenderCheckRunOptions = {},
+  agentFailures: readonly AgentFailure[],
+  options: RenderCheckRunOptions,
 ): RenderedCheckRun {
   const skipped = skipNotes(options.skippedAgents ?? []);
   if (findings.length === 0) {
@@ -140,7 +137,7 @@ export function renderCheckRun(
 
   const output: CheckRunOutput = { title, summary };
 
-  if (options.annotate ?? true) {
+  if (options.annotate) {
     const annotations: CheckRunAnnotation[] = [];
     for (const finding of ordered) {
       if (annotations.length >= MAX_ANNOTATIONS_PER_REQUEST) {

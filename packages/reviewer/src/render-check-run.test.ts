@@ -22,7 +22,7 @@ function finding(overrides: Partial<ReviewFinding> = {}): ReviewFinding {
 
 describe("renderCheckRun with no findings", () => {
   it("renders a clean success check run", () => {
-    const rendered = renderCheckRun([]);
+    const rendered = renderCheckRun([], [], { annotate: true });
 
     expect(rendered.conclusion).toBe("success");
     expect(rendered.output.title).toMatch(/no issues found/i);
@@ -30,7 +30,7 @@ describe("renderCheckRun with no findings", () => {
   });
 
   it("carries no annotations", () => {
-    const rendered = renderCheckRun([]);
+    const rendered = renderCheckRun([], [], { annotate: true });
 
     expect(rendered.output.annotations).toBeUndefined();
   });
@@ -51,18 +51,18 @@ describe("renderCheckRun with findings", () => {
   const correctness = finding();
 
   it("publishes a neutral conclusion so advisory findings do not block merges", () => {
-    expect(renderCheckRun([security, correctness]).conclusion).toBe("neutral");
+    expect(renderCheckRun([security, correctness], [], { annotate: true }).conclusion).toBe("neutral");
   });
 
   it("counts the findings in the title, with singular and plural forms", () => {
-    expect(renderCheckRun([security]).output.title).toBe("1 finding");
-    expect(renderCheckRun([security, correctness]).output.title).toBe(
+    expect(renderCheckRun([security], [], { annotate: true }).output.title).toBe("1 finding");
+    expect(renderCheckRun([security, correctness], [], { annotate: true }).output.title).toBe(
       "2 findings",
     );
   });
 
   it("lists every finding in the summary with severity, category, location, and explanation", () => {
-    const { output } = renderCheckRun([security, correctness]);
+    const { output } = renderCheckRun([security, correctness], [], { annotate: true });
 
     expect(output.summary).toContain("HIGH — Security");
     expect(output.summary).toContain("src/auth/session.ts:84");
@@ -83,7 +83,7 @@ describe("renderCheckRun with findings", () => {
       title: "Low severity note",
       confidence: 0.99,
     });
-    const { output } = renderCheckRun([low, correctness, security]);
+    const { output } = renderCheckRun([low, correctness, security], [], { annotate: true });
 
     const highIndex = output.summary.indexOf("HIGH — Security");
     const mediumIndex = output.summary.indexOf("MEDIUM — Correctness");
@@ -94,7 +94,7 @@ describe("renderCheckRun with findings", () => {
   });
 
   it("includes the suggested fix in the summary when present", () => {
-    const { output } = renderCheckRun([security]);
+    const { output } = renderCheckRun([security], [], { annotate: true });
 
     expect(output.summary).toContain(
       "Filter the session query by the authenticated tenant id.",
@@ -106,7 +106,7 @@ describe("renderCheckRun with findings", () => {
       title: "File-level architecture concern",
       category: "architecture",
     });
-    const { output } = renderCheckRun([fileLevel]);
+    const { output } = renderCheckRun([fileLevel], [], { annotate: true });
 
     expect(output.summary).toContain("src/orders/service.ts");
     expect(output.summary).not.toContain("src/orders/service.ts:");
@@ -117,7 +117,7 @@ describe("renderCheckRun with findings", () => {
       title: "File-level architecture concern",
       category: "architecture",
     });
-    const { output } = renderCheckRun([security, fileLevel]);
+    const { output } = renderCheckRun([security, fileLevel], [], { annotate: true });
 
     expect(output.annotations).toEqual([
       {
@@ -135,7 +135,7 @@ describe("renderCheckRun with findings", () => {
 
   it("omits the annotations field when no finding is line-anchored", () => {
     const { line: _line, ...fileLevel } = finding();
-    const { output } = renderCheckRun([fileLevel]);
+    const { output } = renderCheckRun([fileLevel], [], { annotate: true });
 
     expect(output.annotations).toBeUndefined();
   });
@@ -145,7 +145,7 @@ describe("renderCheckRun with findings", () => {
       finding({ severity: "high", title: "High" }),
       finding({ severity: "medium", title: "Medium" }),
       finding({ severity: "low", title: "Low" }),
-    ]);
+    ], [], { annotate: true });
 
     expect(output.annotations?.map((a) => a.annotation_level)).toEqual([
       "failure",
@@ -155,7 +155,7 @@ describe("renderCheckRun with findings", () => {
   });
 
   it("annotates the explanation without a fix suffix when no fix is suggested", () => {
-    const { output } = renderCheckRun([correctness]);
+    const { output } = renderCheckRun([correctness], [], { annotate: true });
 
     expect(output.annotations?.[0]?.message).toBe(
       "API failures are being returned as empty results.",
@@ -173,7 +173,7 @@ describe("renderCheckRun with findings", () => {
       }),
     );
 
-    const { output } = renderCheckRun(many);
+    const { output } = renderCheckRun(many, [], { annotate: true });
 
     expect(output.annotations).toHaveLength(50);
     // The single high-severity finding sorts first despite being last in.
@@ -189,7 +189,7 @@ describe("renderCheckRun with agent failures", () => {
   };
 
   it("notes the failed agent in the summary alongside the surviving findings", () => {
-    const rendered = renderCheckRun([finding()], [failure]);
+    const rendered = renderCheckRun([finding()], [failure], { annotate: true });
 
     expect(rendered.conclusion).toBe("neutral");
     expect(rendered.output.title).toBe("1 finding");
@@ -202,7 +202,7 @@ describe("renderCheckRun with agent failures", () => {
   });
 
   it("notes the failed agent even when no finding survived, without claiming success", () => {
-    const rendered = renderCheckRun([], [failure]);
+    const rendered = renderCheckRun([], [failure], { annotate: true });
 
     // A review missing a whole agent must not publish a clean bill of
     // health: the conclusion drops from "success" to "neutral".
@@ -217,6 +217,7 @@ describe("renderCheckRun with agent failures", () => {
     const rendered = renderCheckRun(
       [],
       [failure, { agent: "architecture", error: "turn cap exceeded" }],
+      { annotate: true },
     );
 
     expect(rendered.output.summary).toMatch(/security/i);
@@ -224,15 +225,15 @@ describe("renderCheckRun with agent failures", () => {
   });
 
   it("never leaks the failure error detail into the check run", () => {
-    const rendered = renderCheckRun([finding()], [failure]);
+    const rendered = renderCheckRun([finding()], [failure], { annotate: true });
 
     expect(rendered.output.summary).not.toContain("internal-host.example");
     expect(rendered.output.summary).not.toContain("model unavailable");
   });
 
   it("changes nothing when there are no failures", () => {
-    expect(renderCheckRun([finding()], [])).toEqual(renderCheckRun([finding()]));
-    expect(renderCheckRun([], [])).toEqual(renderCheckRun([]));
+    expect(renderCheckRun([finding()], [], { annotate: true })).toEqual(renderCheckRun([finding()], [], { annotate: true }));
+    expect(renderCheckRun([], [], { annotate: true })).toEqual(renderCheckRun([], [], { annotate: true }));
   });
 });
 
@@ -242,7 +243,7 @@ describe("renderCheckRun with skipped agents", () => {
   ];
 
   it("names the skipped agent and the paths it waited for", () => {
-    const rendered = renderCheckRun([finding()], [], { skippedAgents: skipped });
+    const rendered = renderCheckRun([finding()], [], { annotate: true, skippedAgents: skipped });
 
     expect(rendered.output.summary).toMatch(/security review did not run/i);
     expect(rendered.output.summary).toContain("`packages/github/**`");
@@ -252,7 +253,7 @@ describe("renderCheckRun with skipped agents", () => {
   it("still reports success when the agents that did run found nothing", () => {
     // A skip is configured, unlike a failure: the review the repository
     // asked for ran in full, so the check is not degraded.
-    const rendered = renderCheckRun([], [], { skippedAgents: skipped });
+    const rendered = renderCheckRun([], [], { annotate: true, skippedAgents: skipped });
 
     expect(rendered.conclusion).toBe("success");
     expect(rendered.output.title).toMatch(/no issues found/i);
@@ -260,11 +261,11 @@ describe("renderCheckRun with skipped agents", () => {
   });
 
   it("changes nothing when no agent was skipped", () => {
-    expect(renderCheckRun([finding()], [], { skippedAgents: [] })).toEqual(
-      renderCheckRun([finding()]),
+    expect(renderCheckRun([finding()], [], { annotate: true, skippedAgents: [] })).toEqual(
+      renderCheckRun([finding()], [], { annotate: true }),
     );
-    expect(renderCheckRun([], [], { skippedAgents: [] })).toEqual(
-      renderCheckRun([]),
+    expect(renderCheckRun([], [], { annotate: true, skippedAgents: [] })).toEqual(
+      renderCheckRun([], [], { annotate: true }),
     );
   });
 });

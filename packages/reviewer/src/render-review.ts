@@ -63,11 +63,11 @@ function commentBody(finding: ReviewFinding): string {
   return lines.join("\n");
 }
 
-export interface RenderReviewOptions {
-  agentFailures?: readonly AgentFailure[];
+export interface ReviewNotes {
+  agentFailures: readonly AgentFailure[];
   /** Finding keys already carrying a comment from an earlier commit. */
-  alreadyPosted?: ReadonlySet<string>;
-  skippedAgents?: readonly SkippedAgent[];
+  alreadyPosted: ReadonlySet<string>;
+  skippedAgents: readonly SkippedAgent[];
 }
 
 /**
@@ -80,7 +80,7 @@ export function renderReview(
     agentFailures = [],
     alreadyPosted = new Set(),
     skippedAgents = [],
-  }: RenderReviewOptions = {},
+  }: Partial<ReviewNotes> = {},
 ): RenderedReview | undefined {
   const fresh = findings.filter(
     (finding) => !alreadyPosted.has(findingKey(finding)),
