@@ -2,6 +2,10 @@
 # apps/action, built from the branch under review rather than a published tag.
 # If a change breaks the reviewer, it shows up on the pull request that made it.
 #
+# Reviews cost real tokens, so this is opt-in: add the `ai-review` label to a
+# pull request to review it, and every push after that is reviewed too. Remove
+# the label to stop. An unlabelled pull request never calls a model.
+#
 # Requires the selected provider's API key as a repository secret — set
 # vars.MODEL_PROVIDER to pick one, defaulting to OpenAI. Without a key the
 # job is skipped rather than failed, so forks and unconfigured clones stay
@@ -11,7 +15,7 @@ name: Self review
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, labeled]
 
 permissions:
   contents: read
@@ -25,6 +29,11 @@ concurrency:
 jobs:
   review:
     name: AI PR Review
+    # Opt in per pull request: no label, no review, no spend. The second
+    # clause stops an unrelated label from paying for a re-review.
+    if: >-
+      contains(github.event.pull_request.labels.*.name, 'ai-review')
+      && (github.event.action != 'labeled' || github.event.label.name == 'ai-review')
     runs-on: ubuntu-latest
     steps:
       - name: Check for a model provider key

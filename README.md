@@ -461,7 +461,9 @@ install → typecheck → test → build the bundle → push only `action.yml`,
 moving that repo's major-version alias (`v2`) to the new tag. The engine, the
 tests, the spec, and this README stay in the private source repo.
 `.github/workflows/ci.yml` runs typecheck and tests on every push;
-`.github/workflows/self-review.yml` dogfoods the Action on this repo's own PRs.
+`.github/workflows/self-review.yml` dogfoods the Action on this repo's own
+PRs, but only on a pull request labelled `ai-review` — reviews cost tokens, so
+they are opt-in. Add the label to review, remove it to stop.
 
 Required repository configuration for the release workflow:
 
