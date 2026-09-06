@@ -1,11 +1,5 @@
-/**
- * What a review agent is. Everything else is derived from an AgentDefinition,
- * so a run can carry any number of agents without code changes.
- */
+/** What a review agent is. Everything else is derived from an AgentDefinition. */
 import type { FindingCategory } from "@pr-review/schemas";
-
-/** Reserved: the synthesiser's managed prompt shares the agent key space. */
-export const SYNTHESIS_PROMPT_ID = "synthesis";
 
 /** The value selecting every configured agent, and the default when none is given. */
 export const ALL_AGENTS = "all";
@@ -29,7 +23,7 @@ export interface AgentDefinition {
   paths?: readonly string[];
 }
 
-/** The Langfuse prompt name for an agent; the synthesiser uses SYNTHESIS_PROMPT_ID. */
+/** The Langfuse prompt name for an agent. */
 export function agentPromptKey(id: string): string {
   return `${id.replace(/-/g, "_")}_system`;
 }

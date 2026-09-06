@@ -1,7 +1,4 @@
-/**
- * Working with a run's agent set. Every agent comes from repository
- * configuration (agents/config.ts), so both functions take the set to use.
- */
+/** Working with a run's agent set. Callers pass the set, so they control what runs. */
 import { ALL_AGENTS, type AgentDefinition } from "./definition.js";
 import { compilePathFilter } from "./path-filter.js";
 import { createReviewAgent, type ReviewAgentDeps } from "./runtime.js";

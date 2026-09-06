@@ -15,7 +15,6 @@ import {
 } from "./config.js";
 import {
   ALL_AGENTS,
-  SYNTHESIS_PROMPT_ID,
   buildReviewSystemPrompt,
   agentPromptKey,
 } from "./definition.js";
@@ -42,7 +41,6 @@ describe("the built-in agents", () => {
   it("gives every built-in a slug that is not a reserved name", () => {
     for (const name of BUILT_IN_AGENT_NAMES) {
       expect(name).toMatch(/^[a-z][a-z0-9-]*$/);
-      expect(name).not.toBe(SYNTHESIS_PROMPT_ID);
       expect(name).not.toBe(ALL_AGENTS);
     }
   });

@@ -1,16 +1,5 @@
-# The agent evaluation suite (spec §27): does the reviewer actually find the
-# planted bugs, and does it stay quiet on correct code?
-#
-# Manual only. These evaluations drive the real pipeline against the fixtures
-# in evals/, which means real model calls and real token spend on every run, so
-# they are deliberately not on push — that is what CI's `pnpm test` is for.
-# Run this before a release, or after changing a prompt, an agent, the
-# Synthesiser, or the validation chain.
-#
-# Requires the selected provider's API key as a repository secret
-# (OPENAI_API_KEY or ANTHROPIC_API_KEY). Unlike the self review, a missing key
-# FAILS this workflow rather than skipping it: somebody asked for an
-# evaluation, and a green run that measured nothing would be a lie.
+# Runs the evals in evals/ against real models, so manual only: real token spend.
+# Unlike the self review, a missing provider key fails the run rather than skipping it.
 
 name: Agent evaluations
 

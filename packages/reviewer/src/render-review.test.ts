@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 
 import {
   findingMarker,
-  nothingPostedReason,
   postedFindingKeys,
   renderReview,
 } from "./render-review.js";
@@ -27,7 +26,9 @@ describe("renderReview", () => {
   });
 
   it("posts nothing when only an agent failed, leaving the check run to say so", () => {
-    expect(renderReview([], [{ agent: "security", error: "timed out" }])).toBeUndefined();
+    expect(
+      renderReview([], { agentFailures: [{ agent: "security", error: "timed out" }] }),
+    ).toBeUndefined();
   });
 
   it("turns a line-anchored finding into an inline comment", () => {
@@ -87,7 +88,7 @@ describe("renderReview", () => {
       { body: `anything\n\n${findingMarker(finding())}` },
     ]);
 
-    expect(renderReview([finding()], [], posted)).toBeUndefined();
+    expect(renderReview([finding()], { alreadyPosted: posted })).toBeUndefined();
   });
 
   it("keys a finding on file and title, so a moved line is not reposted", () => {
@@ -95,15 +96,14 @@ describe("renderReview", () => {
       { body: findingMarker(finding({ line: 12 })) },
     ]);
 
-    expect(renderReview([finding({ line: 400 })], [], posted)).toBeUndefined();
+    expect(renderReview([finding({ line: 400 })], { alreadyPosted: posted })).toBeUndefined();
   });
 
   it("posts only the findings that are new, and says how many it held back", () => {
     const posted = postedFindingKeys([{ body: findingMarker(finding()) }]);
     const rendered = renderReview(
       [finding(), finding({ title: "Brand new", line: 20 })],
-      [],
-      posted,
+      { alreadyPosted: posted },
     );
 
     expect(rendered?.comments).toHaveLength(1);
@@ -116,30 +116,19 @@ describe("renderReview", () => {
   });
 
   it("notes an agent that did not complete", () => {
-    const rendered = renderReview(
-      [finding()],
-      [{ agent: "architecture", error: "timed out" }],
-    );
+    const rendered = renderReview([finding()], {
+      agentFailures: [{ agent: "architecture", error: "timed out" }],
+    });
 
     expect(rendered?.body).toContain("The Architecture review did not complete");
   });
 
   it("notes an agent the changed paths did not wake", () => {
-    const rendered = renderReview([finding()], [], new Set(), [
-      { agent: "security", paths: ["packages/github/**"] },
-    ]);
+    const rendered = renderReview([finding()], {
+      skippedAgents: [{ agent: "security", paths: ["packages/github/**"] }],
+    });
 
     expect(rendered?.body).toContain("The Security review did not run");
     expect(rendered?.body).toContain("`packages/github/**`");
-  });
-});
-
-describe("nothingPostedReason", () => {
-  it("reports a clean PR as nothing to post", () => {
-    expect(nothingPostedReason([])).toBe("nothing-to-post");
-  });
-
-  it("reports held-back findings as already posted", () => {
-    expect(nothingPostedReason([finding()])).toBe("already-posted");
   });
 });

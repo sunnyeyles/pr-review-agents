@@ -154,14 +154,9 @@ describe("reviewPullRequest", () => {
 
     await reviewPullRequest(target, deps);
 
-    const ref = {
-      owner: target.owner,
-      repo: target.repo,
-      pullRequestNumber: target.pullRequestNumber,
-    };
-    expect(client.getPullRequest).toHaveBeenCalledExactlyOnceWith(ref);
-    expect(client.listChangedFiles).toHaveBeenCalledExactlyOnceWith(ref);
-    expect(client.getDiff).toHaveBeenCalledExactlyOnceWith(ref);
+    expect(client.getPullRequest).toHaveBeenCalledExactlyOnceWith(target);
+    expect(client.listChangedFiles).toHaveBeenCalledExactlyOnceWith(target);
+    expect(client.getDiff).toHaveBeenCalledExactlyOnceWith(target);
   });
 
   it("runs the pipeline against the loaded context with the same client", async () => {

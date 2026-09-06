@@ -1,24 +1,5 @@
-# The review agents for this repository. Nothing runs by default: the action
-# reviews with exactly the agents listed here, and fails if this file is
-# missing. Copy it as a starting point and edit freely — add an agent or drop
-# one.
-#
-# An entry names a built-in specialist — see
-# packages/ai/src/agents/specialists/ for the ones this action ships. Agents
-# are not defined here; the file selects and tunes them.
-#
-# A name may instead be written under `agent:`, which allows:
-#   model  model id for this agent alone, as the provider spells it.
-#          Declaring none means it uses the action's `model` input.
-#   paths  glob patterns deciding whether the agent runs at all.
-#          Declaring none means it runs on every pull request.
-#
-# `paths` is a gate, not a filter: an agent one changed file wakes still
-# reviews the whole pull request. Skipped agents are named on the check run,
-# and a pull request no agent matched gets a neutral check saying so — never
-# a green one.
-#
-# Order matters: it is the order findings reach the synthesiser.
+# The review agents for this repository; the action fails if this file is missing.
+# Entries name built-in agents (see the README). `paths` is a gate, not a filter.
 
 agents:
   - agent: security

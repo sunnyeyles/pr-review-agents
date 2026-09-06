@@ -11,7 +11,6 @@ import {
 import type {
   ExistingReviewComment,
   GithubInstallationClient,
-  PullRequestRef,
 } from "@pr-review/github";
 import {
   createConsoleLogger,
@@ -35,7 +34,7 @@ import {
 import { reviewCorrelation, type ReviewTarget } from "./review-target.js";
 
 interface ReviewPullRequestDeps {
-  /** Authenticated read-only GitHub client for this repository. */
+  /** Authenticated GitHub client for this repository. */
   client: GithubInstallationClient;
   /** The run's agent set, already narrowed by the `agents` input. */
   agents: readonly AgentDefinition[];
@@ -56,12 +55,11 @@ interface ReviewPullRequestDeps {
 /** The comments already on the pull request; none if they cannot be read. */
 async function listPostedComments(
   client: GithubInstallationClient,
-  ref: PullRequestRef,
   target: ReviewTarget,
   logger: StructuredLogger,
 ): Promise<ExistingReviewComment[]> {
   try {
-    return await client.listReviewComments(ref);
+    return await client.listReviewComments(target);
   } catch (error) {
     logger.error("review.comments.list_failed", {
       ...reviewCorrelation(target),
@@ -132,15 +130,10 @@ export async function reviewPullRequest(
   }: ReviewPullRequestDeps,
 ): Promise<ReviewPipelineResult> {
   const fields = reviewCorrelation(target);
-  const ref: PullRequestRef = {
-    owner: target.owner,
-    repo: target.repo,
-    pullRequestNumber: target.pullRequestNumber,
-  };
   const [pullRequest, changedFiles, diff] = await Promise.all([
-    client.getPullRequest(ref),
-    client.listChangedFiles(ref),
-    client.getDiff(ref),
+    client.getPullRequest(target),
+    client.listChangedFiles(target),
+    client.getDiff(target),
   ]);
   const filenames = changedFiles.map((file) => file.filename);
   logger.info("review.loaded", {
@@ -198,7 +191,7 @@ export async function reviewPullRequest(
       agentFailures: review.agentFailures,
       skippedAgents: skipped,
       alreadyPosted: postedFindingKeys(
-        await listPostedComments(client, ref, target, logger),
+        await listPostedComments(client, target, logger),
       ),
     },
     {
