@@ -52,6 +52,12 @@ bundle to the public action repository. `v2` made the provider configurable and
 renamed the `anthropic-api-key` input to `api-key`; a `v1` workflow needs that
 one rename to move.
 
+Three names for the same thing, deliberately: this source repo is
+`pr-review-agents`, the published action repo is `pr-review-action` and is
+listed on the Marketplace as **[Review Agent Fleet](https://github.com/marketplace/actions/review-agent-fleet)**
+(the `name:` in `action.yml`), and the check run it writes is `AI PR Review`
+(`CHECK_RUN_NAME` in `packages/github/src/client.ts`).
+
 On a fork PR, `GITHUB_TOKEN` is read-only and can't create a check run — the
 Action detects that permission error, degrades to writing the review into the
 job summary instead, and still exits 0.
@@ -145,7 +151,8 @@ packages/
   logging/    Structured single-line JSON logger
 evals/        Fixture repositories and the harness that runs the real
               pipeline against them without touching GitHub
-docs/         index.html — the architecture walkthrough, published to Pages
+docs/         index.html — the architecture walkthrough, published to
+              Pages; claude/ — how the agent skills read this repo
               (.nojekyll beside it, so Pages serves the file as written)
 scripts/      esbuild bundler for apps/action, its smoke test, and the
               Langfuse prompt seeder
@@ -185,6 +192,10 @@ Set as `with:` inputs on the Action step ([`apps/action/action.yml`](apps/action
 | `model-base-url` | no (default: the provider's own host) | Overrides the provider's API host — a gateway, a proxy, or a compatible endpoint (for `openai`, one that accepts `max_completion_tokens`). |
 | `agents` | no (default `all`) | Which of the configured agents run: `all`, or a comma-separated subset of their names. Naming a subset also overrides any [path filters](#path-filters). |
 | `agent-config` | no (default `.github/pr-review-agents.yml`) | Path to the YAML file naming the agents. Required — nothing runs until a repository names it. |
+| `langfuse-public-key` | no | Supply this and the secret key to fetch the agent system prompts from [Langfuse](#seeding-the-managed-prompts) and export traces there. Both unset is the default, and runs on the in-code prompts. |
+| `langfuse-secret-key` | no | The other half. Setting only one of the two disables both features and logs `langfuse.disabled_incomplete_credentials`. |
+| `langfuse-base-url` | no (default `https://cloud.langfuse.com`) | Langfuse host, for a self-hosted or regional instance. Keys are region-scoped: the wrong host 401s and drops every trace. |
+| `langfuse-prompt-label` | no (default `production`) | Which labelled version of each prompt to fetch — try a prompt change on one repository before promoting it. |
 
 ### Model providers
 
@@ -205,9 +216,10 @@ speaking its API — OpenAI is bound to Chat Completions rather than the
 Responses API for that reason. Adding a provider is an entry in `PROVIDERS`
 and nothing else.
 
-Prompt caching is requested on every agent turn and applied where the provider
-supports it. The four token counters keep cache writes and reads apart from the
-uncached input remainder; a provider that reports neither leaves them at zero.
+Prompt caching is requested on `anthropic` only — it is the provider whose API
+takes explicit cache breakpoints (`packages/ai/src/agents/runtime.ts`). On the
+default provider, `openai`, nothing is requested and the two cache counters stay
+at zero; that is expected, not a regression.
 
 ### Choosing your agents
 
@@ -262,8 +274,10 @@ agents:
 ```
 
 The provider, the API key, and `model-base-url` are the run's, so every agent
-model must be one the selected provider serves. Set `vars.REVIEW_MODEL` to
-swap the default for a whole repository without touching the workflow.
+model must be one the selected provider serves. Nothing reads a repository
+variable on its own — this repo's `self-review.yml` passes
+`model: ${{ vars.REVIEW_MODEL }}` explicitly, and a consumer workflow wanting
+the same swap-without-a-commit has to wire the same line.
 
 ### Path filters
 
@@ -390,10 +404,17 @@ provisioned outside GitHub's own secret settings.
 
 ### Token permissions
 
-Repository contents: **read**. Pull requests: **write** to get inline comments;
-without it the check run annotates the same lines instead. Checks: **write** —
-omit it and the review still lands, in the job summary. The Action never
-requests write access to file contents, merges, or approvals.
+Every one of them degrades rather than fails, except the first. The Action
+never requests write access to file contents, merges, or approvals.
+
+| Permission | With it | Without it |
+| --- | --- | --- |
+| `contents: read` | Reads files at the head and base commits, and the agent configuration | The action cannot run |
+| `pull-requests: write` | Findings post as inline review comments | The check run annotates the same lines instead, and logs `review.comments.degraded` |
+| `checks: write` | Publishes the `AI PR Review` check run and its annotations | The whole review is written to the workflow job summary instead, and logs `review.published.degraded` |
+
+A fork-triggered workflow gets a read-only token, so both degradations fire at
+once and the review lands in the job summary. The step still exits 0.
 
 ---
 
@@ -467,8 +488,9 @@ install → typecheck → test → build the bundle → push only `action.yml`,
 `dist/index.mjs`, `LICENSE`, and a usage `README.md` to a separate public repo,
 moving that repo's major-version alias (`v2`) to the new tag and cutting a
 GitHub Release there. Listing the Action on the Marketplace is a manual tick on
-that release, once. The engine, the tests, the spec, and this README stay in
-the private source repo.
+that release, once, and the listing is keyed on the `name:` in `action.yml` —
+change it and the Marketplace URL moves with it. The engine, the tests, the
+spec, and this README stay in this repo, and are not published downstream.
 `.github/workflows/ci.yml` runs typecheck and tests on every push;
 `.github/workflows/self-review.yml` dogfoods the Action on this repo's own
 PRs, but only on a pull request labelled `ai-review` — reviews cost tokens, so
@@ -486,12 +508,20 @@ Required repository configuration for the release workflow:
 ## Observability
 
 Structured single-line JSON logs land in the workflow run's own log stream,
-under lifecycle event names: `review.skipped`, `review.started`,
-`review.loaded`, `agent.started`, `agent.completed`, `agent.failed`,
-`synthesis.started`, `synthesis.skipped`, `synthesis.completed`,
-`synthesis.failed`, `findings.validated`, `review.published`,
-`review.published.degraded`, `agent.skipped`, `review.no_agents_matched`, and
-`review.failed`. Events carry the repository, PR
+under event names, grouped by what they trace:
+
+| Stage | Events |
+| --- | --- |
+| Review | `review.skipped`, `review.started`, `review.model_selected`, `review.agents_selected`, `review.loaded`, `review.no_agents_matched`, `review.failed` |
+| Agents | `agent.started`, `agent.completed`, `agent.failed`, `agent.skipped` |
+| Synthesis | `synthesis.started`, `synthesis.skipped`, `synthesis.completed`, `synthesis.failed` |
+| Publishing | `findings.validated`, `review.comments.published`, `review.comments.degraded`, `review.comments.list_failed`, `review.published`, `review.published.degraded` |
+| Langfuse | `langfuse.disabled_incomplete_credentials`, `langfuse.prompts.loaded`, `langfuse.prompts.unavailable`, `langfuse.prompts.fallback_used`, `tracing.flush_failed` |
+
+That is every event a review run can emit. `pnpm seed-prompts` emits its own
+`langfuse.prompts.seed_*` set, which no review ever writes.
+
+Events carry the repository, PR
 number, head SHA, agent name, duration, finding count, and token usage (four
 counters: `inputTokens`, `cacheCreationInputTokens`, `cacheReadInputTokens`,
 `outputTokens`), so a single review is greppable end to end by `headSha`.

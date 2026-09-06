@@ -1,5 +1,5 @@
-# Publishes the built action (action.yml, dist/, LICENSE, docs) to the public repo
-# in vars.ACTION_RELEASE_REPO using secrets.ACTION_RELEASE_TOKEN; moves the v1 alias.
+# Publishes action.yml, dist/, README.md and LICENSE to vars.ACTION_RELEASE_REPO
+# using secrets.ACTION_RELEASE_TOKEN, and moves that repo's major-version alias.
 
 name: Release action
 
@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Tag to publish (e.g. v1.2.3)
+        description: Tag to publish (e.g. v2.1.0)
         required: true
 
 permissions:
