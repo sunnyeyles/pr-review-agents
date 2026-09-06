@@ -2,7 +2,7 @@
  * The shared review-agent runtime — the tool loop every agent runs. An
  * AgentDefinition supplies role, focus and category; the rest is identical.
  */
-import { startObservation } from "@langfuse/tracing";
+import { startActiveObservation } from "@langfuse/tracing";
 import type { GithubInstallationClient } from "@pr-review/github";
 import {
   createConsoleLogger,
@@ -132,103 +132,105 @@ export function createReviewAgent(
         agent: agent.category,
       };
       logger.info("agent.started", eventFields);
-      // With no tracing configured every observation call is a no-op.
-      const agentObservation = startObservation(
-        `review-agent-${agent.category}`,
-        {
-          input: {
-            repository: eventFields.repository,
-            pullRequestNumber: eventFields.pullRequestNumber,
-            headSha: eventFields.headSha,
-            changedFileCount: context.changedFiles.length,
-          },
-          metadata: {
-            agent: agent.category,
-            provider: deps.model.provider,
-            model: deps.model.modelId,
-          },
-        },
-        { asType: "agent" },
-      );
       const startedAt = Date.now();
       // Outside the try: a mid-loop API error still reports its spend.
       let usage = emptyTokenUsage();
 
-      try {
-        const result = await generateText({
-          model: deps.model,
-          // The breakpoint must sit on the system message itself; the
-          // provider ignores a call-level one. Tools cache with it.
-          instructions: {
-            role: "system",
-            content: systemPrompt,
-            providerOptions: {
-              anthropic: { cacheControl: { type: "ephemeral" } },
+      // Active, not detached: the SDK's model spans nest under this one, so
+      // their cost lands on the agent trace instead of a trace of its own.
+      return startActiveObservation(
+        `review-agent-${agent.category}`,
+        async (agentObservation) => {
+          agentObservation.update({
+            input: {
+              repository: eventFields.repository,
+              pullRequestNumber: eventFields.pullRequestNumber,
+              headSha: eventFields.headSha,
+              changedFileCount: context.changedFiles.length,
             },
-          },
-          messages: [{ role: "user", content: buildOpeningMessage(context) }],
-          tools: createReviewTools(deps.github, scope),
-          stopWhen: isStepCount(maxTurns),
-          maxOutputTokens: MAX_OUTPUT_TOKENS,
-          telemetry: { functionId: `review-agent-${agent.category}` },
-          onStepEnd: (step) => {
-            usage = addTokenUsage(usage, toTokenUsage(step.usage));
-          },
-        });
-
-        // The SDK stops silently at the cap, still holding tool calls.
-        if (result.finishReason === "tool-calls") {
-          throw new AgentRunError(
-            `${agent.category} agent exceeded the ${maxTurns}-turn cap without returning findings`,
-          );
-        }
-
-        const output = extractAgentOutput(result.text);
-        if (!output.ok) {
-          throw new AgentRunError(
-            `${agent.category} agent produced invalid findings output ` +
-              `(stop reason: ${result.rawFinishReason ?? "unknown"}): ${output.error}`,
-          );
-        }
-        // Cross-category findings are dropped, never re-stamped.
-        const findings = output.findings.filter(
-          (finding) => finding.category === agent.category,
-        );
-
-        logger.info("agent.completed", {
-          ...eventFields,
-          durationMs: Date.now() - startedAt,
-          ...usage,
-          findingCount: findings.length,
-        });
-        agentObservation
-          .update({
-            output: { findingCount: findings.length },
             metadata: {
-              ...usage,
+              agent: agent.category,
+              provider: deps.model.provider,
+              model: deps.model.modelId,
             },
-          })
-          .end();
-        return findings;
-      } catch (error) {
-        logger.error("agent.failed", {
-          ...eventFields,
-          durationMs: Date.now() - startedAt,
-          ...usage,
-          error: errorMessage(error),
-          errorName: errorName(error),
-        });
-        agentObservation
-          .update({
-            level: "ERROR",
-            statusMessage: errorMessage(error),
-            metadata: {
+          });
+
+          try {
+            const result = await generateText({
+              model: deps.model,
+              // The breakpoint must sit on the system message itself; the
+              // provider ignores a call-level one. Tools cache with it.
+              instructions: {
+                role: "system",
+                content: systemPrompt,
+                providerOptions: {
+                  anthropic: { cacheControl: { type: "ephemeral" } },
+                },
+              },
+              messages: [
+                { role: "user", content: buildOpeningMessage(context) },
+              ],
+              tools: createReviewTools(deps.github, scope),
+              stopWhen: isStepCount(maxTurns),
+              maxOutputTokens: MAX_OUTPUT_TOKENS,
+              telemetry: { functionId: `review-agent-${agent.category}` },
+              onStepEnd: (step) => {
+                usage = addTokenUsage(usage, toTokenUsage(step.usage));
+              },
+            });
+
+            // The SDK stops silently at the cap, still holding tool calls.
+            if (result.finishReason === "tool-calls") {
+              throw new AgentRunError(
+                `${agent.category} agent exceeded the ${maxTurns}-turn cap without returning findings`,
+              );
+            }
+
+            const output = extractAgentOutput(result.text);
+            if (!output.ok) {
+              throw new AgentRunError(
+                `${agent.category} agent produced invalid findings output ` +
+                  `(stop reason: ${result.rawFinishReason ?? "unknown"}): ${output.error}`,
+              );
+            }
+            // Cross-category findings are dropped, never re-stamped.
+            const findings = output.findings.filter(
+              (finding) => finding.category === agent.category,
+            );
+
+            logger.info("agent.completed", {
+              ...eventFields,
+              durationMs: Date.now() - startedAt,
               ...usage,
-            },
-          })
-          .end();
-        throw error;
-      }
+              findingCount: findings.length,
+            });
+            agentObservation.update({
+              output: { findingCount: findings.length },
+              metadata: {
+                ...usage,
+              },
+            });
+            return findings;
+          } catch (error) {
+            logger.error("agent.failed", {
+              ...eventFields,
+              durationMs: Date.now() - startedAt,
+              ...usage,
+              error: errorMessage(error),
+              errorName: errorName(error),
+            });
+            agentObservation.update({
+              level: "ERROR",
+              statusMessage: errorMessage(error),
+              metadata: {
+                ...usage,
+              },
+            });
+            throw error;
+          }
+        },
+        { asType: "agent" },
+      );
     },
   };
 }
