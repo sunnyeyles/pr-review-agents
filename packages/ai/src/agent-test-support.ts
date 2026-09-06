@@ -48,6 +48,18 @@ export function repositoryAgent(category: string): AgentDefinition {
   return agent;
 }
 
+/** Every tool createReviewTools exposes, sorted. */
+export const REVIEW_TOOL_NAMES = [
+  "find_co_changed_files",
+  "find_importers",
+  "get_base_file",
+  "get_diff",
+  "get_file",
+  "get_pull_request",
+  "list_changed_files",
+  "search_repository",
+];
+
 export const headSha = "6dcb09b5b57875f334f61aebed695e2e4193db5e";
 export const baseSha = "0000000000000000000000000000000000000000";
 

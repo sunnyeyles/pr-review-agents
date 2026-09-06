@@ -26,18 +26,30 @@ const MAX_SEARCH_MATCHES = 25;
 const FRAGMENT_PADDING = 120;
 
 /** Stands in for GitHub's text-match fragments: a window around each term. */
-function fragmentsAround(contents: string, terms: string[]): string[] {
-  const haystack = contents.toLowerCase();
-  const windows = terms
-    .map((term) => [haystack.indexOf(term), term.length] as const)
-    .filter(([at]) => at >= 0)
-    .map(([at, length]) =>
-      contents.slice(
-        Math.max(0, at - FRAGMENT_PADDING),
-        at + length + FRAGMENT_PADDING,
-      ),
-    );
+function fragmentsAround(
+  contents: string,
+  lowered: string,
+  terms: string[],
+): string[] {
+  const windows = terms.flatMap((term) => {
+    const at = lowered.indexOf(term);
+    return at < 0
+      ? []
+      : [
+          contents.slice(
+            Math.max(0, at - FRAGMENT_PADDING),
+            at + term.length + FRAGMENT_PADDING,
+          ),
+        ];
+  });
   return [...new Set(windows)];
+}
+
+/** GitHub's grammar: a quoted phrase is one term, everything else splits on space. */
+function searchTerms(query: string): string[] {
+  return (query.toLowerCase().match(/"[^"]*"|\S+/g) ?? [])
+    .map((term) => term.replaceAll('"', ""))
+    .filter((term) => term.length > 0);
 }
 
 /** One recorded read against the fixture repository. */
@@ -128,20 +140,16 @@ export function createFixtureClient(fixture: LoadedFixture): FixtureClient {
         );
       }
       record("searchCode", request.query);
-      // Quotes are stripped because find_importers quotes its derived stem.
-      const terms = request.query
-        .toLowerCase()
-        .replaceAll('"', " ")
-        .split(/\s+/)
-        .filter((term) => term.length > 0);
+      const terms = searchTerms(request.query);
       const matches: CodeSearchMatch[] = [];
       for (const [path, contents] of fixture.headFiles) {
-        const haystack = `${path}\n${contents}`.toLowerCase();
+        const lowered = contents.toLowerCase();
+        const haystack = `${path.toLowerCase()}\n${lowered}`;
         if (terms.every((term) => haystack.includes(term))) {
           matches.push({
             path,
             name: path.slice(path.lastIndexOf("/") + 1),
-            snippets: fragmentsAround(contents, terms),
+            snippets: fragmentsAround(contents, lowered, terms),
           });
         }
       }

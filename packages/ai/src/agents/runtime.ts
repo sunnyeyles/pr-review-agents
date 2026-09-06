@@ -16,7 +16,7 @@ import { buildReviewSystemPrompt, type AgentDefinition } from "./definition.js";
 import { extractAgentOutput } from "./output.js";
 import type { ReviewModel } from "../model.js";
 import type { ReviewAgent, ReviewContext } from "../agent-contract.js";
-import { createReviewTools, type ReviewToolScope } from "./tools.js";
+import { createReviewTools } from "./tools.js";
 import { truncateWithMarker } from "./truncate.js";
 import { addTokenUsage, emptyTokenUsage, toTokenUsage } from "../usage.js";
 
@@ -39,6 +39,11 @@ const MAX_DIFF_CHARS = 80_000;
 
 /** The opening message lists at most this many changed files. */
 const MAX_LISTED_FILES = 300;
+
+/** Anthropic honours this on a message and at call level; OpenAI ignores it. */
+const CACHE_BREAKPOINT = {
+  anthropic: { cacheControl: { type: "ephemeral" as const } },
+};
 
 function truncateDiff(diff: string): string {
   return truncateWithMarker(
@@ -116,14 +121,6 @@ export function createReviewAgent(
     name: agent.category,
 
     async run(context: ReviewContext): Promise<readonly unknown[]> {
-      const scope: ReviewToolScope = {
-        owner: context.owner,
-        repo: context.repo,
-        pullRequest: context.pullRequest,
-        changedFiles: context.changedFiles,
-        diff: context.diff,
-      };
-
       // Every event of this run carries these fields.
       const eventFields = {
         repository: `${context.owner}/${context.repo}`,
@@ -163,19 +160,15 @@ export function createReviewAgent(
               instructions: {
                 role: "system",
                 content: systemPrompt,
-                providerOptions: {
-                  anthropic: { cacheControl: { type: "ephemeral" } },
-                },
+                providerOptions: CACHE_BREAKPOINT,
               },
               messages: [
                 { role: "user", content: buildOpeningMessage(context) },
               ],
-              tools: createReviewTools(deps.github, scope),
+              tools: createReviewTools(deps.github, context),
               stopWhen: isStepCount(maxTurns),
               maxOutputTokens: MAX_OUTPUT_TOKENS,
-              providerOptions: {
-                anthropic: { cacheControl: { type: "ephemeral" } },
-              },
+              providerOptions: CACHE_BREAKPOINT,
               telemetry: { functionId: `review-agent-${agent.category}` },
               onStepEnd: (step) => {
                 usage = addTokenUsage(usage, toTokenUsage(step.usage));

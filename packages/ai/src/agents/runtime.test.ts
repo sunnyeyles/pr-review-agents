@@ -12,6 +12,7 @@ import {
   type ReviewSystemPrompts,
 } from "./runtime.js";
 import {
+  REVIEW_TOOL_NAMES,
   context,
   finalFindingsJson,
   headSha,
@@ -156,16 +157,7 @@ describe("the Security agent", () => {
 
     await agent.run(context);
 
-    expect(toolNamesOf(calls[0])).toEqual([
-      "find_co_changed_files",
-      "find_importers",
-      "get_base_file",
-      "get_diff",
-      "get_file",
-      "get_pull_request",
-      "list_changed_files",
-      "search_repository",
-    ]);
+    expect(toolNamesOf(calls[0])).toEqual(REVIEW_TOOL_NAMES);
   });
 
   it("hardens the system prompt against prompt injection", async () => {

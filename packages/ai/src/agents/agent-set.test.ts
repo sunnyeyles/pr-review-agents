@@ -19,6 +19,7 @@ import {
 import { createReviewAgent, type ReviewAgentDeps } from "./runtime.js";
 import { promptContractProblems } from "../prompts.js";
 import {
+  REVIEW_TOOL_NAMES,
   context,
   finalFindingsJson,
   makeFinding,
@@ -33,17 +34,6 @@ import {
 const configuredAgents = repositoryAgents();
 const securityAgent = repositoryAgent("security");
 const docsDriftAgent = repositoryAgent("docs-drift");
-
-const REVIEW_TOOL_NAMES = [
-  "find_co_changed_files",
-  "find_importers",
-  "get_base_file",
-  "get_diff",
-  "get_file",
-  "get_pull_request",
-  "list_changed_files",
-  "search_repository",
-];
 
 function makeDeps(responses: ReturnType<typeof message>[]) {
   const { model, doGenerate, calls } = makeModel(responses);

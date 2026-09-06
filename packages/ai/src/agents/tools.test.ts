@@ -1,78 +1,26 @@
-import type {
-  ChangedFile,
-  GithubInstallationClient,
-  PullRequestDetails,
-} from "@pr-review/github";
 import type { Tool, ToolSet } from "ai";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { z } from "zod";
 
-import { createReviewTools, type ReviewToolScope } from "./tools.js";
-
-const headSha = "6dcb09b5b57875f334f61aebed695e2e4193db5e";
-const baseSha = "0000000000000000000000000000000000000000";
-
-const pullRequest: PullRequestDetails = {
-  number: 42,
-  title: "Add rate limiting",
-  body: "Adds a token bucket.",
-  author: "octocat",
-  baseRef: "main",
+import { createReviewTools } from "./tools.js";
+import {
+  REVIEW_TOOL_NAMES,
   baseSha,
-  headRef: "feature/rate-limit",
-  headSha,
-};
-
-const changedFiles: ChangedFile[] = [
-  {
-    filename: "src/sessions.ts",
-    status: "modified",
-    additions: 2,
-    deletions: 1,
-    patch: "@@ -1 +1,2 @@",
-  },
-  {
-    filename: "assets/logo.png",
-    status: "added",
-    additions: 0,
-    deletions: 0,
-  },
-];
-
-const diff = "diff --git a/src/sessions.ts b/src/sessions.ts\n";
-
-const scope: ReviewToolScope = {
-  owner: "octo-org",
-  repo: "example-service",
-  pullRequest,
   changedFiles,
-  diff,
-};
+  context,
+  headSha,
+  makeGithub,
+  pullRequest,
+} from "../agent-test-support.js";
 
-function makeGithub() {
-  return {
-    getPullRequest: vi.fn(async () => pullRequest),
-    listChangedFiles: vi.fn(async () => changedFiles),
-    getDiff: vi.fn(async () => diff),
-    getFileContents: vi.fn(async () => "export const sessions = [];\n"),
-    searchCode: vi.fn(async () => ({
-      matches: [
-        {
-          path: "src/sessions.ts",
-          name: "sessions.ts",
-          snippets: ["export function createSession() {"],
-        },
-      ],
-      totalCount: 1,
-      incompleteResults: false,
-    })),
-    listCommitShas: vi.fn(async () => ["c0ffee1", "c0ffee2"]),
-    listCommitFiles: vi.fn(async () => ["src/sessions.ts", "docs/sessions.md"]),
-    listReviewComments: vi.fn(async () => []),
-    createCheckRun: vi.fn(async () => ({ id: 987 })),
-    createReview: vi.fn(async () => ({ id: 654 })),
-  } satisfies GithubInstallationClient;
-}
+/** The shared context plus one changed file that carries no patch. */
+const scope = {
+  ...context,
+  changedFiles: [
+    ...changedFiles,
+    { filename: "assets/logo.png", status: "added", additions: 0, deletions: 0 },
+  ],
+};
 
 /** The SDK stores the Zod schema we passed, so tests can parse against it. */
 function schemaOf(tools: ToolSet, name: string): z.ZodType {
@@ -95,16 +43,9 @@ function run(tools: ToolSet, name: string, input: unknown): Promise<unknown> {
 
 describe("createReviewTools", () => {
   it("exposes exactly the eight read-only tools from the spec", () => {
-    expect(Object.keys(createReviewTools(makeGithub(), scope)).sort()).toEqual([
-      "find_co_changed_files",
-      "find_importers",
-      "get_base_file",
-      "get_diff",
-      "get_file",
-      "get_pull_request",
-      "list_changed_files",
-      "search_repository",
-    ]);
+    expect(Object.keys(createReviewTools(makeGithub(), scope)).sort()).toEqual(
+      REVIEW_TOOL_NAMES,
+    );
   });
 
   it("describes every tool it exposes", () => {
@@ -165,8 +106,8 @@ describe("review tool execution", () => {
       {
         filename: "src/sessions.ts",
         status: "modified",
-        additions: 2,
-        deletions: 1,
+        additions: 3,
+        deletions: 0,
       },
       {
         filename: "assets/logo.png",
@@ -182,7 +123,7 @@ describe("review tool execution", () => {
     const result = await run(createReviewTools(github, scope), "get_diff", {});
 
     expect(github.getDiff).not.toHaveBeenCalled();
-    expect(result).toBe(diff);
+    expect(result).toBe(context.diff);
   });
 
   it("returns one file's patch when get_diff names a path", async () => {
@@ -190,7 +131,7 @@ describe("review tool execution", () => {
       path: "src/sessions.ts",
     });
 
-    expect(result).toBe("@@ -1 +1,2 @@");
+    expect(result).toBe("@@ -40,2 +40,5 @@");
   });
 
   it("rejects get_diff for a path the pull request did not change", async () => {
@@ -288,7 +229,7 @@ describe("review tool execution", () => {
   it("caps snippets so an oversized search result is still valid JSON", async () => {
     const github = makeGithub();
     github.searchCode.mockResolvedValueOnce({
-      matches: Array.from({ length: 20 }, (_unused, index) => ({
+      matches: Array.from({ length: 30 }, (_unused, index) => ({
         path: `src/file-${index}.ts`,
         name: `file-${index}.ts`,
         // Distinct, so the cap rather than deduplication is what bounds them.
@@ -309,6 +250,7 @@ describe("review tool execution", () => {
     const payload = JSON.parse(result);
     expect(payload.totalCount).toBe(843);
     expect(payload.incompleteResults).toBe(true);
+    expect(payload.matches).toHaveLength(20);
     for (const match of payload.matches) {
       expect(match.snippets).toHaveLength(2);
       expect(match.snippets[0].length).toBeLessThanOrEqual(401);
@@ -426,6 +368,17 @@ describe("review tool execution", () => {
       commitsSkippedAsSweeps: 1,
       coChanged: [{ path: "docs/sessions.md", commits: 1 }],
     });
+  });
+
+  it("reads each commit once, however many files share it", async () => {
+    const github = makeGithub();
+    github.listCommitShas.mockResolvedValue(["c1", "c2"]);
+    const tools = createReviewTools(github, scope);
+
+    await run(tools, "find_co_changed_files", { path: "src/sessions.ts" });
+    await run(tools, "find_co_changed_files", { path: "docs/sessions.md" });
+
+    expect(github.listCommitFiles).toHaveBeenCalledTimes(2);
   });
 
   it("reports an empty history without reading any commit", async () => {

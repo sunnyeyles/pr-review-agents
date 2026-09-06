@@ -6,33 +6,24 @@ import type {
   ChangedFile,
   CodeSearchResult,
   GithubInstallationClient,
-  PullRequestDetails,
 } from "@pr-review/github";
 import { tool, type ToolSet } from "ai";
 import { z } from "zod";
 
+import type { ReviewContext } from "../agent-contract.js";
 import { truncateWithMarker } from "./truncate.js";
-
-/** The pull request a job pins its tools to, with what was already loaded about it. */
-export interface ReviewToolScope {
-  owner: string;
-  repo: string;
-  pullRequest: PullRequestDetails;
-  changedFiles: readonly ChangedFile[];
-  diff: string;
-}
 
 /** Tool results larger than this are truncated to bound token usage. */
 const MAX_TOOL_RESULT_CHARS = 50_000;
 
 // Bounded by these, not by truncate(): truncation would cut the JSON mid-string.
+const MAX_SEARCH_MATCHES = 20;
+
 const MAX_SNIPPETS_PER_MATCH = 2;
 
 const MAX_SNIPPET_CHARS = 400;
 
 const TRUNCATION_MARKER = "\n[... truncated: result exceeded the size limit]";
-
-const SNIPPET_TRUNCATION_MARKER = "…";
 
 function truncate(content: string): string {
   return truncateWithMarker(content, MAX_TOOL_RESULT_CHARS, TRUNCATION_MARKER);
@@ -40,15 +31,10 @@ function truncate(content: string): string {
 
 /** Trimmed, deduplicated, and capped — the snippets the model actually sees. */
 function boundSnippets(snippets: readonly string[]): string[] {
-  const distinct = [...new Set(snippets.map((snippet) => snippet.trim()))];
-  return distinct
+  return [...new Set(snippets.map((snippet) => snippet.trim()))]
     .filter((snippet) => snippet !== "")
     .slice(0, MAX_SNIPPETS_PER_MATCH)
-    .map((snippet) =>
-      snippet.length <= MAX_SNIPPET_CHARS
-        ? snippet
-        : snippet.slice(0, MAX_SNIPPET_CHARS) + SNIPPET_TRUNCATION_MARKER,
-    );
+    .map((snippet) => truncateWithMarker(snippet, MAX_SNIPPET_CHARS, "…"));
 }
 
 /** `searchedFor` is absent unless the caller derived the query it searched. */
@@ -61,7 +47,7 @@ function renderSearchResult(
       searchedFor,
       totalCount: result.totalCount,
       incompleteResults: result.incompleteResults,
-      matches: result.matches.map((match) => ({
+      matches: result.matches.slice(0, MAX_SEARCH_MATCHES).map((match) => ({
         path: match.path,
         name: match.name,
         snippets: boundSnippets(match.snippets),
@@ -125,25 +111,24 @@ const GENERIC_DIRECTORIES = new Set([
 /** A stem safe to quote into a query: no search operators, no qualifiers. */
 const SEARCHABLE_STEM = /^[A-Za-z0-9._-]+$/;
 
+function distinctive(name: string, generic: ReadonlySet<string>): boolean {
+  return !generic.has(name.toLowerCase()) && SEARCHABLE_STEM.test(name);
+}
+
 /** Basename without its final extension, walking up when that stem is generic. */
 function importerSearchStem(path: string): string {
   const directories = path.split("/");
   const file = directories.pop() ?? "";
   const dot = file.lastIndexOf(".");
   const base = dot > 0 ? file.slice(0, dot) : file;
-  const candidates: [string, ReadonlySet<string>][] = [
-    [base, GENERIC_FILE_STEMS],
-    ...directories
-      .toReversed()
-      .map((directory): [string, ReadonlySet<string>] => [
-        directory,
-        GENERIC_DIRECTORIES,
-      ]),
-  ];
-  for (const [candidate, generic] of candidates) {
-    if (!generic.has(candidate.toLowerCase()) && SEARCHABLE_STEM.test(candidate)) {
-      return candidate;
-    }
+  if (distinctive(base, GENERIC_FILE_STEMS)) {
+    return base;
+  }
+  const directory = directories
+    .toReversed()
+    .find((candidate) => distinctive(candidate, GENERIC_DIRECTORIES));
+  if (directory !== undefined) {
+    return directory;
   }
   throw new Error(
     `no distinctive name to search for in "${path}": every segment is a generic ` +
@@ -160,25 +145,20 @@ const MAX_SWEEP_COMMIT_FILES = 40;
 /** Co-changed files reported; the rows bound the payload, not `truncate`. */
 const MAX_CO_CHANGED_FILES = 20;
 
-/** Counts appearances per path across the examined commits, subject excluded. */
+/** Counts appearances per path across the commits, subject excluded. */
 function tallyCoChanges(
   commits: readonly (readonly string[])[],
   subject: string,
-): { counts: Map<string, number>; skipped: number } {
+): Map<string, number> {
   const counts = new Map<string, number>();
-  let skipped = 0;
   for (const files of commits) {
-    if (files.length > MAX_SWEEP_COMMIT_FILES) {
-      skipped += 1;
-      continue;
-    }
     for (const file of new Set(files)) {
       if (file !== subject) {
         counts.set(file, (counts.get(file) ?? 0) + 1);
       }
     }
   }
-  return { counts, skipped };
+  return counts;
 }
 
 const emptyInputSchema = z.strictObject({});
@@ -198,25 +178,35 @@ function patchFor(changedFiles: readonly ChangedFile[], path: string): string {
 /** Exactly the eight read-only tools, bound to one pull request. */
 export function createReviewTools(
   github: GithubInstallationClient,
-  scope: ReviewToolScope,
+  context: ReviewContext,
 ): ToolSet {
+  const { owner, repo } = context;
+  // Commits are immutable, so one fetch per SHA serves every call this run.
+  const commitFiles = new Map<string, Promise<string[]>>();
+  const filesOf = (sha: string): Promise<string[]> => {
+    let files = commitFiles.get(sha);
+    if (files === undefined) {
+      files = github.listCommitFiles({ owner, repo, sha });
+      commitFiles.set(sha, files);
+    }
+    return files;
+  };
+
   return {
     get_pull_request: tool({
       description:
-        "Get the pull request's title, description, author, branches, and commit SHAs as JSON. " +
-        "The opening message already carries these.",
+        "Get the pull request's title, description, author, branches, and commit SHAs as JSON.",
       inputSchema: emptyInputSchema,
       async execute() {
-        return truncate(JSON.stringify(scope.pullRequest, null, 2));
+        return truncate(JSON.stringify(context.pullRequest, null, 2));
       },
     }),
     list_changed_files: tool({
       description:
-        "List the files changed by the pull request (filename, status, additions, deletions) as JSON. " +
-        "The opening message already carries this list.",
+        "List the files changed by the pull request (filename, status, additions, deletions) as JSON.",
       inputSchema: emptyInputSchema,
       async execute() {
-        const listed = scope.changedFiles.map(
+        const listed = context.changedFiles.map(
           ({ filename, status, additions, deletions }) => ({
             filename,
             status,
@@ -229,9 +219,9 @@ export function createReviewTools(
     }),
     get_diff: tool({
       description:
-        "Get one changed file's patch by path, or the whole unified diff with no path. " +
-        "The opening message already carries the whole diff; ask for it again only if it " +
-        "was truncated there, and prefer a path.",
+        "Get one changed file's whole patch by path, or the full unified diff with no path. " +
+        "Prefer a path: the full diff was truncated in the opening message only if it is long, " +
+        "and a single patch is never cut short.",
       inputSchema: z.strictObject({
         path: repositoryPathSchema
           .optional()
@@ -239,7 +229,7 @@ export function createReviewTools(
       }),
       async execute({ path }) {
         return truncate(
-          path === undefined ? scope.diff : patchFor(scope.changedFiles, path),
+          path === undefined ? context.diff : patchFor(context.changedFiles, path),
         );
       },
     }),
@@ -251,10 +241,10 @@ export function createReviewTools(
       async execute({ path }) {
         return truncate(
           await github.getFileContents({
-            owner: scope.owner,
-            repo: scope.repo,
+            owner,
+            repo,
             path,
-            ref: scope.pullRequest.headSha,
+            ref: context.pullRequest.headSha,
           }),
         );
       },
@@ -267,10 +257,10 @@ export function createReviewTools(
       async execute({ path }) {
         return truncate(
           await github.getFileContents({
-            owner: scope.owner,
-            repo: scope.repo,
+            owner,
+            repo,
             path,
-            ref: scope.pullRequest.baseSha,
+            ref: context.pullRequest.baseSha,
           }),
         );
       },
@@ -283,30 +273,21 @@ export function createReviewTools(
         "The search is always scoped to this repository; scope qualifiers are not allowed.",
       inputSchema: z.strictObject({ query: searchQuerySchema }),
       async execute({ query }) {
-        const result = await github.searchCode({
-          owner: scope.owner,
-          repo: scope.repo,
-          query,
-        });
+        const result = await github.searchCode({ owner, repo, query });
         return renderSearchResult(result);
       },
     }),
     find_importers: tool({
       description:
         "Find files that MENTION this file's name — a cheap proxy for \"what imports it\", NOT a " +
-        "resolved import graph. It is a text search for the file's name stem, so results routinely " +
-        "include unrelated files using the same word, and MISS importers that alias the path or " +
-        "import the directory. The stem actually searched comes back as searchedFor, and a high " +
-        "totalCount means that stem was too common to be meaningful. An empty result means the " +
-        "search found nothing — never that nothing imports the file.",
+        "resolved import graph. It is a text search for the file's name stem (returned as " +
+        "searchedFor), so it includes unrelated files using the same word and MISSES importers " +
+        "that alias the path or import the directory. An empty result means the search found " +
+        "nothing — never that nothing imports the file.",
       inputSchema: z.strictObject({ path: repositoryPathSchema }),
       async execute({ path }) {
         const stem = importerSearchStem(path);
-        const result = await github.searchCode({
-          owner: scope.owner,
-          repo: scope.repo,
-          query: `"${stem}"`,
-        });
+        const result = await github.searchCode({ owner, repo, query: `"${stem}"` });
         const subject = path.toLowerCase();
         return renderSearchResult(
           {
@@ -321,34 +302,26 @@ export function createReviewTools(
     }),
     find_co_changed_files: tool({
       description:
-        "Find files that were edited in the same commits as this file, from the DEFAULT branch's " +
-        "history. This is CORRELATION, not a dependency: files co-change because one commit did " +
-        "two unrelated things as often as because they belong together, and genuinely related " +
-        "files that were never edited together do not appear at all. It samples the " +
-        `${MAX_HISTORY_COMMITS} most recent commits touching the path and ignores any that ` +
-        `touched more than ${MAX_SWEEP_COMMIT_FILES} files, since those are sweeps, and reports at ` +
-        `most ${MAX_CO_CHANGED_FILES} files. Each result's commits count is out of commitsExamined; ` +
-        "a file in only one of them is noise. An empty result means the path has no history on the " +
-        "default branch, which is always true of a file this pull request adds.",
+        "Find files that were edited in the same commits as this file. This is CORRELATION, not " +
+        "a dependency: files co-change because one commit did two unrelated things as often as " +
+        "because they belong together, and related files never edited together do not appear. " +
+        `It samples the ${MAX_HISTORY_COMMITS} most recent commits touching the path, ignores ` +
+        `sweeps that touched more than ${MAX_SWEEP_COMMIT_FILES} files, and reports at most ` +
+        `${MAX_CO_CHANGED_FILES} files. Each commits count is out of commitsExamined; a file in ` +
+        "only one of them is noise. A file this pull request adds has no history yet.",
       inputSchema: z.strictObject({ path: repositoryPathSchema }),
       async execute({ path }) {
         const shas = await github.listCommitShas({
-          owner: scope.owner,
-          repo: scope.repo,
+          owner,
+          repo,
           path,
           limit: MAX_HISTORY_COMMITS,
         });
-        const commits = await Promise.all(
-          shas.map((sha) =>
-            github.listCommitFiles({
-              owner: scope.owner,
-              repo: scope.repo,
-              sha,
-            }),
-          ),
+        const commits = await Promise.all(shas.map(filesOf));
+        const examined = commits.filter(
+          (files) => files.length <= MAX_SWEEP_COMMIT_FILES,
         );
-        const { counts, skipped } = tallyCoChanges(commits, path);
-        const coChanged = [...counts]
+        const coChanged = [...tallyCoChanges(examined, path)]
           // Ties break on path so the same history always renders the same.
           .sort(([pathA, a], [pathB, b]) =>
             a === b ? pathA.localeCompare(pathB) : b - a,
@@ -358,8 +331,8 @@ export function createReviewTools(
         return JSON.stringify(
           {
             path,
-            commitsExamined: commits.length - skipped,
-            commitsSkippedAsSweeps: skipped,
+            commitsExamined: examined.length,
+            commitsSkippedAsSweeps: commits.length - examined.length,
             coChanged,
           },
           null,

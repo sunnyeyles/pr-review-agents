@@ -189,7 +189,8 @@ function makeOctokit(options: StubOptions = {}) {
         ),
       },
       search: {
-        code: vi.fn(async (_params: { q: string; per_page: number }) => ({
+        code: vi.fn(
+          async (_params: Parameters<OctokitLike["rest"]["search"]["code"]>[0]) => ({
           data: options.searchData ?? codeSearchResponse,
         })),
       },
