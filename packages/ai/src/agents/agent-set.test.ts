@@ -19,6 +19,7 @@ import {
 import { createReviewAgent, type ReviewAgentDeps } from "./runtime.js";
 import { promptContractProblems } from "../prompts.js";
 import {
+  REVIEW_TOOL_NAMES,
   context,
   finalFindingsJson,
   makeFinding,
@@ -33,15 +34,6 @@ import {
 const configuredAgents = repositoryAgents();
 const securityAgent = repositoryAgent("security");
 const docsDriftAgent = repositoryAgent("docs-drift");
-
-const SIX_TOOL_NAMES = [
-  "get_base_file",
-  "get_diff",
-  "get_file",
-  "get_pull_request",
-  "list_changed_files",
-  "search_repository",
-];
 
 function makeDeps(responses: ReturnType<typeof message>[]) {
   const { model, doGenerate, calls } = makeModel(responses);
@@ -269,7 +261,7 @@ describe("prompt wiring", () => {
     }
   });
 
-  it("every agent exposes the identical six read-only tools", async () => {
+  it("every agent exposes the identical read-only tools", async () => {
     for (const agent of configuredAgents) {
       const { deps, calls } = makeDeps([
         message([textBlock(finalFindingsJson([]))], "end_turn"),
@@ -280,7 +272,7 @@ describe("prompt wiring", () => {
       const toolNames = (calls[0]?.tools ?? [])
         .map((tool) => String((tool as { name?: string }).name))
         .sort();
-      expect(toolNames).toEqual(SIX_TOOL_NAMES);
+      expect(toolNames).toEqual(REVIEW_TOOL_NAMES);
     }
   });
 });

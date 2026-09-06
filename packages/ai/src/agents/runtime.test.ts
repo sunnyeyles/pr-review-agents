@@ -12,6 +12,7 @@ import {
   type ReviewSystemPrompts,
 } from "./runtime.js";
 import {
+  REVIEW_TOOL_NAMES,
   context,
   finalFindingsJson,
   headSha,
@@ -28,7 +29,7 @@ import {
 type ScriptedResponse = ReturnType<typeof message>;
 
 /** One provider-level call as the SDK assembled it. */
-type Call = { prompt: unknown[]; tools?: unknown[] };
+type Call = { prompt: unknown[]; tools?: unknown[]; providerOptions?: unknown };
 
 const securityAgent = repositoryAgent("security");
 
@@ -149,21 +150,14 @@ describe("the Security agent", () => {
     expect(opening).toContain("user.isAdmin = true");
   });
 
-  it("exposes exactly the six read-only review tools to the model", async () => {
+  it("exposes exactly the eight read-only review tools to the model", async () => {
     const { agent, calls } = makeAgent([
       message([textBlock(finalJson)], "end_turn"),
     ]);
 
     await agent.run(context);
 
-    expect(toolNamesOf(calls[0])).toEqual([
-      "get_base_file",
-      "get_diff",
-      "get_file",
-      "get_pull_request",
-      "list_changed_files",
-      "search_repository",
-    ]);
+    expect(toolNamesOf(calls[0])).toEqual(REVIEW_TOOL_NAMES);
   });
 
   it("hardens the system prompt against prompt injection", async () => {
@@ -286,6 +280,36 @@ describe("the Security agent", () => {
       "toolu_1",
       "toolu_2",
     ]);
+  });
+
+  it("runs a turn's tool calls concurrently", async () => {
+    let inFlight = 0;
+    let peakInFlight = 0;
+    const slow = async <T>(value: T): Promise<T> => {
+      inFlight += 1;
+      peakInFlight = Math.max(peakInFlight, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      inFlight -= 1;
+      return value;
+    };
+    const { agent, github } = makeAgent([
+      message(
+        [
+          toolUseBlock("toolu_1", "get_file", { path: "src/sessions.ts" }),
+          toolUseBlock("toolu_2", "search_repository", { query: "isAdmin" }),
+        ],
+        "tool_use",
+      ),
+      message([textBlock(finalJson)], "end_turn"),
+    ]);
+    github.getFileContents.mockImplementation(() => slow("export const x = 1;\n"));
+    github.searchCode.mockImplementation(() =>
+      slow({ matches: [], totalCount: 0, incompleteResults: false }),
+    );
+
+    await agent.run(context);
+
+    expect(peakInFlight).toBe(2);
   });
 
   it("extracts findings from a fenced JSON final message", async () => {
@@ -527,6 +551,22 @@ describe("prompt caching", () => {
     for (const call of calls) {
       expect(systemOf(call)).toBe(buildReviewSystemPrompt(securityAgent));
       expect(cacheMarkersOf(call)).toEqual([{ type: "ephemeral" }]);
+    }
+  });
+
+  it("asks the provider to cache the growing conversation tail on every turn", async () => {
+    // A call-level breakpoint lands on the last block, so turn two reads turn one.
+    const { agent, calls } = makeAgent([
+      message([toolUseBlock("toolu_1", "get_diff", {})], "tool_use"),
+      message([textBlock(finalJson)], "end_turn"),
+    ]);
+
+    await agent.run(context);
+
+    for (const call of calls) {
+      expect(call.providerOptions).toEqual({
+        anthropic: { cacheControl: { type: "ephemeral" } },
+      });
     }
   });
 

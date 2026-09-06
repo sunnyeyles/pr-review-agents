@@ -6,6 +6,7 @@ import type {
   ChangedFile,
   CheckRun,
   CodeSearchMatch,
+  CodeSearchResult,
   CreateCheckRunInput,
   CreateReviewInput,
   ExistingReviewComment,
@@ -20,6 +21,36 @@ import type { LoadedFixture } from "./fixture.js";
 
 /** At most this many search matches come back from one query. */
 const MAX_SEARCH_MATCHES = 25;
+
+/** Characters of context either side of a match, as GitHub's fragments have. */
+const FRAGMENT_PADDING = 120;
+
+/** Stands in for GitHub's text-match fragments: a window around each term. */
+function fragmentsAround(
+  contents: string,
+  lowered: string,
+  terms: string[],
+): string[] {
+  const windows = terms.flatMap((term) => {
+    const at = lowered.indexOf(term);
+    return at < 0
+      ? []
+      : [
+          contents.slice(
+            Math.max(0, at - FRAGMENT_PADDING),
+            at + term.length + FRAGMENT_PADDING,
+          ),
+        ];
+  });
+  return [...new Set(windows)];
+}
+
+/** GitHub's grammar: a quoted phrase is one term, everything else splits on space. */
+function searchTerms(query: string): string[] {
+  return (query.toLowerCase().match(/"[^"]*"|\S+/g) ?? [])
+    .map((term) => term.replaceAll('"', ""))
+    .filter((term) => term.length > 0);
+}
 
 /** One recorded read against the fixture repository. */
 export interface FixtureCall {
@@ -101,7 +132,7 @@ export function createFixtureClient(fixture: LoadedFixture): FixtureClient {
       return contents;
     },
 
-    async searchCode(request): Promise<CodeSearchMatch[]> {
+    async searchCode(request): Promise<CodeSearchResult> {
       const { owner, repo } = fixture.context;
       if (request.owner !== owner || request.repo !== repo) {
         throw new FixtureNotFoundError(
@@ -109,20 +140,36 @@ export function createFixtureClient(fixture: LoadedFixture): FixtureClient {
         );
       }
       record("searchCode", request.query);
-      // Cruder than GitHub's code search, but the property that matters
-      // holds: a query finds the files mentioning the terms.
-      const terms = request.query
-        .toLowerCase()
-        .split(/\s+/)
-        .filter((term) => term.length > 0);
+      const terms = searchTerms(request.query);
       const matches: CodeSearchMatch[] = [];
       for (const [path, contents] of fixture.headFiles) {
-        const haystack = `${path}\n${contents}`.toLowerCase();
+        const lowered = contents.toLowerCase();
+        const haystack = `${path.toLowerCase()}\n${lowered}`;
         if (terms.every((term) => haystack.includes(term))) {
-          matches.push({ path, name: path.slice(path.lastIndexOf("/") + 1) });
+          matches.push({
+            path,
+            name: path.slice(path.lastIndexOf("/") + 1),
+            snippets: fragmentsAround(contents, lowered, terms),
+          });
         }
       }
-      return matches.slice(0, MAX_SEARCH_MATCHES);
+      return {
+        matches: matches.slice(0, MAX_SEARCH_MATCHES),
+        totalCount: matches.length,
+        incompleteResults: false,
+      };
+    },
+
+    // A fixture has no commits; inventing history would make the eval lie.
+    async listCommitShas(request): Promise<string[]> {
+      record("listCommitShas", request.path);
+      return [];
+    },
+
+    async listCommitFiles(request): Promise<string[]> {
+      throw new FixtureNotFoundError(
+        `fixture ${fixture.name} has no commit history, so ${request.sha} does not exist`,
+      );
     },
 
     async listReviewComments(ref): Promise<ExistingReviewComment[]> {

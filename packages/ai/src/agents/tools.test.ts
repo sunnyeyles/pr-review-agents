@@ -1,55 +1,26 @@
-import type {
-  ChangedFile,
-  GithubInstallationClient,
-  PullRequestDetails,
-} from "@pr-review/github";
 import type { Tool, ToolSet } from "ai";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { z } from "zod";
 
-import { createReviewTools, type ReviewToolScope } from "./tools.js";
+import { createReviewTools } from "./tools.js";
+import {
+  REVIEW_TOOL_NAMES,
+  baseSha,
+  changedFiles,
+  context,
+  headSha,
+  makeGithub,
+  pullRequest,
+} from "../agent-test-support.js";
 
-const scope: ReviewToolScope = {
-  owner: "octo-org",
-  repo: "example-service",
-  pullRequestNumber: 42,
-  headSha: "6dcb09b5b57875f334f61aebed695e2e4193db5e",
-  baseSha: "0000000000000000000000000000000000000000",
+/** The shared context plus one changed file that carries no patch. */
+const scope = {
+  ...context,
+  changedFiles: [
+    ...changedFiles,
+    { filename: "assets/logo.png", status: "added", additions: 0, deletions: 0 },
+  ],
 };
-
-const pullRequest: PullRequestDetails = {
-  number: 42,
-  title: "Add rate limiting",
-  body: "Adds a token bucket.",
-  author: "octocat",
-  baseRef: "main",
-  baseSha: scope.baseSha,
-  headRef: "feature/rate-limit",
-  headSha: scope.headSha,
-};
-
-const changedFiles: ChangedFile[] = [
-  {
-    filename: "src/sessions.ts",
-    status: "modified",
-    additions: 2,
-    deletions: 1,
-    patch: "@@ -1 +1,2 @@",
-  },
-];
-
-function makeGithub() {
-  return {
-    getPullRequest: vi.fn(async () => pullRequest),
-    listChangedFiles: vi.fn(async () => changedFiles),
-    getDiff: vi.fn(async () => "diff --git a/src/sessions.ts b/src/sessions.ts\n"),
-    getFileContents: vi.fn(async () => "export const sessions = [];\n"),
-    searchCode: vi.fn(async () => [{ path: "src/sessions.ts", name: "sessions.ts" }]),
-    listReviewComments: vi.fn(async () => []),
-    createCheckRun: vi.fn(async () => ({ id: 987 })),
-    createReview: vi.fn(async () => ({ id: 654 })),
-  } satisfies GithubInstallationClient;
-}
 
 /** The SDK stores the Zod schema we passed, so tests can parse against it. */
 function schemaOf(tools: ToolSet, name: string): z.ZodType {
@@ -71,15 +42,10 @@ function run(tools: ToolSet, name: string, input: unknown): Promise<unknown> {
 }
 
 describe("createReviewTools", () => {
-  it("exposes exactly the six read-only tools from the spec", () => {
-    expect(Object.keys(createReviewTools(makeGithub(), scope)).sort()).toEqual([
-      "get_base_file",
-      "get_diff",
-      "get_file",
-      "get_pull_request",
-      "list_changed_files",
-      "search_repository",
-    ]);
+  it("exposes exactly the eight read-only tools from the spec", () => {
+    expect(Object.keys(createReviewTools(makeGithub(), scope)).sort()).toEqual(
+      REVIEW_TOOL_NAMES,
+    );
   });
 
   it("describes every tool it exposes", () => {
@@ -93,6 +59,9 @@ describe("createReviewTools", () => {
     ["get_file", "path"],
     ["get_base_file", "path"],
     ["search_repository", "query"],
+    ["get_diff", "path"],
+    ["find_importers", "path"],
+    ["find_co_changed_files", "path"],
   ])("describes %s's %s parameter", (name, parameter) => {
     const tools = createReviewTools(makeGithub(), scope);
     const shape = (
@@ -112,7 +81,7 @@ describe("createReviewTools", () => {
 });
 
 describe("review tool execution", () => {
-  it("dispatches get_pull_request to the client and returns PR details as JSON", async () => {
+  it("answers get_pull_request from the review context, not GitHub", async () => {
     const github = makeGithub();
     const result = await run(
       createReviewTools(github, scope),
@@ -120,15 +89,11 @@ describe("review tool execution", () => {
       {},
     );
 
-    expect(github.getPullRequest).toHaveBeenCalledWith({
-      owner: scope.owner,
-      repo: scope.repo,
-      pullRequestNumber: scope.pullRequestNumber,
-    });
+    expect(github.getPullRequest).not.toHaveBeenCalled();
     expect(JSON.parse(result as string)).toEqual(pullRequest);
   });
 
-  it("lists changed files without their patches", async () => {
+  it("lists changed files from the review context, without their patches", async () => {
     const github = makeGithub();
     const result = await run(
       createReviewTools(github, scope),
@@ -136,22 +101,53 @@ describe("review tool execution", () => {
       {},
     );
 
+    expect(github.listChangedFiles).not.toHaveBeenCalled();
     expect(JSON.parse(result as string)).toEqual([
       {
         filename: "src/sessions.ts",
         status: "modified",
-        additions: 2,
-        deletions: 1,
+        additions: 3,
+        deletions: 0,
+      },
+      {
+        filename: "assets/logo.png",
+        status: "added",
+        additions: 0,
+        deletions: 0,
       },
     ]);
   });
 
-  it("returns the diff verbatim", async () => {
+  it("returns the loaded diff verbatim when get_diff names no path", async () => {
     const github = makeGithub();
     const result = await run(createReviewTools(github, scope), "get_diff", {});
 
-    expect(github.getDiff).toHaveBeenCalled();
-    expect(result).toBe("diff --git a/src/sessions.ts b/src/sessions.ts\n");
+    expect(github.getDiff).not.toHaveBeenCalled();
+    expect(result).toBe(context.diff);
+  });
+
+  it("returns one file's patch when get_diff names a path", async () => {
+    const result = await run(createReviewTools(makeGithub(), scope), "get_diff", {
+      path: "src/sessions.ts",
+    });
+
+    expect(result).toBe("@@ -40,2 +40,5 @@");
+  });
+
+  it("rejects get_diff for a path the pull request did not change", async () => {
+    await expect(
+      run(createReviewTools(makeGithub(), scope), "get_diff", {
+        path: "src/elsewhere.ts",
+      }),
+    ).rejects.toThrow("not a file this pull request changed");
+  });
+
+  it("rejects get_diff for a changed file that carries no patch", async () => {
+    await expect(
+      run(createReviewTools(makeGithub(), scope), "get_diff", {
+        path: "assets/logo.png",
+      }),
+    ).rejects.toThrow("no patch");
   });
 
   it("reads get_file at the head commit", async () => {
@@ -164,7 +160,7 @@ describe("review tool execution", () => {
       owner: scope.owner,
       repo: scope.repo,
       path: "src/sessions.ts",
-      ref: scope.headSha,
+      ref: headSha,
     });
   });
 
@@ -178,7 +174,7 @@ describe("review tool execution", () => {
       owner: scope.owner,
       repo: scope.repo,
       path: "src/sessions.ts",
-      ref: scope.baseSha,
+      ref: baseSha,
     });
   });
 
@@ -195,17 +191,247 @@ describe("review tool execution", () => {
       repo: scope.repo,
       query: "createSession",
     });
-    expect(JSON.parse(result as string)).toEqual([
-      { path: "src/sessions.ts", name: "sessions.ts" },
-    ]);
+    expect(JSON.parse(result as string)).toEqual({
+      totalCount: 1,
+      incompleteResults: false,
+      matches: [
+        {
+          path: "src/sessions.ts",
+          name: "sessions.ts",
+          snippets: ["export function createSession() {"],
+        },
+      ],
+    });
   });
 
-  it("truncates oversized tool results", async () => {
+  it("trims and deduplicates snippets before capping them", async () => {
     const github = makeGithub();
-    github.getDiff.mockResolvedValueOnce("x".repeat(200_000));
+    github.searchCode.mockResolvedValueOnce({
+      matches: [
+        {
+          path: "src/a.ts",
+          name: "a.ts",
+          snippets: ["same\n", "  same", "", "different", "third"],
+        },
+      ],
+      totalCount: 1,
+      incompleteResults: false,
+    });
+
+    const result = (await run(createReviewTools(github, scope), "search_repository", {
+      query: "createSession",
+    })) as string;
+
+    // Deduplication precedes the cap, or duplicates would consume the budget.
+    expect(JSON.parse(result).matches[0].snippets).toEqual(["same", "different"]);
+  });
+
+  it("caps snippets so an oversized search result is still valid JSON", async () => {
+    const github = makeGithub();
+    github.searchCode.mockResolvedValueOnce({
+      matches: Array.from({ length: 30 }, (_unused, index) => ({
+        path: `src/file-${index}.ts`,
+        name: `file-${index}.ts`,
+        // Distinct, so the cap rather than deduplication is what bounds them.
+        snippets: Array.from({ length: 5 }, (_u, n) => `${n}${"x".repeat(5_000)}`),
+      })),
+      totalCount: 843,
+      incompleteResults: true,
+    });
+
+    const result = (await run(createReviewTools(github, scope), "search_repository", {
+      query: "createSession",
+    })) as string;
+
+    // The caps are the only thing keeping this under the tool result limit,
+    // which no truncation may enforce here: it would cut the JSON mid-string.
+    expect(result.length).toBeLessThan(50_000);
+    expect(result).not.toMatch(/truncated/i);
+    const payload = JSON.parse(result);
+    expect(payload.totalCount).toBe(843);
+    expect(payload.incompleteResults).toBe(true);
+    expect(payload.matches).toHaveLength(20);
+    for (const match of payload.matches) {
+      expect(match.snippets).toHaveLength(2);
+      expect(match.snippets[0].length).toBeLessThanOrEqual(401);
+    }
+  });
+
+  it("names the stem it searched and drops the subject file from its own results", async () => {
+    const github = makeGithub();
+
+    const result = (await run(createReviewTools(github, scope), "find_importers", {
+      path: "src/sessions.ts",
+    })) as string;
+
+    expect(github.searchCode).toHaveBeenCalledExactlyOnceWith({
+      owner: scope.owner,
+      repo: scope.repo,
+      query: '"sessions"',
+    });
+    const payload = JSON.parse(result);
+    expect(payload.searchedFor).toBe("sessions");
+    // The stub's only match is the subject file itself.
+    expect(payload.matches).toEqual([]);
+  });
+
+  it.each([
+    ["src/sessions.ts", "sessions"],
+    ["src/session/index.ts", "session"],
+    ["pkg/auth/__init__.py", "auth"],
+    ["crates/parser/src/mod.rs", "parser"],
+    ["cmd/server/main.go", "server"],
+    ["types/session.d.ts", "session.d"],
+  ])("derives a distinctive stem for %s", async (path, stem) => {
+    const github = makeGithub();
+
+    await run(createReviewTools(github, scope), "find_importers", { path });
+
+    expect(github.searchCode).toHaveBeenCalledExactlyOnceWith({
+      owner: scope.owner,
+      repo: scope.repo,
+      query: `"${stem}"`,
+    });
+  });
+
+  it.each([
+    ["every segment is generic", "src/index.ts"],
+    ["the stem would carry a qualifier", "org:someone.ts"],
+    ["the stem would carry a space", "a b/index.ts"],
+  ])("rejects find_importers when %s, client untouched", async (_label, path) => {
+    const github = makeGithub();
+
+    await expect(
+      run(createReviewTools(github, scope), "find_importers", { path }),
+    ).rejects.toThrow(/no distinctive name/i);
+    expect(github.searchCode).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["path traversal", { path: "../secrets/config.yml" }],
+    ["absolute path", { path: "/etc/passwd" }],
+    ["extra properties", { path: "src/sessions.ts", ref: "deadbeef" }],
+  ])("rejects find_importers input with %s", (_label, input) => {
+    const tools = createReviewTools(makeGithub(), scope);
+    expect(schemaOf(tools, "find_importers").safeParse(input).success).toBe(false);
+  });
+
+  it("ranks co-changed files by commit count and excludes the subject file", async () => {
+    const github = makeGithub();
+    github.listCommitShas.mockResolvedValueOnce(["c1", "c2", "c3"]);
+    github.listCommitFiles
+      .mockResolvedValueOnce(["src/sessions.ts", "docs/sessions.md"])
+      .mockResolvedValueOnce(["src/sessions.ts", "docs/sessions.md", "src/rate.ts"])
+      .mockResolvedValueOnce(["src/sessions.ts", "docs/sessions.md"]);
 
     const result = (await run(
       createReviewTools(github, scope),
+      "find_co_changed_files",
+      { path: "src/sessions.ts" },
+    )) as string;
+
+    expect(github.listCommitShas).toHaveBeenCalledExactlyOnceWith({
+      owner: scope.owner,
+      repo: scope.repo,
+      path: "src/sessions.ts",
+      limit: 10,
+    });
+    expect(github.listCommitFiles).toHaveBeenCalledTimes(3);
+    expect(JSON.parse(result)).toEqual({
+      path: "src/sessions.ts",
+      commitsExamined: 3,
+      commitsSkippedAsSweeps: 0,
+      coChanged: [
+        { path: "docs/sessions.md", commits: 3 },
+        { path: "src/rate.ts", commits: 1 },
+      ],
+    });
+  });
+
+  it("skips sweeping commits rather than counting their files", async () => {
+    const github = makeGithub();
+    const sweep = Array.from({ length: 41 }, (_unused, index) => `src/file-${index}.ts`);
+    github.listCommitShas.mockResolvedValueOnce(["c1", "c2"]);
+    github.listCommitFiles
+      .mockResolvedValueOnce(sweep)
+      .mockResolvedValueOnce(["src/sessions.ts", "docs/sessions.md"]);
+
+    const result = (await run(
+      createReviewTools(github, scope),
+      "find_co_changed_files",
+      { path: "src/sessions.ts" },
+    )) as string;
+
+    expect(JSON.parse(result)).toEqual({
+      path: "src/sessions.ts",
+      commitsExamined: 1,
+      commitsSkippedAsSweeps: 1,
+      coChanged: [{ path: "docs/sessions.md", commits: 1 }],
+    });
+  });
+
+  it("reads each commit once, however many files share it", async () => {
+    const github = makeGithub();
+    github.listCommitShas.mockResolvedValue(["c1", "c2"]);
+    const tools = createReviewTools(github, scope);
+
+    await run(tools, "find_co_changed_files", { path: "src/sessions.ts" });
+    await run(tools, "find_co_changed_files", { path: "docs/sessions.md" });
+
+    expect(github.listCommitFiles).toHaveBeenCalledTimes(2);
+  });
+
+  it("reports an empty history without reading any commit", async () => {
+    const github = makeGithub();
+    github.listCommitShas.mockResolvedValueOnce([]);
+
+    const result = (await run(
+      createReviewTools(github, scope),
+      "find_co_changed_files",
+      { path: "src/added-by-this-pr.ts" },
+    )) as string;
+
+    expect(github.listCommitFiles).not.toHaveBeenCalled();
+    expect(JSON.parse(result)).toEqual({
+      path: "src/added-by-this-pr.ts",
+      commitsExamined: 0,
+      commitsSkippedAsSweeps: 0,
+      coChanged: [],
+    });
+  });
+
+  it("caps the co-changed files it reports", async () => {
+    const github = makeGithub();
+    github.listCommitShas.mockResolvedValueOnce(["c1"]);
+    github.listCommitFiles.mockResolvedValueOnce(
+      Array.from({ length: 40 }, (_unused, index) => `src/file-${index}.ts`),
+    );
+
+    const result = (await run(
+      createReviewTools(github, scope),
+      "find_co_changed_files",
+      { path: "src/sessions.ts" },
+    )) as string;
+
+    expect(JSON.parse(result).coChanged).toHaveLength(20);
+  });
+
+  it.each([
+    ["path traversal", { path: "../../secrets/config.yml" }],
+    ["absolute path", { path: "/etc/passwd" }],
+    ["extra properties", { path: "src/sessions.ts", ref: "deadbeef" }],
+  ])("rejects find_co_changed_files input with %s", (_label, input) => {
+    const tools = createReviewTools(makeGithub(), scope);
+    expect(schemaOf(tools, "find_co_changed_files").safeParse(input).success).toBe(
+      false,
+    );
+  });
+
+  it("truncates oversized tool results", async () => {
+    const huge = { ...scope, diff: "x".repeat(200_000) };
+
+    const result = (await run(
+      createReviewTools(makeGithub(), huge),
       "get_diff",
       {},
     )) as string;

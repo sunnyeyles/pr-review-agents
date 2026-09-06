@@ -9,7 +9,7 @@ the ones you want in `.github/pr-review-agents.yml` and the review runs exactly
 those — see [Choosing your agents](#choosing-your-agents), which you need
 before the first run.
 
-The agents never write to GitHub. They are given six read-only tools and
+The agents never write to GitHub. They are given eight read-only tools and
 propose structured findings; deterministic code then decides what actually gets
 published: every finding must pass a schema check, name a file in the pull
 request, anchor to a line the pull request actually added, and clear a

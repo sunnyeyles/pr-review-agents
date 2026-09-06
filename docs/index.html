@@ -731,7 +731,7 @@ html { scroll-behavior: smooth; }
       <div class="prose">
         <p>
           Every agent shares one runtime. An <code>AgentDefinition</code>
-          supplies the role, the focus text, and the category; the loop, the six
+          supplies the role, the focus text, and the category; the loop, the eight
           tools, the injection hardening, and the output contract are identical
           by construction, so a new agent costs a YAML entry and no code.
         </p>
@@ -784,7 +784,7 @@ html { scroll-behavior: smooth; }
         </p>
       </div>
 
-      <h3>The six tools</h3>
+      <h3>The eight tools</h3>
       <div class="paths">
         <span class="chip">packages/ai/src/agents/<b>tools.ts</b></span>
       </div>
@@ -801,14 +801,24 @@ html { scroll-behavior: smooth; }
           <tbody>
             <tr><td><code>get_pull_request</code></td><td>Title, description, author, branches, SHAs</td></tr>
             <tr><td><code>list_changed_files</code></td><td>The changed-file list</td></tr>
-            <tr><td><code>get_diff</code></td><td>The full unified diff</td></tr>
+            <tr><td><code>get_diff</code></td><td>One changed file's patch by path, or the whole unified diff</td></tr>
             <tr><td><code>get_file</code></td><td>One file at the <strong>head</strong> SHA — the proposed state</td></tr>
             <tr><td><code>get_base_file</code></td><td>One file at the <strong>base</strong> SHA — before this PR</td></tr>
-            <tr><td><code>search_repository</code></td><td>Code search, always scoped to this repository</td></tr>
+            <tr><td><code>search_repository</code></td><td>Code search with matching snippets and the repository-wide total, always scoped to this repository</td></tr>
+            <tr><td><code>find_importers</code></td><td>Files mentioning one file's name — a text-search proxy for its importers</td></tr>
+            <tr><td><code>find_co_changed_files</code></td><td>Files edited in the same recent commits as one file — correlation, not dependency</td></tr>
           </tbody>
         </table>
       </div>
       <div class="prose">
+        <p>
+          The first three answer from what the run already loaded, so they cost
+          no GitHub call. The last three read the <strong>default branch</strong>:
+          the search pair through GitHub's code search index, the third through
+          commit history. Their results do not reflect this pull request and
+          their snippets carry no line numbers, so a claim about a changed file
+          still needs <code>get_file</code>.
+        </p>
         <p>
           Every input is Zod-validated by the tool's own
           <code>inputSchema</code> before it touches the GitHub client: paths
@@ -1106,7 +1116,7 @@ review.started<br>
             <tr><th colspan="2" style="padding-top:1.5rem">04 · The pipeline</th></tr>
             <tr><td><code>packages/reviewer/src/review-pipeline.ts</code></td><td>Agent fan-out, join, synthesise, validate</td></tr>
             <tr><td><code>packages/ai/src/agents/runtime.ts</code></td><td>The shared agent loop, its turn cap, and the category filter</td></tr>
-            <tr><td><code>packages/ai/src/agents/tools.ts</code></td><td>The six read-only tools</td></tr>
+            <tr><td><code>packages/ai/src/agents/tools.ts</code></td><td>The eight read-only tools</td></tr>
             <tr><td><code>packages/ai/src/agents/output.ts</code></td><td>Parsing an agent's final JSON; bad output fails the agent, not the run</td></tr>
             <tr><td><code>packages/ai/src/usage.ts</code></td><td>Token accounting for every model call</td></tr>
             <tr><td><code>packages/ai/src/agents/synthesiser.ts</code></td><td>The single refining model call</td></tr>

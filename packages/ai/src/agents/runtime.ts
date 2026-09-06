@@ -16,7 +16,7 @@ import { buildReviewSystemPrompt, type AgentDefinition } from "./definition.js";
 import { extractAgentOutput } from "./output.js";
 import type { ReviewModel } from "../model.js";
 import type { ReviewAgent, ReviewContext } from "../agent-contract.js";
-import { createReviewTools, type ReviewToolScope } from "./tools.js";
+import { createReviewTools } from "./tools.js";
 import { truncateWithMarker } from "./truncate.js";
 import { addTokenUsage, emptyTokenUsage, toTokenUsage } from "../usage.js";
 
@@ -40,11 +40,16 @@ const MAX_DIFF_CHARS = 80_000;
 /** The opening message lists at most this many changed files. */
 const MAX_LISTED_FILES = 300;
 
+/** Anthropic honours this on a message and at call level; OpenAI ignores it. */
+const CACHE_BREAKPOINT = {
+  anthropic: { cacheControl: { type: "ephemeral" as const } },
+};
+
 function truncateDiff(diff: string): string {
   return truncateWithMarker(
     diff,
     MAX_DIFF_CHARS,
-    "\n[... diff truncated; use the get_file / get_diff tools for specific files]",
+    "\n[... diff truncated; call get_diff with a path for one file's whole patch]",
   );
 }
 
@@ -116,14 +121,6 @@ export function createReviewAgent(
     name: agent.category,
 
     async run(context: ReviewContext): Promise<readonly unknown[]> {
-      const scope: ReviewToolScope = {
-        owner: context.owner,
-        repo: context.repo,
-        pullRequestNumber: context.pullRequest.number,
-        headSha: context.pullRequest.headSha,
-        baseSha: context.pullRequest.baseSha,
-      };
-
       // Every event of this run carries these fields.
       const eventFields = {
         repository: `${context.owner}/${context.repo}`,
@@ -158,21 +155,20 @@ export function createReviewAgent(
           try {
             const result = await generateText({
               model: deps.model,
-              // The breakpoint must sit on the system message itself; the
-              // provider ignores a call-level one. Tools cache with it.
+              // The system breakpoint pins the shared prefix, tools included;
+              // the call-level one below follows the growing tail.
               instructions: {
                 role: "system",
                 content: systemPrompt,
-                providerOptions: {
-                  anthropic: { cacheControl: { type: "ephemeral" } },
-                },
+                providerOptions: CACHE_BREAKPOINT,
               },
               messages: [
                 { role: "user", content: buildOpeningMessage(context) },
               ],
-              tools: createReviewTools(deps.github, scope),
+              tools: createReviewTools(deps.github, context),
               stopWhen: isStepCount(maxTurns),
               maxOutputTokens: MAX_OUTPUT_TOKENS,
+              providerOptions: CACHE_BREAKPOINT,
               telemetry: { functionId: `review-agent-${agent.category}` },
               onStepEnd: (step) => {
                 usage = addTokenUsage(usage, toTokenUsage(step.usage));
