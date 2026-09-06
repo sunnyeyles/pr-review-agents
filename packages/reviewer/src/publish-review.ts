@@ -2,7 +2,6 @@
  * Delivery: one review across two GitHub surfaces. Comments go first; the
  * check run annotates only what no comment carries.
  */
-import type { SkippedAgent } from "@pr-review/ai";
 import {
   httpStatus,
   isPermissionError,
@@ -15,8 +14,11 @@ import {
   renderCheckRun,
   type RenderedCheckRun,
 } from "./render-check-run.js";
-import { renderReview, type RenderedReview } from "./render-review.js";
-import type { AgentFailure } from "./review-pipeline.js";
+import {
+  renderReview,
+  type RenderedReview,
+  type ReviewNotes,
+} from "./render-review.js";
 import { reviewCorrelation, type ReviewTarget } from "./review-target.js";
 
 /** What the comment publisher itself can report. */
@@ -43,12 +45,8 @@ export type PublishReviewComments = (
 ) => Promise<CommentsPublished>;
 
 /** Everything one review has to say, before it is split across surfaces. */
-interface ReviewDeliveryInput {
+interface ReviewDeliveryInput extends ReviewNotes {
   findings: readonly ReviewFinding[];
-  agentFailures: readonly AgentFailure[];
-  skippedAgents: readonly SkippedAgent[];
-  /** Finding keys already carrying a comment from an earlier commit. */
-  alreadyPosted: ReadonlySet<string>;
 }
 
 interface ReviewDeliveryDeps {

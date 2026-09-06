@@ -11,6 +11,7 @@ export type { RenderedCheckRun } from "./render-check-run.js";
 export {
   createCheckRunPublisher,
   type PublishReview,
+  type PublishReviewComments,
 } from "./publish-review.js";
 export { reviewPullRequest } from "./review-pull-request.js";
 export { reviewCorrelation, type ReviewTarget } from "./review-target.js";
