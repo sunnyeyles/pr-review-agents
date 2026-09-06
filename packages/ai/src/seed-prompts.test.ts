@@ -4,9 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { agentPromptKey } from "./agents/definition.js";
 import {
-  repositoryAgents,
   validRemotePrompt,
-  validRemoteSynthesisPrompt,
 } from "./agent-test-support.js";
 import {
   seedFailed,
@@ -14,17 +12,13 @@ import {
   type LabelledPrompt,
   type LangfusePromptWriter,
 } from "./seed-prompts.js";
-import { inCodePrompts } from "./prompts.js";
 
-const configuredAgents = repositoryAgents();
-
-/** One prompt per configured agent, all satisfying the contract guard. */
+/** One prompt per agent of an arbitrary set, all satisfying the guard. */
 function validPrompts() {
   return {
     correctness: validRemotePrompt("correctness", "SEED CORRECTNESS"),
     security: validRemotePrompt("security", "SEED SECURITY"),
     architecture: validRemotePrompt("architecture", "SEED ARCHITECTURE"),
-    synthesis: validRemoteSynthesisPrompt("SEED SYNTHESIS"),
   };
 }
 
@@ -72,13 +66,11 @@ describe("seedManagedPrompts", () => {
       correctness: "created",
       security: "created",
       architecture: "created",
-      synthesis: "created",
     });
     expect(published.map((entry) => entry.name).sort()).toEqual([
       "architecture_system",
       "correctness_system",
       "security_system",
-      "synthesis_system",
     ]);
     expect(seedFailed(report)).toBe(false);
   });
@@ -89,7 +81,6 @@ describe("seedManagedPrompts", () => {
       correctness_system: { text: prompts.correctness, version: 1 },
       security_system: { text: prompts.security, version: 1 },
       architecture_system: { text: prompts.architecture, version: 1 },
-      synthesis_system: { text: prompts.synthesis, version: 1 },
     });
 
     const report = await seedManagedPrompts(writer, {
@@ -101,7 +92,6 @@ describe("seedManagedPrompts", () => {
       correctness: "unchanged",
       security: "unchanged",
       architecture: "unchanged",
-      synthesis: "unchanged",
     });
     // Re-running must not pile permanent versions onto a current project.
     expect(published).toEqual([]);
@@ -114,7 +104,6 @@ describe("seedManagedPrompts", () => {
       correctness_system: { text: `\n${prompts.correctness}\n  `, version: 3 },
       security_system: { text: prompts.security, version: 1 },
       architecture_system: { text: prompts.architecture, version: 1 },
-      synthesis_system: { text: prompts.synthesis, version: 1 },
     });
 
     const report = await seedManagedPrompts(writer, {
@@ -135,7 +124,6 @@ describe("seedManagedPrompts", () => {
       },
       security_system: { text: prompts.security, version: 1 },
       architecture_system: { text: prompts.architecture, version: 1 },
-      synthesis_system: { text: prompts.synthesis, version: 1 },
     });
 
     const report = await seedManagedPrompts(writer, {
@@ -192,8 +180,7 @@ describe("seedManagedPrompts", () => {
     expect(report.correctness).toBe("failed");
     expect(report.security).toBe("created");
     expect(report.architecture).toBe("created");
-    expect(report.synthesis).toBe("created");
-    expect(published).toHaveLength(3);
+    expect(published).toHaveLength(2);
     expect(seedFailed(report)).toBe(true);
   });
 
@@ -217,7 +204,6 @@ describe("seedManagedPrompts", () => {
       correctness: "updated",
       security: "unchanged",
       architecture: "created",
-      synthesis: "created",
     });
     expect(published).toEqual([]);
   });
@@ -231,7 +217,7 @@ describe("seedManagedPrompts", () => {
       logger: createCapturingLogger().logger,
     });
 
-    for (const id of Object.keys(inCodePrompts(configuredAgents))) {
+    for (const id of Object.keys(validPrompts())) {
       expect(writer.readLabelled).toHaveBeenCalledWith(
         agentPromptKey(id),
         "staging",

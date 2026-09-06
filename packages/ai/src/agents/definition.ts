@@ -2,10 +2,7 @@
  * What a review agent is. Everything else is derived from an AgentDefinition,
  * so a run can carry any number of agents without code changes.
  */
-import { findingCategorySchema, type FindingCategory } from "@pr-review/schemas";
-import { z } from "zod";
-
-import { agentPathsSchema } from "./path-filter.js";
+import type { FindingCategory } from "@pr-review/schemas";
 
 /** Reserved: the synthesiser's managed prompt shares the agent key space. */
 export const SYNTHESIS_PROMPT_ID = "synthesis";
@@ -31,22 +28,6 @@ export interface AgentDefinition {
    */
   paths?: readonly string[];
 }
-
-/** Parses one agent from untrusted configuration. Strict: contextGuidance
- * is optional, so a misspelled key would otherwise be dropped in silence. */
-export const agentDefinitionSchema = z
-  .object({
-    category: findingCategorySchema.refine(
-      (value) => value !== SYNTHESIS_PROMPT_ID && value !== ALL_AGENTS,
-      { message: `"${SYNTHESIS_PROMPT_ID}" and "${ALL_AGENTS}" are reserved` },
-    ),
-    role: z.string().min(1),
-    focus: z.string().min(1),
-    contextGuidance: z.string().min(1).optional(),
-    model: z.string().trim().min(1).optional(),
-    paths: agentPathsSchema.optional(),
-  })
-  .strict();
 
 /** The Langfuse prompt name for an agent; the synthesiser uses SYNTHESIS_PROMPT_ID. */
 export function agentPromptKey(id: string): string {

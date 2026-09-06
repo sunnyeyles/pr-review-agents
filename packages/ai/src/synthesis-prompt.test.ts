@@ -1,9 +1,9 @@
 /**
- * The synthesis prompt end to end: fetched or fallen back to, through
- * the contract guard, and on into the model call that uses it.
+ * The synthesis prompt is built from the run's agent set and never managed.
+ * A stored copy would name categories the run no longer has.
  */
 import { createCapturingLogger } from "@pr-review/logging";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   finalFindingsJson,
@@ -17,7 +17,8 @@ import {
   buildSynthesisSystemPrompt,
   createSynthesiser,
 } from "./agents/synthesiser.js";
-import { loadManagedPrompts, type LangfusePromptClient } from "./prompts.js";
+import { SYNTHESIS_PROMPT_ID } from "./agents/definition.js";
+import { inCodePrompts, loadManagedPrompts, type LangfusePromptClient } from "./prompts.js";
 
 const configuredAgents = repositoryAgents();
 const SYNTHESIS_SYSTEM_PROMPT = buildSynthesisSystemPrompt(configuredAgents);
@@ -27,74 +28,53 @@ function recordingModel() {
   return makeModel([message([textBlock(finalFindingsJson([]))], "end_turn")]);
 }
 
-function clientReturning(text: string): LangfusePromptClient {
-  return { getTextPrompt: () => Promise.resolve(text) };
-}
-
-const failingClient: LangfusePromptClient = {
-  getTextPrompt: () => Promise.reject(new Error("langfuse unavailable")),
+const candidate = {
+  file: "src/sessions.ts",
+  line: 42,
+  category: "security",
+  severity: "high" as const,
+  title: "Session listing is not gated behind an admin check",
+  explanation: "Any authenticated user can list every session.",
+  confidence: 0.9,
 };
 
-describe("resolving the synthesis prompt", () => {
-  it("accepts the in-code synthesis prompt through the contract guard", async () => {
-    // If the guard rejected the shipped prompt, pasting it into
-    // Langfuse unchanged would be silently ignored.
-    const { sources, prompts } = await loadManagedPrompts(
-      clientReturning(SYNTHESIS_SYSTEM_PROMPT),
-      {
-        agents: configuredAgents,
-        logger: createCapturingLogger().logger,
-      },
-    );
+describe("the synthesis prompt is not managed", () => {
+  it("is never fetched from Langfuse", async () => {
+    const client: LangfusePromptClient = {
+      getTextPrompt: vi.fn(() =>
+        Promise.resolve(validRemoteSynthesisPrompt("REMOTE")),
+      ),
+    };
 
-    expect(sources.synthesis).toBe("langfuse");
-    expect(prompts.synthesis).toBe(SYNTHESIS_SYSTEM_PROMPT);
-  });
-
-  it("carries a resolved prompt all the way to the model call", async () => {
-    const remote = validRemoteSynthesisPrompt("REMOTE SYNTHESIS PROMPT");
-    const { prompts, sources } = await loadManagedPrompts(
-      clientReturning(remote),
-      {
-        agents: configuredAgents,
-        logger: createCapturingLogger().logger,
-      },
-    );
-    expect(sources.synthesis).toBe("langfuse");
-
-    const { model, calls } = recordingModel();
-    const synthesiser = createSynthesiser({
-      model,
+    await loadManagedPrompts(client, {
       agents: configuredAgents,
-      systemPrompt: prompts.synthesis,
+      logger: createCapturingLogger().logger,
     });
 
-    await synthesiser.synthesise([
-      {
-        file: "src/sessions.ts",
-        line: 42,
-        category: "correctness",
-        severity: "high",
-        title: "Assignment instead of comparison in admin check",
-        explanation:
-          "The if condition assigns instead of comparing, so every user passes the check.",
-        confidence: 0.9,
-      },
+    const fetched = (client.getTextPrompt as ReturnType<typeof vi.fn>).mock.calls.map(
+      (call) => call[0],
+    );
+    expect(fetched).not.toContain("synthesis_system");
+  });
+
+  it("is not one of the prompts the seeder publishes", () => {
+    expect(Object.keys(inCodePrompts(configuredAgents))).not.toContain(
+      SYNTHESIS_PROMPT_ID,
+    );
+  });
+
+  it("reaches the model call built from the run's agent set", async () => {
+    const { model, calls } = recordingModel();
+
+    await createSynthesiser({ model, agents: configuredAgents }).synthesise([
+      candidate,
     ]);
 
     const system = (calls[0]?.prompt ?? []).find(
       (entry) => (entry as { role?: string }).role === "system",
     );
-    expect((system as { content?: string } | undefined)?.content).toBe(remote);
-  });
-
-  it("hands the in-code prompt to the synthesiser when the fetch fails", async () => {
-    const { prompts, sources } = await loadManagedPrompts(failingClient, {
-      agents: configuredAgents,
-      logger: createCapturingLogger().logger,
-    });
-
-    expect(sources.synthesis).toBe("fallback");
-    expect(prompts.synthesis).toBe(SYNTHESIS_SYSTEM_PROMPT);
+    expect((system as { content?: string } | undefined)?.content).toBe(
+      SYNTHESIS_SYSTEM_PROMPT,
+    );
   });
 });

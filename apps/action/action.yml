@@ -1,8 +1,8 @@
 name: AI PR Review
 description: >-
   Reviews a pull request with the independent AI review agents the repository
-  declares in .github/pr-review-agents.yml, and publishes an AI PR Review check run
-  with inline annotations. No agents are built in, and the model provider is
+  names in .github/pr-review-agents.yml, and publishes an AI PR Review check run
+  with inline annotations. No agent runs by default, and the model provider is
   configurable.
 author: sunnyeyles
 
@@ -63,12 +63,12 @@ inputs:
     default: all
   agent-config:
     description: >-
-      Repository-relative path to the YAML file declaring this repository's
+      Repository-relative path to the YAML file naming this repository's
       review agents. It is read from the pull request's base commit over the
-      API, never from the workspace, so a pull request cannot rewrite the
-      agents that review it. No agents are built in, so this file is required:
-      a missing, malformed, or empty one fails the step rather than running a
-      review nobody configured.
+      API, never from the workspace, so a pull request cannot choose the
+      agents that review it. No agent runs by default, so this file is
+      required: a missing, malformed, or empty one fails the step rather than
+      running a review nobody configured.
     required: false
     default: .github/pr-review-agents.yml
   langfuse-public-key:

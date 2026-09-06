@@ -1,66 +1,32 @@
 # The review agents for this repository. Nothing runs by default: the action
 # reviews with exactly the agents listed here, and fails if this file is
-# missing. Copy it as a starting point and edit freely — add an agent, drop
-# one, or rewrite a focus.
+# missing. Copy it as a starting point and edit freely — add an agent or drop
+# one.
 #
-# An entry is either the name of a built-in specialist — see
-# packages/ai/src/agents/specialists/ for the ones this action ships — or an
-# agent written out in full, which needs:
-#   category  the agent's name, and the one finding category it may report
-#             (lowercase kebab-case; `synthesis` and `all` are reserved)
-#   role      how the agent is addressed in its system prompt
-#   focus     what it reviews for, and what is out of scope for it
+# An entry names a built-in specialist — see
+# packages/ai/src/agents/specialists/ for the ones this action ships. Agents
+# are not defined here; the file selects and tunes them.
 #
-# Optional:
-#   contextGuidance  makes the agent retrieve repository context with the
-#                    read-only tools before it may make a claim
-#   model            model id for this agent alone, as the provider spells it.
-#                    Declaring none means it uses the action's `model` input.
-#   paths            glob patterns deciding whether the agent runs at all.
-#                    Declaring none means it runs on every pull request.
+# A name may instead be written under `agent:`, which allows:
+#   model  model id for this agent alone, as the provider spells it.
+#          Declaring none means it uses the action's `model` input.
+#   paths  glob patterns deciding whether the agent runs at all.
+#          Declaring none means it runs on every pull request.
 #
 # `paths` is a gate, not a filter: an agent one changed file wakes still
 # reviews the whole pull request. Skipped agents are named on the check run,
 # and a pull request no agent matched gets a neutral check saying so — never
-# a green one. To gate a built-in, name it under `agent:` instead:
-#
-#   - agent: docs-drift
-#     model: gpt-5-mini
-#     paths:
-#       - "docs/**"
-#       - "README.md"
-#       - "!**/*.test.ts"
+# a green one.
 #
 # Order matters: it is the order findings reach the synthesiser.
-#
-# Everything else in the prompt — the injection hardening, the tool guidance,
-# the JSON output contract — is shared, so an agent only states its own focus.
 
 agents:
-  - category: correctness
-    role: Correctness reviewer
-    focus: |
-      Review the pull request ONLY for correctness problems:
-      - bugs and incorrect logic
-      - missing validation
-      - error-handling problems
-      - unhandled edge cases
-      - async issues (unawaited promises, race conditions, missing error propagation)
-      - incorrect state changes
-      Do NOT report formatting, style, naming preferences, or architectural opinions — those are out of scope for you and will be discarded.
-
-  - security
-
-  - category: architecture
-    role: Architecture reviewer
-    focus: |
-      Review the pull request ONLY for architectural problems:
-      - incorrect abstractions
-      - duplicated functionality (reimplementing something the repository already provides)
-      - bad dependencies (wrong direction, needless coupling, unsuitable libraries)
-      - package or module boundary violations
-      - existing patterns in the repository that the change ignores or should have reused
-      - business logic placed in the wrong layer
-      Do NOT report correctness bugs, security issues, formatting, or style — those are out of scope for you and will be discarded.
-    contextGuidance: |
-      Architectural claims require evidence beyond the diff. You MUST retrieve surrounding repository context with the tools BEFORE making any architectural claim: use get_file to read how neighbouring modules and layers are structured, and search_repository to find existing patterns, duplicated functionality, or the place where the logic already lives. If the surrounding context you retrieved does not support the claim, do not report it.
+  - agent: security
+    paths:
+      - "**/*.ts"
+      - ".github/workflows/**"
+  # Code is what makes documentation stale, so this gate lets code through too.
+  - agent: docs-drift
+    paths:
+      - "**/*.ts"
+      - "**/*.md"

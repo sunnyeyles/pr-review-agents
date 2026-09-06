@@ -17,28 +17,10 @@ interface EvalCase {
  */
 const agentsCompleted: FixtureExpectation = {
   kind: "agents-completed",
-  description: "all three review agents complete",
+  description: "every review agent completes",
 };
 
 export const evalCases: EvalCase[] = [
-  {
-    fixture: "correctness-admin-check",
-    expectations: [
-      agentsCompleted,
-      {
-        kind: "finding",
-        description:
-          "reports a correctness finding on the admin check that assigns instead of comparing",
-        category: "correctness",
-        anchors: [
-          {
-            file: "src/routes/admin-audit.ts",
-            startMarker: "export async function getAuditEvents",
-          },
-        ],
-      },
-    ],
-  },
   {
     fixture: "security-tenant-scope",
     expectations: [

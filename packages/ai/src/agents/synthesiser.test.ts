@@ -304,10 +304,10 @@ describe("createSynthesiser", () => {
 describe("buildSynthesisSystemPrompt", () => {
   it("names the agent set it was built for, whatever its size", () => {
     expect(SYNTHESIS_SYSTEM_PROMPT).toContain(
-      "3 review agents — Correctness, Security, and Architecture —",
+      "2 review agents — Security and Docs drift —",
     );
     expect(SYNTHESIS_SYSTEM_PROMPT).toContain(
-      '"category" is "correctness" | "security" | "architecture"',
+      '"category" is "security" | "docs-drift"',
     );
   });
 
@@ -376,18 +376,15 @@ describe("buildSynthesisMessage", () => {
   });
 });
 
-describe("a pre-resolved synthesis prompt", () => {
-  it("is used in place of the in-code prompt", async () => {
-    const injected = "INJECTED SYNTHESIS SYSTEM PROMPT";
+describe("the synthesis system prompt", () => {
+  it("is always the one built from the run's agent set", async () => {
     const { model, calls } = makeTextModel([finalFindingsJson([combinedFinding])]);
-    const synthesiser = createSynthesiser({
-      model,
-      agents: configuredAgents,
-      systemPrompt: injected,
-    });
+    const synthesiser = createSynthesiser({ model, agents: configuredAgents });
 
     await synthesiser.synthesise([correctnessDuplicate, securityDuplicate]);
 
-    expect(systemOf(calls[0])).toBe(injected);
+    expect(systemOf(calls[0])).toBe(
+      buildSynthesisSystemPrompt(configuredAgents),
+    );
   });
 });

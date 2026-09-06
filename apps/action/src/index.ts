@@ -9,7 +9,6 @@ import {
   DEFAULT_LANGFUSE_BASE_URL,
   DEFAULT_AGENT_CONFIG_PATH,
   DEFAULT_PROMPT_LABEL,
-  SYNTHESIS_PROMPT_ID,
   createLangfusePromptClient,
   createReviewAgents,
   apiKeyEnvFor,
@@ -219,7 +218,7 @@ function resolveModelInputs(
 
 /**
  * Reads repository files at one commit. The agent configuration is read at the
- * base commit, so the branch under review cannot rewrite its own reviewers.
+ * base commit, so the branch under review cannot choose its own reviewers.
  */
 export function readAtCommit(
   client: GithubInstallationClient,
@@ -316,13 +315,7 @@ export async function runAction(
         : await resolveManagedPrompts(environment, langfuse, agents);
 
     // Repository-independent, so one instance serves the whole run.
-    const synthesiser = createSynthesiser({
-      model,
-      agents,
-      ...(prompts === undefined
-        ? {}
-        : { systemPrompt: prompts[SYNTHESIS_PROMPT_ID] }),
-    });
+    const synthesiser = createSynthesiser({ model, agents });
     // Event-inspection knowledge: the reviewer only ever sees the permission
     // failure a fork's token causes, never the fork itself.
     logger.info("review.started", { ...reviewCorrelation(target), isFork });

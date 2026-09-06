@@ -31,9 +31,8 @@ import {
 } from "../agent-test-support.js";
 
 const configuredAgents = repositoryAgents();
-const correctnessAgent = repositoryAgent("correctness");
 const securityAgent = repositoryAgent("security");
-const architectureAgent = repositoryAgent("architecture");
+const docsDriftAgent = repositoryAgent("docs-drift");
 
 const SIX_TOOL_NAMES = [
   "get_base_file",
@@ -83,8 +82,8 @@ describe("agent names", () => {
     const { deps } = makeDeps([]);
 
     expect(
-      createReviewAgents(deps, [architectureAgent]).map((agent) => agent.name),
-    ).toEqual(["architecture"]);
+      createReviewAgents(deps, [docsDriftAgent]).map((agent) => agent.name),
+    ).toEqual(["docs-drift"]);
   });
 });
 
@@ -98,52 +97,45 @@ describe("resolveAgentDefinitions", () => {
       role: "Performance reviewer",
       focus: "Review ONLY for performance problems.",
     };
-    const available = [correctnessAgent, performanceAgent];
+    const available = [securityAgent, performanceAgent];
 
     expect(
       resolveAgentDefinitions("performance", available).map((agent) => agent.category),
     ).toEqual(["performance"]);
     expect(
       resolveAgentDefinitions(ALL_AGENTS, available).map((agent) => agent.category),
-    ).toEqual(["correctness", "performance"]);
+    ).toEqual(["security", "performance"]);
     // An agent absent from the given set is unknown, not implied.
-    expect(() => resolveAgentDefinitions("security", available)).toThrow(
-      /Unknown review agent: security/,
+    expect(() => resolveAgentDefinitions("docs-drift", available)).toThrow(
+      /Unknown review agent: docs-drift/,
     );
   });
 
   it("treats an absent selection and an explicit `all` alike", () => {
     // An unset action input arrives as "", so the two must not differ.
-    expect(names("")).toEqual(["correctness", "security", "architecture"]);
-    expect(names("   ")).toEqual(["correctness", "security", "architecture"]);
-    expect(names(ALL_AGENTS)).toEqual([
-      "correctness",
-      "security",
-      "architecture",
-    ]);
-    expect(names("ALL")).toEqual(["correctness", "security", "architecture"]);
+    expect(names("")).toEqual(["security", "docs-drift"]);
+    expect(names("   ")).toEqual(["security", "docs-drift"]);
+    expect(names(ALL_AGENTS)).toEqual(["security", "docs-drift"]);
+    expect(names("ALL")).toEqual(["security", "docs-drift"]);
   });
 
   it("selects a single agent", () => {
-    expect(names("architecture")).toEqual(["architecture"]);
+    expect(names("docs-drift")).toEqual(["docs-drift"]);
   });
 
   it("returns the subset in spec order, never the caller's order", () => {
     // Agent order decides candidate order in `join`.
-    expect(names("architecture,correctness")).toEqual([
-      "correctness",
-      "architecture",
-    ]);
+    expect(names("docs-drift,security")).toEqual(["security", "docs-drift"]);
   });
 
   it("collapses duplicates rather than running an agent twice", () => {
-    expect(names("correctness,correctness")).toEqual(["correctness"]);
+    expect(names("security,security")).toEqual(["security"]);
   });
 
   it("tolerates whitespace and casing around the names", () => {
-    expect(names(" Correctness , SECURITY ")).toEqual([
-      "correctness",
+    expect(names(" Security , DOCS-DRIFT ")).toEqual([
       "security",
+      "docs-drift",
     ]);
   });
 
@@ -164,7 +156,7 @@ describe("resolveAgentDefinitions", () => {
     expect(() => resolveAgentDefinitions("secuirty", configuredAgents)).toThrow(
       /Unknown review agent: secuirty/,
     );
-    expect(() => resolveAgentDefinitions("secuirty", configuredAgents)).toThrow(/architecture/);
+    expect(() => resolveAgentDefinitions("secuirty", configuredAgents)).toThrow(/docs-drift/);
   });
 
   it("rejects a selection that names nothing at all", () => {
@@ -172,12 +164,13 @@ describe("resolveAgentDefinitions", () => {
   });
 
   it("drops the paths of an agent named explicitly, so its gate cannot hold", () => {
-    const gated = [
-      correctnessAgent,
+    const [resolved] = resolveAgentDefinitions("security", [
+      docsDriftAgent,
       { ...securityAgent, paths: ["packages/github/**"] },
-    ];
+    ]);
 
-    expect(resolveAgentDefinitions("security", gated)).toEqual([securityAgent]);
+    expect(resolved?.category).toBe("security");
+    expect(resolved?.paths).toBeUndefined();
   });
 
   it("keeps the paths of every agent when the selection is `all`", () => {
@@ -185,9 +178,9 @@ describe("resolveAgentDefinitions", () => {
 
     for (const selection of ["", ALL_AGENTS, "all,security"]) {
       expect(
-        resolveAgentDefinitions(selection, [correctnessAgent, security]),
+        resolveAgentDefinitions(selection, [docsDriftAgent, security]),
         selection,
-      ).toEqual([correctnessAgent, security]);
+      ).toEqual([docsDriftAgent, security]);
     }
   });
 });
@@ -230,7 +223,7 @@ describe("per-agent model", () => {
 
     const agents = createReviewAgents(deps, [
       { ...securityAgent, model: "override-model" },
-      correctnessAgent,
+      docsDriftAgent,
     ]);
     for (const agent of agents) {
       await agent.run(context);
@@ -294,8 +287,8 @@ describe("prompt wiring", () => {
 
 describe("this repository's agents over one PR context", () => {
   it("runs concurrently and each returns findings in its own category", async () => {
-    // Each fake call resolves only once all three agents have called,
-    // so sequential execution would deadlock this test.
+    // Each fake call resolves only once every agent has called, so
+    // sequential execution would deadlock this test.
     const started: string[] = [];
     let releaseAll = (): void => {};
     const allStarted = new Promise<void>((resolve) => {
@@ -307,7 +300,7 @@ describe("this repository's agents over one PR context", () => {
       const { model, doGenerate } = makeModel([]);
       doGenerate.mockImplementation(async () => {
         started.push(agent.category);
-        if (started.length === 3) {
+        if (started.length === configuredAgents.length) {
           releaseAll();
         }
         await allStarted;
@@ -321,30 +314,22 @@ describe("this repository's agents over one PR context", () => {
       return { agent: createReviewAgent(agent, deps), finding };
     }
 
-    const correctness = gatedAgent(correctnessAgent);
-    const security = gatedAgent(securityAgent);
-    const architecture = gatedAgent(architectureAgent);
+    const gated = configuredAgents.map(gatedAgent);
 
-    const [correctnessFindings, securityFindings, architectureFindings] =
-      await Promise.all([
-        correctness.agent.run(context),
-        security.agent.run(context),
-        architecture.agent.run(context),
-      ]);
+    const findings = await Promise.all(
+      gated.map((one) => one.agent.run(context)),
+    );
 
-    expect(started).toHaveLength(3);
-    expect(correctnessFindings).toEqual([correctness.finding]);
-    expect(securityFindings).toEqual([security.finding]);
-    expect(architectureFindings).toEqual([architecture.finding]);
+    expect(started).toHaveLength(configuredAgents.length);
+    findings.forEach((own, index) => {
+      expect(own).toEqual([gated[index]?.finding]);
+    });
 
-    const combined = [
-      ...correctnessFindings,
-      ...securityFindings,
-      ...architectureFindings,
-    ];
     expect(
-      combined.map((candidate) => (candidate as { category: string }).category),
-    ).toEqual(["correctness", "security", "architecture"]);
+      findings
+        .flat()
+        .map((candidate) => (candidate as { category: string }).category),
+    ).toEqual(configuredAgents.map((agent) => agent.category));
   }, 5_000);
 });
 

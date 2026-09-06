@@ -11,12 +11,10 @@ import {
 } from "@pr-review/logging";
 
 import {
-  SYNTHESIS_PROMPT_ID,
   buildReviewSystemPrompt,
   agentPromptKey,
   type AgentDefinition,
 } from "./agents/definition.js";
-import { buildSynthesisSystemPrompt } from "./agents/synthesiser.js";
 
 /** Where a resolved prompt came from. */
 type PromptSource = "langfuse" | "fallback";
@@ -150,23 +148,16 @@ export function reviewPromptContractProblems(
 
 /** The contract for one managed prompt; gates both fetched and about-to-be-seeded text. */
 export function promptContractProblems(id: string, text: string): string[] {
-  // The synthesiser reads findings rather than a repository, so none of
-  // the agent-specific rules apply.
-  return id === SYNTHESIS_PROMPT_ID
-    ? sharedPromptProblems(text)
-    : reviewPromptContractProblems(text, id);
+  return reviewPromptContractProblems(text, id);
 }
 
-/**
- * The prompts one agent set implies: both the loader's fallback and the
- * seeder's baseline, so the two cannot disagree.
- */
+/** Both the loader's fallback and the seeder's baseline, so the two cannot
+ * disagree. The synthesiser is absent: its prompt is always built. */
 export function inCodePrompts(agents: readonly AgentDefinition[]): ManagedPrompts {
   const prompts: ManagedPrompts = {};
   for (const agent of agents) {
     prompts[agent.category] = buildReviewSystemPrompt(agent);
   }
-  prompts[SYNTHESIS_PROMPT_ID] = buildSynthesisSystemPrompt(agents);
   return prompts;
 }
 

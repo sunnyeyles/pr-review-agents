@@ -1,11 +1,11 @@
 /**
  * The agent set a run works with, read from repository configuration.
- * Shipped specialists never run unless an entry names one.
+ * Configuration names shipped specialists; it cannot define new ones.
  */
 import { parse as parseYaml } from "yaml";
 import { z } from "zod";
 
-import { agentDefinitionSchema, type AgentDefinition } from "./definition.js";
+import type { AgentDefinition } from "./definition.js";
 import { agentPathsSchema } from "./path-filter.js";
 import { BUILT_IN_AGENT_NAMES, findBuiltInAgent } from "./specialists/index.js";
 
@@ -20,8 +20,6 @@ export class AgentConfigError extends Error {
   }
 }
 
-// Checked one at a time, not as a union: invalid_union hides each branch's
-// issues from issueList and cannot know which branch the author meant.
 const agentConfigSchema = z
   .object({
     agents: z.array(z.unknown()).min(1),
@@ -34,14 +32,17 @@ function issueList(error: z.ZodError): string {
     .join("; ");
 }
 
+/** The built-ins, listed the way configuration spells them. */
+function builtInList(): string[] {
+  return BUILT_IN_AGENT_NAMES.map((name) => `    - ${name}`);
+}
+
 /** The message shown when an entry names a built-in that does not exist. */
 function unknownBuiltInMessage(name: string, path: string): string {
   return [
     `${path} names an unknown built-in agent: "${name}".`,
     "",
     `The built-in agents are: ${BUILT_IN_AGENT_NAMES.join(", ")}.`,
-    "Name one of those, or write the agent out in full with its own",
-    "category, role, and focus.",
   ].join("\n");
 }
 
@@ -54,53 +55,62 @@ const builtInEntrySchema = z
   })
   .strict();
 
-/** True for the `agent:` form, so its errors never read as a bad definition. */
+/** True for the `agent:` form, so its errors never read as a bad name. */
 function namesBuiltIn(entry: unknown): boolean {
   return typeof entry === "object" && entry !== null && "agent" in entry;
 }
 
+/** The message shown for an entry that is neither spelling of a name. */
+function notANameMessage(index: number, path: string): string {
+  return [
+    `${path} agents[${index}] does not name a built-in agent.`,
+    "",
+    "An entry is a built-in's name, on its own or under `agent:` with",
+    "`model` or `paths` beside it. Agents are not defined in this file.",
+    "",
+    "  agents:",
+    ...builtInList(),
+    "",
+    `The built-in agents are: ${BUILT_IN_AGENT_NAMES.join(", ")}.`,
+  ].join("\n");
+}
+
 /**
- * One `agents:` entry: a specialist name, that name with `paths`, or a full
- * definition. Errors carry the entry's position.
+ * One `agents:` entry: a specialist's name, alone or with `model` and `paths`.
+ * Errors carry the entry's position.
  */
 function resolveAgentEntry(
   entry: unknown,
   index: number,
   path: string,
 ): AgentDefinition {
-  // A bare name is the `agent:` form without the paths, so both spellings
-  // resolve down one branch.
-  if (typeof entry === "string" || namesBuiltIn(entry)) {
-    const named = builtInEntrySchema.safeParse(
-      typeof entry === "string" ? { agent: entry } : entry,
-    );
-    if (!named.success) {
-      throw new AgentConfigError(
-        `${path} agents[${index}] is invalid — ${issueList(named.error)}`,
-      );
-    }
-    const name = named.data.agent.trim();
-    const builtIn = findBuiltInAgent(name);
-    if (builtIn === undefined) {
-      throw new AgentConfigError(unknownBuiltInMessage(name, path));
-    }
-    return {
-      ...builtIn,
-      ...(named.data.model === undefined ? {} : { model: named.data.model }),
-      ...(named.data.paths === undefined ? {} : { paths: named.data.paths }),
-    };
+  // A bare name is the `agent:` form without the overrides, so both
+  // spellings resolve down one branch.
+  if (typeof entry !== "string" && !namesBuiltIn(entry)) {
+    throw new AgentConfigError(notANameMessage(index, path));
   }
 
-  const parsed = agentDefinitionSchema.safeParse(entry);
-  if (!parsed.success) {
+  const named = builtInEntrySchema.safeParse(
+    typeof entry === "string" ? { agent: entry } : entry,
+  );
+  if (!named.success) {
     throw new AgentConfigError(
-      `${path} agents[${index}] is invalid — ${issueList(parsed.error)}`,
+      `${path} agents[${index}] is invalid — ${issueList(named.error)}`,
     );
   }
-  return parsed.data;
+  const name = named.data.agent.trim();
+  const builtIn = findBuiltInAgent(name);
+  if (builtIn === undefined) {
+    throw new AgentConfigError(unknownBuiltInMessage(name, path));
+  }
+  return {
+    ...builtIn,
+    ...(named.data.model === undefined ? {} : { model: named.data.model }),
+    ...(named.data.paths === undefined ? {} : { paths: named.data.paths }),
+  };
 }
 
-/** Parses and validates a config document into the agents it defines. */
+/** Parses and validates a config document into the agents it names. */
 export function parseAgentConfig(source: string, path: string): AgentDefinition[] {
   let document: unknown;
   try {
@@ -124,7 +134,7 @@ export function parseAgentConfig(source: string, path: string): AgentDefinition[
   for (const agent of agents) {
     if (seen.has(agent.category)) {
       throw new AgentConfigError(
-        `${path} defines the review agent "${agent.category}" twice`,
+        `${path} names the review agent "${agent.category}" twice`,
       );
     }
     seen.add(agent.category);
@@ -150,18 +160,7 @@ function missingConfigMessage(path: string): string {
     "ones you name. Create the file with at least one built-in specialist:",
     "",
     "  agents:",
-    ...BUILT_IN_AGENT_NAMES.map((name) => `    - ${name}`),
-    "",
-    "Or write an agent of your own out in full:",
-    "",
-    "  agents:",
-    "    - category: correctness",
-    "      role: Correctness reviewer",
-    "      focus: |",
-    "        Review the pull request ONLY for correctness problems:",
-    "        - bugs and incorrect logic",
-    "        - missing validation",
-    "        Do NOT report style or architectural opinions.",
+    ...builtInList(),
     "",
     "The action reads this from the pull request's base commit, so commit it",
     "to your default branch. See the README for a fuller starting point.",

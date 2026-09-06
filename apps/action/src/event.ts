@@ -72,7 +72,7 @@ export function inspectEvent(
       headSha: parsed.data.pull_request.head.sha,
     },
     // The configuration is read at this commit: it predates the PR, so
-    // the branch under review cannot rewrite its own reviewers.
+    // the branch under review cannot choose its own reviewers.
     baseSha: parsed.data.pull_request.base.sha,
     // Logging only: the publisher reacts to the real permission error
     // rather than predicting it from this flag.

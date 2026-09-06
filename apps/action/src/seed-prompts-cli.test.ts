@@ -4,7 +4,6 @@
  */
 
 import {
-  buildSynthesisSystemPrompt,
   inCodePrompts,
   type LangfusePromptWriter,
 } from "@pr-review/ai";
@@ -29,7 +28,6 @@ const CREDENTIALS = {
 };
 
 const configuredAgents = repositoryAgents();
-const SYNTHESIS_SYSTEM_PROMPT = buildSynthesisSystemPrompt(configuredAgents);
 /** The seeder reads the same config the action does. */
 const configYaml = repositoryAgentConfigYaml();
 
@@ -149,18 +147,16 @@ describe("requireLangfuseConfig", () => {
 });
 
 describe("main", () => {
-  it("publishes all four prompts and succeeds", async () => {
+  it("publishes every configured prompt and succeeds", async () => {
     const { environment, published, lines } = harness();
 
     await expect(main([], environment)).resolves.toBe(0);
 
     expect(published.map((entry) => entry.name).sort()).toEqual([
-      "architecture_system",
-      "correctness_system",
+      "docs_drift_system",
       "security_system",
-      "synthesis_system",
     ]);
-    expect(lines.join("\n")).toContain("correctness");
+    expect(lines.join("\n")).toContain("security");
   });
 
   it("publishes exactly the prompts a review would fall back to", async () => {
@@ -170,10 +166,8 @@ describe("main", () => {
 
     const expected = inCodePrompts(configuredAgents);
     const byName = new Map(published.map((e) => [e.name, e.text]));
-    expect(byName.get("correctness_system")).toBe(expected.correctness);
     expect(byName.get("security_system")).toBe(expected.security);
-    expect(byName.get("architecture_system")).toBe(expected.architecture);
-    expect(byName.get("synthesis_system")).toBe(SYNTHESIS_SYSTEM_PROMPT);
+    expect(byName.get("docs_drift_system")).toBe(expected["docs-drift"]);
   });
 
   it("threads the label through to the publish", async () => {
