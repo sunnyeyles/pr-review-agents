@@ -44,7 +44,7 @@ function truncateDiff(diff: string): string {
   return truncateWithMarker(
     diff,
     MAX_DIFF_CHARS,
-    "\n[... diff truncated; use the get_file / get_diff tools for specific files]",
+    "\n[... diff truncated; call get_diff with a path for one file's whole patch]",
   );
 }
 
@@ -119,9 +119,9 @@ export function createReviewAgent(
       const scope: ReviewToolScope = {
         owner: context.owner,
         repo: context.repo,
-        pullRequestNumber: context.pullRequest.number,
-        headSha: context.pullRequest.headSha,
-        baseSha: context.pullRequest.baseSha,
+        pullRequest: context.pullRequest,
+        changedFiles: context.changedFiles,
+        diff: context.diff,
       };
 
       // Every event of this run carries these fields.

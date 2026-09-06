@@ -9,13 +9,8 @@ import type { z } from "zod";
 
 import { createReviewTools, type ReviewToolScope } from "./tools.js";
 
-const scope: ReviewToolScope = {
-  owner: "octo-org",
-  repo: "example-service",
-  pullRequestNumber: 42,
-  headSha: "6dcb09b5b57875f334f61aebed695e2e4193db5e",
-  baseSha: "0000000000000000000000000000000000000000",
-};
+const headSha = "6dcb09b5b57875f334f61aebed695e2e4193db5e";
+const baseSha = "0000000000000000000000000000000000000000";
 
 const pullRequest: PullRequestDetails = {
   number: 42,
@@ -23,9 +18,9 @@ const pullRequest: PullRequestDetails = {
   body: "Adds a token bucket.",
   author: "octocat",
   baseRef: "main",
-  baseSha: scope.baseSha,
+  baseSha,
   headRef: "feature/rate-limit",
-  headSha: scope.headSha,
+  headSha,
 };
 
 const changedFiles: ChangedFile[] = [
@@ -36,13 +31,29 @@ const changedFiles: ChangedFile[] = [
     deletions: 1,
     patch: "@@ -1 +1,2 @@",
   },
+  {
+    filename: "assets/logo.png",
+    status: "added",
+    additions: 0,
+    deletions: 0,
+  },
 ];
+
+const diff = "diff --git a/src/sessions.ts b/src/sessions.ts\n";
+
+const scope: ReviewToolScope = {
+  owner: "octo-org",
+  repo: "example-service",
+  pullRequest,
+  changedFiles,
+  diff,
+};
 
 function makeGithub() {
   return {
     getPullRequest: vi.fn(async () => pullRequest),
     listChangedFiles: vi.fn(async () => changedFiles),
-    getDiff: vi.fn(async () => "diff --git a/src/sessions.ts b/src/sessions.ts\n"),
+    getDiff: vi.fn(async () => diff),
     getFileContents: vi.fn(async () => "export const sessions = [];\n"),
     searchCode: vi.fn(async () => [{ path: "src/sessions.ts", name: "sessions.ts" }]),
     listReviewComments: vi.fn(async () => []),
@@ -93,6 +104,7 @@ describe("createReviewTools", () => {
     ["get_file", "path"],
     ["get_base_file", "path"],
     ["search_repository", "query"],
+    ["get_diff", "path"],
   ])("describes %s's %s parameter", (name, parameter) => {
     const tools = createReviewTools(makeGithub(), scope);
     const shape = (
@@ -112,7 +124,7 @@ describe("createReviewTools", () => {
 });
 
 describe("review tool execution", () => {
-  it("dispatches get_pull_request to the client and returns PR details as JSON", async () => {
+  it("answers get_pull_request from the review context, not GitHub", async () => {
     const github = makeGithub();
     const result = await run(
       createReviewTools(github, scope),
@@ -120,15 +132,11 @@ describe("review tool execution", () => {
       {},
     );
 
-    expect(github.getPullRequest).toHaveBeenCalledWith({
-      owner: scope.owner,
-      repo: scope.repo,
-      pullRequestNumber: scope.pullRequestNumber,
-    });
+    expect(github.getPullRequest).not.toHaveBeenCalled();
     expect(JSON.parse(result as string)).toEqual(pullRequest);
   });
 
-  it("lists changed files without their patches", async () => {
+  it("lists changed files from the review context, without their patches", async () => {
     const github = makeGithub();
     const result = await run(
       createReviewTools(github, scope),
@@ -136,6 +144,7 @@ describe("review tool execution", () => {
       {},
     );
 
+    expect(github.listChangedFiles).not.toHaveBeenCalled();
     expect(JSON.parse(result as string)).toEqual([
       {
         filename: "src/sessions.ts",
@@ -143,15 +152,45 @@ describe("review tool execution", () => {
         additions: 2,
         deletions: 1,
       },
+      {
+        filename: "assets/logo.png",
+        status: "added",
+        additions: 0,
+        deletions: 0,
+      },
     ]);
   });
 
-  it("returns the diff verbatim", async () => {
+  it("returns the loaded diff verbatim when get_diff names no path", async () => {
     const github = makeGithub();
     const result = await run(createReviewTools(github, scope), "get_diff", {});
 
-    expect(github.getDiff).toHaveBeenCalled();
-    expect(result).toBe("diff --git a/src/sessions.ts b/src/sessions.ts\n");
+    expect(github.getDiff).not.toHaveBeenCalled();
+    expect(result).toBe(diff);
+  });
+
+  it("returns one file's patch when get_diff names a path", async () => {
+    const result = await run(createReviewTools(makeGithub(), scope), "get_diff", {
+      path: "src/sessions.ts",
+    });
+
+    expect(result).toBe("@@ -1 +1,2 @@");
+  });
+
+  it("rejects get_diff for a path the pull request did not change", async () => {
+    await expect(
+      run(createReviewTools(makeGithub(), scope), "get_diff", {
+        path: "src/elsewhere.ts",
+      }),
+    ).rejects.toThrow("not a file this pull request changed");
+  });
+
+  it("rejects get_diff for a changed file that carries no patch", async () => {
+    await expect(
+      run(createReviewTools(makeGithub(), scope), "get_diff", {
+        path: "assets/logo.png",
+      }),
+    ).rejects.toThrow("no patch");
   });
 
   it("reads get_file at the head commit", async () => {
@@ -164,7 +203,7 @@ describe("review tool execution", () => {
       owner: scope.owner,
       repo: scope.repo,
       path: "src/sessions.ts",
-      ref: scope.headSha,
+      ref: headSha,
     });
   });
 
@@ -178,7 +217,7 @@ describe("review tool execution", () => {
       owner: scope.owner,
       repo: scope.repo,
       path: "src/sessions.ts",
-      ref: scope.baseSha,
+      ref: baseSha,
     });
   });
 
@@ -201,11 +240,10 @@ describe("review tool execution", () => {
   });
 
   it("truncates oversized tool results", async () => {
-    const github = makeGithub();
-    github.getDiff.mockResolvedValueOnce("x".repeat(200_000));
+    const huge = { ...scope, diff: "x".repeat(200_000) };
 
     const result = (await run(
-      createReviewTools(github, scope),
+      createReviewTools(makeGithub(), huge),
       "get_diff",
       {},
     )) as string;
