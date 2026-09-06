@@ -2,7 +2,7 @@
  * The Synthesiser: one model call, no tools, no loop. Its output is still
  * untrusted and still passes through the validation chain.
  */
-import { startObservation } from "@langfuse/tracing";
+import { startActiveObservation } from "@langfuse/tracing";
 import { generateText } from "ai";
 import { extractAgentOutput } from "./output.js";
 import type { ReviewModel } from "../model.js";
@@ -106,62 +106,65 @@ export function createSynthesiser(deps: SynthesiserDeps): Synthesiser {
 
   return {
     async synthesise(candidates) {
-      // Without tracing configured every observation call is a no-op.
-      const observation = startObservation(
+      // Active, not detached: the SDK's model span nests under this one, so
+      // its cost lands on the synthesis trace instead of a trace of its own.
+      return startActiveObservation(
         "synthesise-findings",
-        { input: { candidateCount: candidates.length } },
+        async (observation) => {
+          observation.update({ input: { candidateCount: candidates.length } });
+
+          try {
+            // Malformed candidates could never survive validation anyway.
+            const wellFormed = wellFormedFindings(candidates);
+            observation.update({
+              metadata: {
+                provider: deps.model.provider,
+                model: deps.model.modelId,
+                wellFormedCount: wellFormed.length,
+              },
+            });
+
+            if (wellFormed.length === 0) {
+              // Nothing to refine: skip the model call entirely.
+              observation.update({
+                output: { findingCount: 0, skipped: true },
+              });
+              return { findings: [], usage: emptyTokenUsage() };
+            }
+
+            const result = await generateText({
+              model: deps.model,
+              instructions: systemPrompt,
+              messages: [
+                { role: "user", content: buildSynthesisMessage(wellFormed) },
+              ],
+              maxOutputTokens: MAX_OUTPUT_TOKENS,
+              telemetry: { functionId: "synthesise-findings" },
+            });
+            const usage = toTokenUsage(result.usage);
+
+            const output = extractAgentOutput(result.text);
+            if (!output.ok) {
+              throw new SynthesisError(
+                `synthesiser produced invalid findings output ` +
+                  `(stop reason: ${result.rawFinishReason ?? "unknown"}): ${output.error}`,
+              );
+            }
+            observation.update({
+              output: { findingCount: output.findings.length },
+              metadata: { ...usage },
+            });
+            return { findings: output.findings, usage };
+          } catch (error) {
+            observation.update({
+              level: "ERROR",
+              statusMessage: errorMessage(error),
+            });
+            throw error;
+          }
+        },
         { asType: "chain" },
       );
-
-      try {
-        // Malformed candidates could never survive validation anyway.
-        const wellFormed = wellFormedFindings(candidates);
-        observation.update({
-          metadata: {
-            provider: deps.model.provider,
-            model: deps.model.modelId,
-            wellFormedCount: wellFormed.length,
-          },
-        });
-
-        if (wellFormed.length === 0) {
-          // Nothing to refine: skip the model call entirely.
-          observation.update({ output: { findingCount: 0, skipped: true } });
-          return { findings: [], usage: emptyTokenUsage() };
-        }
-
-        const result = await generateText({
-          model: deps.model,
-          instructions: systemPrompt,
-          messages: [
-            { role: "user", content: buildSynthesisMessage(wellFormed) },
-          ],
-          maxOutputTokens: MAX_OUTPUT_TOKENS,
-          telemetry: { functionId: "synthesise-findings" },
-        });
-        const usage = toTokenUsage(result.usage);
-
-        const output = extractAgentOutput(result.text);
-        if (!output.ok) {
-          throw new SynthesisError(
-            `synthesiser produced invalid findings output ` +
-              `(stop reason: ${result.rawFinishReason ?? "unknown"}): ${output.error}`,
-          );
-        }
-        observation.update({
-          output: { findingCount: output.findings.length },
-          metadata: { ...usage },
-        });
-        return { findings: output.findings, usage };
-      } catch (error) {
-        observation.update({
-          level: "ERROR",
-          statusMessage: errorMessage(error),
-        });
-        throw error;
-      } finally {
-        observation.end();
-      }
     },
   };
 }
