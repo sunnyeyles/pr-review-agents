@@ -66,13 +66,13 @@ jobs:
     needs: preflight
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: pnpm
@@ -106,7 +106,7 @@ jobs:
           echo "major=${tag%%.*}" >> "$GITHUB_OUTPUT"
 
       - name: Checkout the public action repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: ${{ vars.ACTION_RELEASE_REPO }}
           token: ${{ secrets.ACTION_RELEASE_TOKEN }}
@@ -144,3 +144,25 @@ jobs:
           git push origin HEAD:main
           git push origin -f "$TAG"
           git push origin -f "$MAJOR"
+
+      # A tag alone gives no Releases entry and no Marketplace listing.
+      # The first Marketplace publish is still a manual tick in that repo's UI.
+      - name: Publish the GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.ACTION_RELEASE_TOKEN }}
+          REPO: ${{ vars.ACTION_RELEASE_REPO }}
+          TAG: ${{ steps.tag.outputs.tag }}
+          MAJOR: ${{ steps.tag.outputs.major }}
+          SOURCE: ${{ github.repository }}@${{ github.sha }}
+        run: |
+          set -euo pipefail
+          notes="Built from ${SOURCE}.
+
+          \`\`\`yaml
+          - uses: ${REPO}@${MAJOR}
+          \`\`\`"
+          if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
+            gh release edit "$TAG" --repo "$REPO" --notes "$notes" --latest
+          else
+            gh release create "$TAG" --repo "$REPO" --title "$TAG" --notes "$notes" --latest
+          fi
