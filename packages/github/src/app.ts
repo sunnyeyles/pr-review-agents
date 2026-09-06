@@ -184,6 +184,21 @@ function contentFragments(
     .filter((fragment) => fragment !== undefined);
 }
 
+/** Walks numbered pages until a short one; GitHub sends no other end marker. */
+async function paginate<T>(
+  fetchPage: (page: number) => Promise<{ data: unknown }>,
+  parsePage: (data: unknown) => T[],
+): Promise<T[]> {
+  const items: T[] = [];
+  for (let page = 1; ; page += 1) {
+    const pageItems = parsePage((await fetchPage(page)).data);
+    items.push(...pageItems);
+    if (pageItems.length < PAGE_SIZE) {
+      return items;
+    }
+  }
+}
+
 /**
  * Wraps an authenticated Octokit in the read-only PR client, so
  * authentication is the only thing a caller has to supply.
@@ -211,22 +226,18 @@ export function createInstallationClient(
       };
     },
 
-    async listChangedFiles(ref: PullRequestRef): Promise<ChangedFile[]> {
-      const files: ChangedFile[] = [];
-      for (let page = 1; ; page += 1) {
-        const response = await octokit.rest.pulls.listFiles({
-          owner: ref.owner,
-          repo: ref.repo,
-          pull_number: ref.pullRequestNumber,
-          per_page: PAGE_SIZE,
-          page,
-        });
-        const pageFiles = changedFilesSchema.parse(response.data);
-        files.push(...pageFiles);
-        if (pageFiles.length < PAGE_SIZE) {
-          return files;
-        }
-      }
+    listChangedFiles(ref: PullRequestRef): Promise<ChangedFile[]> {
+      return paginate(
+        (page) =>
+          octokit.rest.pulls.listFiles({
+            owner: ref.owner,
+            repo: ref.repo,
+            pull_number: ref.pullRequestNumber,
+            per_page: PAGE_SIZE,
+            page,
+          }),
+        (data) => changedFilesSchema.parse(data),
+      );
     },
 
     async getDiff(ref: PullRequestRef): Promise<string> {
@@ -336,24 +347,18 @@ export function createInstallationClient(
       return checkRunResponseSchema.parse(response.data);
     },
 
-    async listReviewComments(
-      ref: PullRequestRef,
-    ): Promise<ExistingReviewComment[]> {
-      const comments: ExistingReviewComment[] = [];
-      for (let page = 1; ; page += 1) {
-        const response = await octokit.rest.pulls.listReviewComments({
-          owner: ref.owner,
-          repo: ref.repo,
-          pull_number: ref.pullRequestNumber,
-          per_page: PAGE_SIZE,
-          page,
-        });
-        const pageComments = reviewCommentsSchema.parse(response.data);
-        comments.push(...pageComments);
-        if (pageComments.length < PAGE_SIZE) {
-          return comments;
-        }
-      }
+    listReviewComments(ref: PullRequestRef): Promise<ExistingReviewComment[]> {
+      return paginate(
+        (page) =>
+          octokit.rest.pulls.listReviewComments({
+            owner: ref.owner,
+            repo: ref.repo,
+            pull_number: ref.pullRequestNumber,
+            per_page: PAGE_SIZE,
+            page,
+          }),
+        (data) => reviewCommentsSchema.parse(data),
+      );
     },
 
     async createReview(input: CreateReviewInput): Promise<PullRequestReview> {

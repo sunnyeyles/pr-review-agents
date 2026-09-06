@@ -4,7 +4,7 @@ import { httpStatus, isPermissionError } from "./errors.js";
 
 /** An Octokit RequestError carries the HTTP status on `.status`. */
 function requestError(status: number, message = "request failed"): Error {
-  return Object.assign(new Error(message), { status, name: "HttpError" });
+  return Object.assign(new Error(message), { status });
 }
 
 describe("httpStatus", () => {

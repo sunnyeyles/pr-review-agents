@@ -1,4 +1,3 @@
-/** createTokenClient is the one way in; the error helpers classify its failures. */
 export { httpStatus, isPermissionError } from "./errors.js";
 export { createTokenClient, type GithubTokenConfig } from "./token.js";
 export {
