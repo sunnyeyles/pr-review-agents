@@ -387,7 +387,7 @@ html { scroll-behavior: smooth; }
 
       <div class="stats">
         <div class="stat"><span class="stat-n">n</span><span class="stat-l">Review agents, from config</span></div>
-        <div class="stat"><span class="stat-n">6</span><span class="stat-l">Read-only tools</span></div>
+        <div class="stat"><span class="stat-n">8</span><span class="stat-l">Read-only tools</span></div>
         <div class="stat"><span class="stat-n">12</span><span class="stat-l">Turn cap / agent</span></div>
         <div class="stat"><span class="stat-n">7</span><span class="stat-l">Validation steps</span></div>
         <div class="stat"><span class="stat-n">10</span><span class="stat-l">Findings published</span></div>
@@ -529,14 +529,15 @@ html { scroll-behavior: smooth; }
       </div>
 
       <figure class="code">
-        <div class="code-head"><span class="p">apps/action/src/index.ts</span><span class="ln">line 267</span></div>
-<pre><span class="c-com">// Resolved before the model client is built, so a bad config fails the</span>
-<span class="c-com">// step rather than producing a review that looks clean.</span>
+        <div class="code-head"><span class="p">apps/action/src/index.ts</span><span class="ln">line 272</span></div>
+<pre><span class="c-com">// Resolved before the model client is built, so a bad config fails the step</span>
+<span class="c-com">// rather than producing a review that looks clean.</span>
 <span class="c-key">const</span> configured = <span class="c-key">await</span> loadAgentDefinitions({
   readFile: readAtCommit(client, target, baseSha),
   path: getInput(env, <span class="c-str">"agent-config"</span>) || DEFAULT_AGENT_CONFIG_PATH,
 });
-<span class="c-key">const</span> agents = resolveAgentDefinitions(getInput(env, <span class="c-str">"agents"</span>), configured);</pre>
+<span class="c-key">const</span> selection = getInput(env, <span class="c-str">"agents"</span>);
+<span class="c-key">const</span> agents = resolveAgentDefinitions(selection, configured);</pre>
       </figure>
 
       <div class="prose">
@@ -577,8 +578,9 @@ html { scroll-behavior: smooth; }
         <p>
           <code>createLanguageModel</code> is the only place a provider is
           chosen. <code>packages/ai/src/model.ts</code> holds the registry —
-          <code>anthropic</code> (the default, <code>claude-sonnet-5</code>) and
-          <code>openai</code> — and every model call in the run goes through
+          <code>openai</code> (the default, <code>gpt-5.6-luna</code>) and
+          <code>anthropic</code> (<code>claude-haiku-4-5</code>) — and every
+          model call in the run goes through
           <code>generateText</code> from the AI SDK against whichever it built.
         </p>
       </div>
@@ -654,11 +656,11 @@ html { scroll-behavior: smooth; }
       </div>
 
       <figure class="code">
-        <div class="code-head"><span class="p">packages/reviewer/src/review-pull-request.ts</span><span class="ln">line 140</span></div>
+        <div class="code-head"><span class="p">packages/reviewer/src/review-pull-request.ts</span><span class="ln">line 132</span></div>
 <pre><span class="c-key">const</span> [pullRequest, changedFiles, diff] = <span class="c-key">await</span> Promise.all([
-  client.getPullRequest(ref),
-  client.listChangedFiles(ref),
-  client.getDiff(ref),
+  client.getPullRequest(target),
+  client.listChangedFiles(target),
+  client.getDiff(target),
 ]);
 <span class="c-key">const</span> { active, skipped } = gateAgentsByPaths(agents, filenames);</pre>
       </figure>
@@ -743,14 +745,22 @@ html { scroll-behavior: smooth; }
       </div>
 
       <figure class="code">
-        <div class="code-head"><span class="p">packages/ai/src/agents/runtime.ts</span><span class="ln">line 155</span></div>
+        <div class="code-head"><span class="p">packages/ai/src/agents/runtime.ts</span><span class="ln">line 158</span></div>
 <pre><span class="c-key">const</span> result = <span class="c-key">await</span> generateText({
-  model: deps.model,
-  instructions: { role: <span class="c-str">"system"</span>, content: systemPrompt, providerOptions },
+  model,
+  <span class="c-com">// The system breakpoint pins the shared prefix, tools included;</span>
+  <span class="c-com">// the call-level one below follows the growing tail.</span>
+  instructions: {
+    role: <span class="c-str">"system"</span>,
+    content: systemPrompt,
+    providerOptions: CACHE_BREAKPOINT,
+  },
   messages: [{ role: <span class="c-str">"user"</span>, content: buildOpeningMessage(context) }],
-  tools: createReviewTools(deps.github, scope),
+  tools: createReviewTools(deps.github, context),
   stopWhen: isStepCount(maxTurns),        <span class="c-com">// 12 by default</span>
-  onStepEnd: (step) =&gt; { usage = addTokenUsage(usage, step.usage); },
+  maxOutputTokens: MAX_OUTPUT_TOKENS,
+  providerOptions: CACHE_BREAKPOINT,
+  onStepEnd: (step) =&gt; { usage = addTokenUsage(usage, toTokenUsage(step.usage)); },
 });
 
 <span class="c-com">// The SDK stops silently at the cap, still holding tool calls.</span>
@@ -768,10 +778,14 @@ html { scroll-behavior: smooth; }
           spent.
         </p>
         <p>
-          Every agent sends the same shared prompt prefix with an Anthropic
-          cache breakpoint on the system message, so agents two and three read
-          it from cache rather than paying for it again. The evaluation report
-          prints the hit rate for exactly this reason.
+          Each turn asks for two things to be cached. A breakpoint on the
+          system message pins the shared prefix, tools included, so agents two
+          and three read it rather than paying for it again; a call-level one
+          follows the growing conversation tail, so turn two reads turn one's
+          opening message and tool results from cache. The three input counters
+          are logged separately on <code>agent.completed</code> for exactly this
+          reason — a cache that stops hitting raises the bill and changes
+          nothing else.
         </p>
         <p>
           <code>extractAgentOutput</code> takes the outermost JSON object out
@@ -1164,11 +1178,11 @@ review.started<br>
 
       <figure class="code">
         <div class="code-head"><span class="p">from the repository root</span><span class="ln">shell</span></div>
-<pre><span class="c-com"># The full pipeline over a fixture, with scripted agents.</span>
-<span class="c-com"># No API key, no network, part of the ordinary suite.</span>
+<pre><span class="c-com"># The unit suite: every package, scripted agents, no fixture repositories.</span>
+<span class="c-com"># No API key, no network.</span>
 pnpm test
 
-<span class="c-com"># The same pipeline, with a real model reviewing real code.</span>
+<span class="c-com"># The full pipeline over a fixture, with a real model reviewing real code.</span>
 ANTHROPIC_API_KEY=... pnpm eval</pre>
       </figure>
 
@@ -1182,9 +1196,11 @@ ANTHROPIC_API_KEY=... pnpm eval</pre>
           inventing problems to look useful.
         </p>
         <p>
-          Each run prints candidates per agent, the synthesis outcome, how many
-          findings survived validation, every repository read the agents made,
-          tokens, and the prompt-cache hit rate.
+          A run is four assertions — a security finding anchored to the planted
+          bug, no findings on the clean fixture, and an agents-completed health
+          check on each. Everything else comes from the ordinary pipeline log:
+          <code>agent.completed</code> carries the duration, the four token
+          counters and the finding count per agent.
         </p>
       </div>
 

@@ -146,6 +146,7 @@ packages/
 evals/        Fixture repositories and the harness that runs the real
               pipeline against them without touching GitHub
 docs/         index.html — the architecture walkthrough, published to Pages
+              (.nojekyll beside it, so Pages serves the file as written)
 scripts/      esbuild bundler for apps/action, its smoke test, and the
               Langfuse prompt seeder
 ```
@@ -341,6 +342,10 @@ across the three agents it ran at the time:
 | Correctness | 9 | ~594k |
 | Security | 4 | ~185k |
 
+Architecture and Correctness were dropped after that run; only `security` and
+`docs-drift` ship today. The shape of the number is what carries over, not the
+row.
+
 An agent declaring `contextGuidance` costs the most, because it must retrieve
 surrounding repository context before it may make a claim, and every retrieval
 is another round trip carrying the whole conversation. Of the shipped pair,
@@ -358,7 +363,7 @@ is no next turn to read it.
 
 A cache that stops hitting raises the bill and changes nothing else, so the
 three input counters are reported separately on `agent.completed` and
-`synthesis.completed`, and `pnpm eval` prints the hit rate per fixture. On a
+`synthesis.completed`, which is where a `pnpm eval` run shows them. On a
 warmed-up review `cacheReadInputTokens` should dominate `inputTokens`; if it
 collapses to zero, something above a breakpoint started varying between turns.
 
