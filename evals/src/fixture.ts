@@ -66,14 +66,6 @@ export interface LoadedFixture {
   baseFiles: ReadonlyMap<string, string>;
 }
 
-/** Every fixture directory name, in alphabetical order. */
-export function listFixtureNames(): string[] {
-  return readdirSync(FIXTURES_DIR, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => entry.name)
-    .sort();
-}
-
 /** Reads a whole file tree into a path -> contents map, recursively. */
 function readTree(root: string): Map<string, string> {
   const files = new Map<string, string>();

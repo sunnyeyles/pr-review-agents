@@ -11,11 +11,7 @@ import {
   type Synthesiser,
 } from "@pr-review/ai";
 import type { GithubInstallationClient } from "@pr-review/github";
-import {
-  createCapturingLogger,
-  type CapturedLogEvent,
-  type StructuredLogger,
-} from "@pr-review/logging";
+import type { StructuredLogger } from "@pr-review/logging";
 import {
   reviewPullRequest,
   runReviewPipeline,
@@ -23,7 +19,7 @@ import {
   type ReviewPipelineResult,
 } from "@pr-review/reviewer";
 
-import { createFixtureClient, type FixtureCall } from "./fixture-client.js";
+import { createFixtureClient } from "./fixture-client.js";
 import type { LoadedFixture } from "./fixture.js";
 import type { ModelAccess } from "./model-access.js";
 
@@ -38,8 +34,7 @@ export interface FixtureReviewDeps {
     agents: readonly AgentDefinition[],
   ) => readonly ReviewAgent[];
   synthesiser: Synthesiser;
-  /** Receives events live, alongside the capturing logger the report is built from. */
-  logger?: StructuredLogger | undefined;
+  logger: StructuredLogger;
 }
 
 /** Everything one fixture review produced, for expectations to judge. */
@@ -49,11 +44,6 @@ export interface FixtureReview {
   result: ReviewPipelineResult;
   /** The check run a real review would have published. */
   rendered: RenderedCheckRun;
-  /** Every repository read the agents made through their tools. */
-  calls: readonly FixtureCall[];
-  /** The lifecycle events the review emitted. */
-  events: readonly CapturedLogEvent[];
-  durationMs: number;
 }
 
 /**
@@ -62,7 +52,7 @@ export interface FixtureReview {
  */
 export function modelBackedDeps(
   access: ModelAccess,
-  logger: StructuredLogger | undefined,
+  logger: StructuredLogger,
   agents: readonly AgentDefinition[],
 ): FixtureReviewDeps {
   const createModel = (modelId: string) =>
@@ -84,34 +74,15 @@ export function modelBackedDeps(
   };
 }
 
-/** Feeds every event to both loggers, in order. */
-function tee(first: StructuredLogger, second: StructuredLogger | undefined): StructuredLogger {
-  if (second === undefined) {
-    return first;
-  }
-  return {
-    info(event, fields) {
-      first.info(event, fields);
-      second.info(event, fields);
-    },
-    error(event, fields) {
-      first.error(event, fields);
-      second.error(event, fields);
-    },
-  };
-}
-
 /** Runs one fixture through the full review and returns what it produced. */
 export async function runFixtureReview(
   fixture: LoadedFixture,
   deps: FixtureReviewDeps,
 ): Promise<FixtureReview> {
-  const { client, calls } = createFixtureClient(fixture);
-  const captured = createCapturingLogger();
-  const logger = tee(captured.logger, deps.logger);
+  const { client } = createFixtureClient(fixture);
+  const { logger } = deps;
 
   let rendered: RenderedCheckRun | undefined;
-  const startedAt = Date.now();
   const result = await reviewPullRequest(
     {
       owner: fixture.context.owner,
@@ -138,7 +109,6 @@ export async function runFixtureReview(
       logger,
     },
   );
-  const durationMs = Date.now() - startedAt;
 
   if (rendered === undefined) {
     throw new Error(
@@ -146,12 +116,5 @@ export async function runFixtureReview(
     );
   }
 
-  return {
-    fixture,
-    result,
-    rendered,
-    calls,
-    events: captured.entries,
-    durationMs,
-  };
+  return { fixture, result, rendered };
 }

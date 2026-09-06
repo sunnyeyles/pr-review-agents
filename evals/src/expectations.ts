@@ -104,7 +104,7 @@ function describeFinding(finding: ReviewFinding): string {
 }
 
 /** The findings of a review, rendered for a failure message. */
-export function describeFindings(findings: readonly ReviewFinding[]): string {
+function describeFindings(findings: readonly ReviewFinding[]): string {
   if (findings.length === 0) {
     return "  (no findings)";
   }

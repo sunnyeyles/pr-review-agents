@@ -26,7 +26,7 @@ interface DiffHunk {
  * Splits file text into lines, dropping the trailing newline. A file
  * without one would need a "\ No newline at end of file" marker.
  */
-export function toLines(text: string, path: string): string[] {
+function toLines(text: string, path: string): string[] {
   if (text === "") {
     return [];
   }
@@ -43,7 +43,7 @@ function lineAt(lines: readonly string[], index: number): string {
 }
 
 /** The line-level diff as a flat operation list, in new-file order. */
-export function diffOps(
+function diffOps(
   base: readonly string[],
   head: readonly string[],
 ): DiffOp[] {

@@ -6,29 +6,25 @@ import process from "node:process";
 
 import { resolveAgentDefinitions } from "@pr-review/ai";
 import { createConsoleLogger } from "@pr-review/logging";
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { beforeAll, describe, expect, test } from "vitest";
 
 import { repositoryAgents } from "../../packages/ai/src/agent-test-support.js";
 import { evalCases } from "./cases.js";
 import { evaluateExpectation } from "./expectations.js";
 import { loadFixture } from "./fixture.js";
 import { AGENTS_ENV, requireModelAccess } from "./model-access.js";
-import { formatReviewReport, formatRunReport } from "./report.js";
 import {
   modelBackedDeps,
   runFixtureReview,
   type FixtureReview,
 } from "./run-fixture-review.js";
 
-// The console logger tees lifecycle events to the terminal as they
-// happen: a full review takes minutes, and silence looks like a hang.
+// A full review takes minutes, and silence looks like a hang.
 const deps = modelBackedDeps(
   requireModelAccess(process.env),
   createConsoleLogger(),
   resolveAgentDefinitions(process.env[AGENTS_ENV] ?? "", repositoryAgents()),
 );
-
-const reports: string[] = [];
 
 for (const evalCase of evalCases) {
   const fixture = loadFixture(evalCase.fixture);
@@ -38,7 +34,6 @@ for (const evalCase of evalCases) {
 
     beforeAll(async () => {
       review = await runFixtureReview(fixture, deps);
-      reports.push(formatReviewReport(review));
     });
 
     for (const expectation of evalCase.expectations) {
@@ -52,9 +47,3 @@ for (const evalCase of evalCases) {
     }
   });
 }
-
-afterAll(() => {
-  if (reports.length > 0) {
-    console.log(formatRunReport(reports));
-  }
-});
