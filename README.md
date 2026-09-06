@@ -345,10 +345,13 @@ that is `docs-drift`.
 
 Prompt caching reprices that traffic rather than reducing it: roughly 0.1x for
 a cache read against 1.25x for the write that put it there. Each agent turn asks
-for its prefix to be cached, via one breakpoint on the system instructions
-(`providerOptions.anthropic.cacheControl`), which also covers the tool schemas.
-Anthropic's automatic breakpoint follows the growing conversation tail.
-The synthesiser's single call is not cached; there is no next turn to read it.
+for two things to be cached, both via `providerOptions.anthropic.cacheControl`:
+the system instructions, through a breakpoint on that message, which also
+covers the tool schemas; and the growing conversation tail, through a
+call-level breakpoint that Anthropic places on the request's last block. So
+turn two reads turn one's opening message and tool results from cache rather
+than paying for them again. The synthesiser's single call is not cached; there
+is no next turn to read it.
 
 A cache that stops hitting raises the bill and changes nothing else, so the
 three input counters are reported separately on `agent.completed` and

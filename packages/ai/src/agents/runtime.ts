@@ -158,8 +158,8 @@ export function createReviewAgent(
           try {
             const result = await generateText({
               model: deps.model,
-              // The breakpoint must sit on the system message itself; the
-              // provider ignores a call-level one. Tools cache with it.
+              // The system breakpoint pins the shared prefix, tools included;
+              // the call-level one below follows the growing tail.
               instructions: {
                 role: "system",
                 content: systemPrompt,
@@ -173,6 +173,9 @@ export function createReviewAgent(
               tools: createReviewTools(deps.github, scope),
               stopWhen: isStepCount(maxTurns),
               maxOutputTokens: MAX_OUTPUT_TOKENS,
+              providerOptions: {
+                anthropic: { cacheControl: { type: "ephemeral" } },
+              },
               telemetry: { functionId: `review-agent-${agent.category}` },
               onStepEnd: (step) => {
                 usage = addTokenUsage(usage, toTokenUsage(step.usage));

@@ -28,7 +28,7 @@ import {
 type ScriptedResponse = ReturnType<typeof message>;
 
 /** One provider-level call as the SDK assembled it. */
-type Call = { prompt: unknown[]; tools?: unknown[] };
+type Call = { prompt: unknown[]; tools?: unknown[]; providerOptions?: unknown };
 
 const securityAgent = repositoryAgent("security");
 
@@ -527,6 +527,22 @@ describe("prompt caching", () => {
     for (const call of calls) {
       expect(systemOf(call)).toBe(buildReviewSystemPrompt(securityAgent));
       expect(cacheMarkersOf(call)).toEqual([{ type: "ephemeral" }]);
+    }
+  });
+
+  it("asks the provider to cache the growing conversation tail on every turn", async () => {
+    // A call-level breakpoint lands on the last block, so turn two reads turn one.
+    const { agent, calls } = makeAgent([
+      message([toolUseBlock("toolu_1", "get_diff", {})], "tool_use"),
+      message([textBlock(finalJson)], "end_turn"),
+    ]);
+
+    await agent.run(context);
+
+    for (const call of calls) {
+      expect(call.providerOptions).toEqual({
+        anthropic: { cacheControl: { type: "ephemeral" } },
+      });
     }
   });
 
