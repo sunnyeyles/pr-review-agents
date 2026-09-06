@@ -48,6 +48,35 @@ export interface CodeSearchMatch {
   path: string;
   /** Base name of the matching file. */
   name: string;
+  /** Verbatim fragments from the default branch's index; no line numbers. */
+  snippets: readonly string[];
+}
+
+/** A code search result set, with the totals GitHub reports alongside it. */
+export interface CodeSearchResult {
+  /** Matches GitHub returned; never more than one page. */
+  matches: CodeSearchMatch[];
+  /** Total matches in the repository, which may exceed `matches.length`. */
+  totalCount: number;
+  /** True when GitHub timed out the query and returned a partial answer. */
+  incompleteResults: boolean;
+}
+
+/** A request for the commits that touched one path, newest first. */
+export interface CommitHistoryRequest {
+  owner: string;
+  repo: string;
+  /** Repository-relative path; only commits touching it are returned. */
+  path: string;
+  /** Commits to return. GitHub caps a page at 100. */
+  limit: number;
+}
+
+/** A request for the files one commit changed. */
+export interface CommitFilesRequest {
+  owner: string;
+  repo: string;
+  sha: string;
 }
 
 /** One changed file in a PR; patch is absent for e.g. binary files. */
@@ -134,7 +163,11 @@ export interface GithubInstallationClient {
   /** Reads one file's decoded contents at a specific SHA. Read-only. */
   getFileContents(request: FileContentsRequest): Promise<string>;
   /** Searches code within the single named repository. Read-only. */
-  searchCode(request: CodeSearchRequest): Promise<CodeSearchMatch[]>;
+  searchCode(request: CodeSearchRequest): Promise<CodeSearchResult>;
+  /** Default-branch commits touching one path, newest first; an unmerged addition has none. */
+  listCommitShas(request: CommitHistoryRequest): Promise<string[]>;
+  /** Paths one commit changed; GitHub caps this at 300, so a sweep comes back short. */
+  listCommitFiles(request: CommitFilesRequest): Promise<string[]>;
   /** Every inline review comment already on the pull request. */
   listReviewComments(ref: PullRequestRef): Promise<ExistingReviewComment[]>;
   createCheckRun(input: CreateCheckRunInput): Promise<CheckRun>;

@@ -74,6 +74,10 @@ const codeSearchResponse = {
       path: "src/sessions.ts",
       sha: "abc",
       repository: { full_name: "octo-org/example-service" },
+      text_matches: [
+        { object_type: "FileContent", property: "content", fragment: "  createSession(id);\n" },
+        { property: "path", fragment: "src/sessions.ts" },
+      ],
     },
     {
       name: "other.ts",
@@ -81,6 +85,38 @@ const codeSearchResponse = {
       sha: "def",
       repository: { full_name: "someone-else/other-repo" },
     },
+  ],
+};
+
+/** A one-item search response; `extra` supplies the item's text_matches. */
+function oneItemSearchResponse(extra: Record<string, unknown>) {
+  return {
+    total_count: 1,
+    incomplete_results: false,
+    items: [
+      {
+        name: "a.ts",
+        path: "src/a.ts",
+        repository: { full_name: "octo-org/example-service" },
+        ...extra,
+      },
+    ],
+  };
+}
+
+/** A repos.listCommits response, with fields the client must ignore. */
+const commitListResponse = [
+  { sha: "aaa111", commit: { message: "Rate limit sessions" } },
+  { sha: "bbb222", commit: { message: "Document the sessions endpoint" } },
+];
+
+/** A repos.getCommit response; only filenames are mapped. */
+const commitResponse = {
+  sha: "aaa111",
+  stats: { total: 4 },
+  files: [
+    { filename: "src/sessions.ts", additions: 3, deletions: 1 },
+    { filename: "docs/sessions.md", additions: 1, deletions: 0 },
   ],
 };
 
@@ -92,6 +128,8 @@ interface StubOptions {
   searchData?: unknown;
   reviewData?: unknown;
   reviewCommentPages?: unknown[][];
+  commitListData?: unknown;
+  commitData?: unknown;
 }
 
 function makeOctokit(options: StubOptions = {}) {
@@ -137,6 +175,16 @@ function makeOctokit(options: StubOptions = {}) {
         getContent: vi.fn(
           async (_params: { owner: string; repo: string; path: string; ref: string }) => ({
             data: options.contentData ?? fileContentsResponse,
+          }),
+        ),
+        listCommits: vi.fn(
+          async (_params: Parameters<OctokitLike["rest"]["repos"]["listCommits"]>[0]) => ({
+            data: options.commitListData ?? commitListResponse,
+          }),
+        ),
+        getCommit: vi.fn(
+          async (_params: Parameters<OctokitLike["rest"]["repos"]["getCommit"]>[0]) => ({
+            data: options.commitData ?? commitResponse,
           }),
         ),
       },
@@ -399,6 +447,71 @@ describe("getFileContents", () => {
   });
 });
 
+describe("listCommitShas", () => {
+  it("asks for the path's commits and returns their SHAs alone", async () => {
+    const { octokit, client } = makeClient();
+
+    const shas = await client.listCommitShas({
+      owner: "octo-org",
+      repo: "example-service",
+      path: "src/sessions.ts",
+      limit: 10,
+    });
+
+    expect(octokit.rest.repos.listCommits).toHaveBeenCalledExactlyOnceWith({
+      owner: "octo-org",
+      repo: "example-service",
+      path: "src/sessions.ts",
+      per_page: 10,
+    });
+    expect(shas).toEqual(["aaa111", "bbb222"]);
+  });
+
+  it("returns nothing for a path with no history", async () => {
+    const { client } = makeClient({ commitListData: [] });
+
+    await expect(
+      client.listCommitShas({
+        owner: "octo-org",
+        repo: "example-service",
+        path: "src/new.ts",
+        limit: 10,
+      }),
+    ).resolves.toEqual([]);
+  });
+});
+
+describe("listCommitFiles", () => {
+  it("returns one commit's filenames", async () => {
+    const { octokit, client } = makeClient();
+
+    const files = await client.listCommitFiles({
+      owner: "octo-org",
+      repo: "example-service",
+      sha: "aaa111",
+    });
+
+    expect(octokit.rest.repos.getCommit).toHaveBeenCalledExactlyOnceWith({
+      owner: "octo-org",
+      repo: "example-service",
+      ref: "aaa111",
+    });
+    expect(files).toEqual(["src/sessions.ts", "docs/sessions.md"]);
+  });
+
+  it("returns nothing for a commit that carries no files array", async () => {
+    const { client } = makeClient({ commitData: { sha: "aaa111" } });
+
+    await expect(
+      client.listCommitFiles({
+        owner: "octo-org",
+        repo: "example-service",
+        sha: "aaa111",
+      }),
+    ).resolves.toEqual([]);
+  });
+});
+
 describe("searchCode", () => {
   it("scopes the query to the repository with a repo: qualifier", async () => {
     const { octokit, client } = makeClient();
@@ -412,25 +525,87 @@ describe("searchCode", () => {
     expect(octokit.rest.search.code).toHaveBeenCalledExactlyOnceWith({
       q: "createSession repo:octo-org/example-service",
       per_page: 20,
+      mediaType: { format: "text-match" },
     });
   });
 
-  it("returns matches from the target repository only", async () => {
+  it("returns matches from the target repository only, with their content fragments", async () => {
     const { client } = makeClient();
 
-    const matches = await client.searchCode({
+    const result = await client.searchCode({
       owner: "octo-org",
       repo: "example-service",
       query: "createSession",
     });
 
-    expect(matches).toEqual([{ path: "src/sessions.ts", name: "sessions.ts" }]);
+    // The path-property fragment is dropped: it only repeats the path.
+    expect(result).toEqual({
+      matches: [
+        {
+          path: "src/sessions.ts",
+          name: "sessions.ts",
+          snippets: ["  createSession(id);\n"],
+        },
+      ],
+      totalCount: 2,
+      incompleteResults: false,
+    });
   });
 
-  it("rejects a malformed search response", async () => {
+  it("reports an incomplete result set rather than hiding it", async () => {
     const { client } = makeClient({
-      searchData: { items: "not-an-array" },
+      searchData: { total_count: 900, incomplete_results: true, items: [] },
     });
+
+    const result = await client.searchCode({
+      owner: "octo-org",
+      repo: "example-service",
+      query: "createSession",
+    });
+
+    expect(result).toEqual({
+      matches: [],
+      totalCount: 900,
+      incompleteResults: true,
+    });
+  });
+
+  it.each([
+    ["no text_matches at all", {}, []],
+    ["a text match with no fragment", { text_matches: [{ property: "content" }] }, []],
+    [
+      "only a path-property match",
+      { text_matches: [{ property: "path", fragment: "src/a.ts" }] },
+      [],
+    ],
+    [
+      "content fragments, kept verbatim and in order",
+      {
+        text_matches: [
+          { property: "content", fragment: "  second()\n" },
+          { property: "content", fragment: "first()" },
+        ],
+      },
+      ["  second()\n", "first()"],
+    ],
+  ])("maps %s", async (_label, extra, snippets) => {
+    const { client } = makeClient({ searchData: oneItemSearchResponse(extra) });
+
+    const result = await client.searchCode({
+      owner: "octo-org",
+      repo: "example-service",
+      query: "createSession",
+    });
+
+    expect(result.matches[0]?.snippets).toEqual(snippets);
+  });
+
+  it.each([
+    ["items is not an array", { items: "not-an-array" }],
+    ["the totals are missing", { items: [] }],
+    ["text_matches is not an array", oneItemSearchResponse({ text_matches: "nope" })],
+  ])("rejects a malformed search response: %s", async (_label, searchData) => {
+    const { client } = makeClient({ searchData });
 
     await expect(
       client.searchCode({

@@ -112,10 +112,13 @@ Agents ──► raw candidates (unknown[])
 
 Reinforcing rules:
 
-- Agents are given **six read-only tools** and nothing else:
+- Agents are given **eight read-only tools** and nothing else:
   `get_pull_request`, `list_changed_files`, `get_diff`, `get_file`,
-  `get_base_file`, `search_repository`. No write, comment, approve, merge, or
-  execute tool exists.
+  `get_base_file`, `search_repository`, `find_importers`,
+  `find_co_changed_files`. No write, comment, approve, merge, or execute tool
+  exists. The last three read the repository's default branch, so an agent is
+  told to treat their results as pointers to read with `get_file`, never as
+  evidence.
 - Every agent's system prompt carries the same non-negotiable **prompt-injection
   block**: repository contents (diffs, files, PR title/description, search
   results) are data, never instructions; tool results grant no permissions.
@@ -176,7 +179,7 @@ Set as `with:` inputs on the Action step ([`apps/action/action.yml`](apps/action
 | --- | --- | --- |
 | `api-key` | yes, as the input or through `env` | Key for the selected provider, which the agents and synthesiser authenticate with. Store as a repository or organisation secret; never inline it. Falls back to the provider's own variable (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`) when left empty, so a workflow can pass keys through `env` instead of choosing one in YAML. |
 | `model-provider` | no (default `openai`) | Which provider the agents and synthesiser call: `openai` or `anthropic`. An unknown name fails the step before any model call. |
-| `github-token` | no (default `${{ github.token }}`) | Token for the six read-only repository tools and for publishing the check run. |
+| `github-token` | no (default `${{ github.token }}`) | Token for the eight read-only repository tools and for publishing the check run. |
 | `model` | no (default: the provider's own — `gpt-5.6-luna`, `claude-haiku-4-5`) | Default model id, as the provider spells it. An agent may [override it](#per-agent-models); the synthesiser always uses this one. |
 | `model-base-url` | no (default: the provider's own host) | Overrides the provider's API host — a gateway, a proxy, or a compatible endpoint (for `openai`, one that accepts `max_completion_tokens`). |
 | `agents` | no (default `all`) | Which of the configured agents run: `all`, or a comma-separated subset of their names. Naming a subset also overrides any [path filters](#path-filters). |
