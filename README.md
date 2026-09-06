@@ -460,8 +460,10 @@ pnpm test
 `.github/workflows/release-action.yml` runs on a `v*` tag (or manual dispatch):
 install → typecheck → test → build the bundle → push only `action.yml`,
 `dist/index.mjs`, `LICENSE`, and a usage `README.md` to a separate public repo,
-moving that repo's major-version alias (`v2`) to the new tag. The engine, the
-tests, the spec, and this README stay in the private source repo.
+moving that repo's major-version alias (`v2`) to the new tag and cutting a
+GitHub Release there. Listing the Action on the Marketplace is a manual tick on
+that release, once. The engine, the tests, the spec, and this README stay in
+the private source repo.
 `.github/workflows/ci.yml` runs typecheck and tests on every push;
 `.github/workflows/self-review.yml` dogfoods the Action on this repo's own
 PRs, but only on a pull request labelled `ai-review` — reviews cost tokens, so
