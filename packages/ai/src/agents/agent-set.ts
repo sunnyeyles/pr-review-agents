@@ -101,5 +101,12 @@ export function createReviewAgents(
   deps: ReviewAgentDeps,
   agents: readonly AgentDefinition[],
 ): ReviewAgent[] {
-  return agents.map((agent) => createReviewAgent(agent, deps));
+  return agents.map((agent) => {
+    const modelId = agent.model;
+    const model =
+      modelId === undefined || deps.createModel === undefined
+        ? deps.model
+        : deps.createModel(modelId);
+    return createReviewAgent(agent, { ...deps, model });
+  });
 }

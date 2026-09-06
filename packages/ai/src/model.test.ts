@@ -12,9 +12,9 @@ import {
 } from "./model.js";
 
 describe("resolveModelProvider", () => {
-  it("defaults to Anthropic when configuration names none", () => {
+  it("defaults to OpenAI when configuration names none", () => {
     expect(resolveModelProvider("")).toBe(DEFAULT_MODEL_PROVIDER);
-    expect(resolveModelProvider("   ")).toBe("anthropic");
+    expect(resolveModelProvider("   ")).toBe("openai");
   });
 
   it("accepts every supported provider, case- and space-insensitively", () => {

@@ -14,6 +14,8 @@
 # Optional:
 #   contextGuidance  makes the agent retrieve repository context with the
 #                    read-only tools before it may make a claim
+#   model            model id for this agent alone, as the provider spells it.
+#                    Declaring none means it uses the action's `model` input.
 #   paths            glob patterns deciding whether the agent runs at all.
 #                    Declaring none means it runs on every pull request.
 #
@@ -23,6 +25,7 @@
 # a green one. To gate a built-in, name it under `agent:` instead:
 #
 #   - agent: docs-drift
+#     model: gpt-5-mini
 #     paths:
 #       - "docs/**"
 #       - "README.md"

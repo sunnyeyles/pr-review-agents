@@ -8,7 +8,7 @@
 # Synthesiser, or the validation chain.
 #
 # Requires the selected provider's API key as a repository secret
-# (ANTHROPIC_API_KEY or OPENAI_API_KEY). Unlike the self review, a missing key
+# (OPENAI_API_KEY or ANTHROPIC_API_KEY). Unlike the self review, a missing key
 # FAILS this workflow rather than skipping it: somebody asked for an
 # evaluation, and a green run that measured nothing would be a lie.
 
@@ -21,10 +21,10 @@ on:
         description: Model provider to evaluate.
         required: false
         type: choice
-        default: anthropic
+        default: openai
         options:
-          - anthropic
           - openai
+          - anthropic
       model:
         description: >-
           Model id to evaluate, as the provider spells it. Leave empty to

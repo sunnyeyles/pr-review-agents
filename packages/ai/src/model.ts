@@ -22,7 +22,7 @@ interface ProviderEntry {
 
 const PROVIDERS = {
   anthropic: {
-    defaultModel: "claude-sonnet-5",
+    defaultModel: "claude-haiku-4-5",
     apiKeyEnv: "ANTHROPIC_API_KEY",
     create: ({ apiKey, baseUrl, modelId }: ProviderCreateOptions) =>
       createAnthropic({
@@ -31,7 +31,7 @@ const PROVIDERS = {
       })(modelId),
   },
   openai: {
-    defaultModel: "gpt-5",
+    defaultModel: "gpt-5.6-luna",
     apiKeyEnv: "OPENAI_API_KEY",
     // .chat, not the callable: that one speaks the Responses API, which
     // most OpenAI-compatible gateways behind baseUrl do not implement.
@@ -48,7 +48,7 @@ export type ModelProvider = keyof typeof PROVIDERS;
 export const MODEL_PROVIDERS = Object.keys(PROVIDERS) as ModelProvider[];
 
 /** The provider used when configuration names none. */
-export const DEFAULT_MODEL_PROVIDER: ModelProvider = "anthropic";
+export const DEFAULT_MODEL_PROVIDER: ModelProvider = "openai";
 
 /** An unusable provider selection, raised before any model call. */
 export class ModelProviderError extends Error {

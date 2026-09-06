@@ -45,10 +45,11 @@ function unknownBuiltInMessage(name: string, path: string): string {
   ].join("\n");
 }
 
-/** A built-in named for its `paths`; `agent` is what distinguishes it. */
+/** A built-in named for its overrides; `agent` is what distinguishes it. */
 const builtInEntrySchema = z
   .object({
     agent: z.string().min(1),
+    model: z.string().trim().min(1).optional(),
     paths: agentPathsSchema.optional(),
   })
   .strict();
@@ -83,9 +84,11 @@ function resolveAgentEntry(
     if (builtIn === undefined) {
       throw new AgentConfigError(unknownBuiltInMessage(name, path));
     }
-    return named.data.paths === undefined
-      ? builtIn
-      : { ...builtIn, paths: named.data.paths };
+    return {
+      ...builtIn,
+      ...(named.data.model === undefined ? {} : { model: named.data.model }),
+      ...(named.data.paths === undefined ? {} : { paths: named.data.paths }),
+    };
   }
 
   const parsed = agentDefinitionSchema.safeParse(entry);

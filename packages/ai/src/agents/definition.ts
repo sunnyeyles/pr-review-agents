@@ -23,6 +23,8 @@ export interface AgentDefinition {
   focus: string;
   /** Optional agent-specific addition to "# Context and tools". */
   contextGuidance?: string;
+  /** Model id for this agent alone; the run's default model otherwise. */
+  model?: string;
   /**
    * Optional globs gating whether the agent runs at all. Never narrows what a
    * running agent reviews, and never reaches a prompt.
@@ -41,6 +43,7 @@ export const agentDefinitionSchema = z
     role: z.string().min(1),
     focus: z.string().min(1),
     contextGuidance: z.string().min(1).optional(),
+    model: z.string().trim().min(1).optional(),
     paths: agentPathsSchema.optional(),
   })
   .strict();

@@ -180,13 +180,14 @@ async function resolveManagedPrompts(
   }
 }
 
-/** The model for this run, and the provider that was selected. */
+/** The run's default model, its provider, and the factory an agent's own uses. */
 interface ModelInputs {
   model: ReviewModel;
   provider: ModelProvider;
+  createModel: (modelId: string) => ReviewModel;
 }
 
-/** Builds the run's model. */
+/** Builds the run's default model, and the factory for a per-agent one. */
 function resolveModelInputs(
   env: Record<string, string | undefined>,
   environment: Pick<ActionEnvironment, "createLanguageModel">,
@@ -202,14 +203,17 @@ function resolveModelInputs(
     );
   }
   const baseUrl = getInput(env, "model-base-url");
-  return {
-    provider,
-    model: environment.createLanguageModel({
+  const createModel = (modelId: string): ReviewModel =>
+    environment.createLanguageModel({
       provider,
       apiKey,
       ...(baseUrl === "" ? {} : { baseUrl }),
-      modelId: getInput(env, "model") || defaultModelFor(provider),
-    }),
+      modelId,
+    });
+  return {
+    provider,
+    createModel,
+    model: createModel(getInput(env, "model") || defaultModelFor(provider)),
   };
 }
 
@@ -281,8 +285,17 @@ export async function runAction(
       .map((agent) => agent.category),
   });
 
-  const { model, provider } = resolveModelInputs(env, environment);
-  logger.info("review.model_selected", { provider, model: model.modelId });
+  const { model, provider, createModel } = resolveModelInputs(env, environment);
+  logger.info("review.model_selected", {
+    provider,
+    model: model.modelId,
+    // Only the agents that override the default; empty when none do.
+    agentModels: Object.fromEntries(
+      agents
+        .filter((agent) => agent.model !== undefined)
+        .map((agent) => [agent.category, agent.model]),
+    ),
+  });
 
   const langfuse = resolveLangfuseInputs(env, logger);
   // Tracing starts before the prompt fetch so the fetch's spans are captured.
@@ -324,6 +337,7 @@ export async function runAction(
           createReviewAgents(
             {
               model,
+              createModel,
               github: reviewClient,
               ...(prompts === undefined ? {} : { systemPrompts: prompts }),
             },

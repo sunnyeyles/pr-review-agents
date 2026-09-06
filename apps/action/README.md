@@ -34,11 +34,11 @@ jobs:
     steps:
       - uses: sunnyeyles/pr-review-action@v2
         with:
-          api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          api-key: ${{ secrets.OPENAI_API_KEY }}
 ```
 
 Moving from `v1`: the `anthropic-api-key` input is now `api-key`, and
-`model-provider` selects Anthropic (the default) or OpenAI.
+`model-provider` selects OpenAI (the default) or Anthropic.
 
 No checkout step is needed. Everything — the pull request, the diff, and the
 agent configuration — is read through the GitHub API, never from a working
@@ -84,6 +84,23 @@ A missing file, a malformed one, or one declaring no agents fails the step
 before any model call: a review with the wrong agents, or none, looks exactly
 like a clean bill of health.
 
+### Per-agent models
+
+An agent can name its own model; everything else, the Synthesiser included,
+uses the `model` input. The provider and API key stay the run's, so the model
+must be one that provider serves:
+
+```yaml
+agents:
+  - agent: docs-drift
+    model: gpt-5-mini
+
+  - category: security
+    role: Security reviewer
+    focus: Review ONLY for security problems.
+    model: gpt-5
+```
+
 ### Path filters
 
 An agent can declare the paths it cares about and sit out a pull request that
@@ -126,10 +143,10 @@ of this action's repository — copy it and edit.
 
 | Input | Required | Default | Purpose |
 | --- | --- | --- | --- |
-| `api-key` | yes, as the input or through `env` | — | Key for the selected provider, which the agents and Synthesiser authenticate with. Store it as a secret. Falls back to that provider's own variable (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`) when left empty. |
-| `model-provider` | no | `anthropic` | Which provider to call: `anthropic` or `openai`. An unknown name fails the step before any model call. |
+| `api-key` | yes, as the input or through `env` | — | Key for the selected provider, which the agents and Synthesiser authenticate with. Store it as a secret. Falls back to that provider's own variable (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`) when left empty. |
+| `model-provider` | no | `openai` | Which provider to call: `openai` or `anthropic`. An unknown name fails the step before any model call. |
 | `github-token` | no | `${{ github.token }}` | Token for the read-only tools, the review comments, and the check run. |
-| `model` | no | the provider's own | Model id, as the provider spells it: `claude-sonnet-5` on `anthropic`, `gpt-5` on `openai`. |
+| `model` | no | the provider's own | Default model id, as the provider spells it: `gpt-5.6-luna` on `openai`, `claude-haiku-4-5` on `anthropic`. An agent may override it with its own `model`; the Synthesiser always uses this one. |
 | `model-base-url` | no | the provider's own host | Overrides the provider's API host — a gateway, a proxy, or a compatible endpoint (for `openai`, one that accepts `max_completion_tokens`). |
 | `agents` | no | `all` | Which of the configured agents run: `all`, or a comma-separated subset of their names. Naming a subset also overrides their `paths`. |
 | `agent-config` | no | `.github/pr-review-agents.yml` | Path to the YAML file defining this repository's agents, read from the pull request's base commit. The file itself is required — there is no built-in set, and a missing one fails the step. |
@@ -146,9 +163,9 @@ spells it.
 
 ```yaml
         with:
-          model-provider: openai
-          api-key: ${{ secrets.OPENAI_API_KEY }}
-          model: gpt-5
+          model-provider: anthropic
+          api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          model: claude-sonnet-5
 ```
 
 `model-base-url` points the selected adapter somewhere else — an Azure
