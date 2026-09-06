@@ -1,8 +1,10 @@
-# AI PR Review
+# Review Agent Fleet
 
-Reviews pull requests with the AI agents *you* choose, and publishes the
-result as inline pull request review comments, alongside an `AI PR Review`
-check run carrying the full summary.
+Reviews pull requests with the AI agents *you* choose — the ones this
+repository names in `.github/pr-review-agents.yml`, and no agent by default.
+Findings post as inline pull request review comments, alongside a check run
+named `AI PR Review` carrying the full summary. The model provider is
+configurable.
 
 This action ships two specialists and runs neither by default. You name
 the ones you want in `.github/pr-review-agents.yml` and the review runs exactly
@@ -82,11 +84,12 @@ the run's, so the model must be one that provider serves:
 
 ```yaml
 agents:
+  # Cheap: it only checks whether the docs still match the code.
   - agent: docs-drift
     model: gpt-5-mini
 
-  - agent: security
-    model: gpt-5
+  # No `model`, so this runs on the action's default (`gpt-5.6-luna`).
+  - security
 ```
 
 ### Path filters
@@ -156,9 +159,10 @@ spells it.
 `model-base-url` points the selected adapter somewhere else — an Azure
 deployment, a gateway, or a self-hosted server speaking that provider's API.
 
-Prompt caching is requested on every agent turn and honoured where the provider
-supports it; the token counters report cache writes and reads separately, and a
-provider that reports neither leaves them at zero.
+Prompt caching is requested on `anthropic` only — it is the provider whose API
+takes explicit cache breakpoints. On `openai` nothing is requested and
+`cacheCreationInputTokens` / `cacheReadInputTokens` stay at zero, which is
+expected rather than a fault.
 
 ## Langfuse (optional)
 
@@ -182,17 +186,18 @@ features and logs `langfuse.disabled_incomplete_credentials`.
 
 ## Permissions
 
-| Permission | Why |
-| --- | --- |
-| `contents: read` | Read files at the head and base commits. |
-| `pull-requests: write` | Read the pull request, its changed files, and its diff, and post the review comments. |
-| `checks: write` | Publish the check run and its inline annotations. |
+Every one of them degrades rather than fails, except the first.
 
-**Fork pull requests.** GitHub gives workflows triggered by fork pull requests a
-read-only token, so the check run cannot be created. The action detects this and
-writes the same review to the workflow **job summary** instead, then exits
-successfully. Findings still list their file and line; only inline annotations
-are lost.
+| Permission | With it | Without it |
+| --- | --- | --- |
+| `contents: read` | Reads files at the head and base commits, and the agent configuration | The action cannot run |
+| `pull-requests: write` | Findings post as inline review comments | The check run annotates the same lines instead, and logs `review.comments.degraded` |
+| `checks: write` | Publishes the `AI PR Review` check run and its annotations | The whole review is written to the workflow job summary instead, and logs `review.published.degraded` |
+
+**Fork pull requests.** GitHub gives a fork-triggered workflow a read-only
+token, so both degradations fire at once and the review lands in the job
+summary. The step still exits 0. Findings keep their file and line; only the
+inline placement is lost.
 
 ## What it does not do
 
