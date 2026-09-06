@@ -83,8 +83,6 @@ interface SynthesiserDeps {
   model: ReviewModel;
   /** The run's agent set, which names the categories the prompt accepts. */
   agents: readonly AgentDefinition[];
-  /** Omitted means the prompt built from `agents`. */
-  systemPrompt?: string | undefined;
 }
 
 /** One synthesis run's refined findings and token usage; skipped runs report zero. */
@@ -101,8 +99,9 @@ export interface Synthesiser {
 
 /** Builds the Synthesiser over the shared model seam. */
 export function createSynthesiser(deps: SynthesiserDeps): Synthesiser {
-  const systemPrompt =
-    deps.systemPrompt ?? buildSynthesisSystemPrompt(deps.agents);
+  // Always built from the agent set: the prompt names the exact categories
+  // the run accepts, so a stored copy would go stale unnoticed.
+  const systemPrompt = buildSynthesisSystemPrompt(deps.agents);
 
   return {
     async synthesise(candidates) {

@@ -1,13 +1,13 @@
 # AI PR Review
 
-Reviews pull requests with the AI agents *you* define, and publishes the
+Reviews pull requests with the AI agents *you* choose, and publishes the
 result as inline pull request review comments, alongside an `AI PR Review`
 check run carrying the full summary.
 
-This action ships no agents of its own. You declare them in
-`.github/pr-review-agents.yml` and the review runs exactly those — see
-[Defining your agents](#defining-your-agents), which you need before the
-first run.
+This action ships two specialists and runs neither by default. You name
+the ones you want in `.github/pr-review-agents.yml` and the review runs exactly
+those — see [Choosing your agents](#choosing-your-agents), which you need
+before the first run.
 
 The agents never write to GitHub. They are given six read-only tools and
 propose structured findings; deterministic code then decides what actually gets
@@ -44,60 +44,48 @@ No checkout step is needed. Everything — the pull request, the diff, and the
 agent configuration — is read through the GitHub API, never from a working
 copy, and the code under review is never executed.
 
-## Defining your agents
+## Choosing your agents
 
-Each agent is a name, a role, and a focus. Declare them in
-`.github/pr-review-agents.yml`. Nothing runs until you do — this action has no agents
-of its own, so there is no default review to inherit and no fork to maintain.
+Two specialists ship with this action:
+
+| Name | Reviews for |
+| --- | --- |
+| `security` | Auth, cross-tenant access, injection, secret leakage, privilege |
+| `docs-drift` | Documentation this change made wrong |
+
+Name the ones you want in `.github/pr-review-agents.yml`. Nothing runs until
+you do — there is no default review to inherit.
 
 ```yaml
 agents:
-  - category: correctness
-    role: Correctness reviewer
-    focus: |
-      Review the pull request ONLY for correctness problems:
-      - bugs and incorrect logic
-      - missing validation
-      - unhandled edge cases
-      Do NOT report style or architectural opinions — those are out of scope
-      for you and will be discarded.
-
-  - category: performance
-    role: Performance reviewer
-    focus: |
-      Review ONLY for performance problems: N+1 queries, unbounded result
-      sets, work repeated in a loop that could be hoisted.
-    # Optional: makes the agent retrieve repository context before claiming.
-    contextGuidance: |
-      Use get_file and search_repository to confirm a claim before making it.
+  - security
+  - docs-drift
 ```
 
-Add an agent with a new entry; remove one by deleting its entry. `category`
-must be a lowercase kebab-case slug and is the only finding category that
-agent may report; `synthesis` and `all` are reserved. Order decides the order
-findings reach the Synthesiser.
+Add an agent with a new name; remove one by deleting its line. An agent's name
+is the only finding category it may report. Order decides the order findings
+reach the Synthesiser.
 
-The rest of each prompt — the injection hardening, the tool guidance, the JSON
-output contract — is shared, so an agent only ever states its own focus.
+Each agent's role and focus ship with the action, so this file selects and
+tunes agents rather than defining them; the injection hardening, the tool
+guidance, and the JSON output contract are shared across all of them.
 
-A missing file, a malformed one, or one declaring no agents fails the step
+A missing file, a malformed one, or one naming no agents fails the step
 before any model call: a review with the wrong agents, or none, looks exactly
 like a clean bill of health.
 
 ### Per-agent models
 
-An agent can name its own model; everything else, the Synthesiser included,
-uses the `model` input. The provider and API key stay the run's, so the model
-must be one that provider serves:
+An agent can name its own model, written out under `agent:`; everything else,
+the Synthesiser included, uses the `model` input. The provider and API key stay
+the run's, so the model must be one that provider serves:
 
 ```yaml
 agents:
   - agent: docs-drift
     model: gpt-5-mini
 
-  - category: security
-    role: Security reviewer
-    focus: Review ONLY for security problems.
+  - agent: security
     model: gpt-5
 ```
 
@@ -108,15 +96,12 @@ touches none of them:
 
 ```yaml
 agents:
-  - category: security
-    role: Security reviewer
-    focus: Review ONLY for security problems.
+  - agent: security
     paths:
       - "packages/github/**"
       - "**/auth/**"
       - "!**/*.test.ts"
 
-  # A built-in gated the same way.
   - agent: docs-drift
     paths: ["docs/**", "README.md"]
 ```
@@ -135,7 +120,7 @@ and logged as `agent.skipped`; a pull request no agent matched gets a
 agent, its patterns, and the changed files — never a green one. Naming agents
 on the `agents` input overrides the gate.
 
-A working three-agent starting point lives in
+A working starting point lives in
 [`.github/pr-review-agents.yml`](https://github.com/sunnyeyles/pr-review-agents/blob/main/.github/pr-review-agents.yml)
 of this action's repository — copy it and edit.
 
@@ -149,7 +134,7 @@ of this action's repository — copy it and edit.
 | `model` | no | the provider's own | Default model id, as the provider spells it: `gpt-5.6-luna` on `openai`, `claude-haiku-4-5` on `anthropic`. An agent may override it with its own `model`; the Synthesiser always uses this one. |
 | `model-base-url` | no | the provider's own host | Overrides the provider's API host — a gateway, a proxy, or a compatible endpoint (for `openai`, one that accepts `max_completion_tokens`). |
 | `agents` | no | `all` | Which of the configured agents run: `all`, or a comma-separated subset of their names. Naming a subset also overrides their `paths`. |
-| `agent-config` | no | `.github/pr-review-agents.yml` | Path to the YAML file defining this repository's agents, read from the pull request's base commit. The file itself is required — there is no built-in set, and a missing one fails the step. |
+| `agent-config` | no | `.github/pr-review-agents.yml` | Path to the YAML file naming this repository's agents, read from the pull request's base commit. The file itself is required — nothing runs by default, and a missing one fails the step. |
 | `langfuse-public-key` | no | — | Langfuse public key. Set this and the secret key to manage prompts and collect traces. |
 | `langfuse-secret-key` | no | — | Langfuse secret key. Store it as a secret. |
 | `langfuse-base-url` | no | `https://cloud.langfuse.com` | Langfuse host, for self-hosted instances. |
@@ -180,11 +165,14 @@ provider that reports neither leaves them at zero.
 Leave the Langfuse inputs unset and the action runs on the system prompts built
 into it, exporting nothing. That is the default and needs no account.
 
-Supply **both** keys and two things change: the system prompts are fetched
-from Langfuse at the start of the run, and the agents, their tool calls, and
-the Synthesiser export traces. One prompt is fetched per selected agent,
-named after it (`correctness_system`, `security_system`, …), plus
-`synthesis_system`.
+Supply **both** keys and two things change: the agent system prompts are
+fetched from Langfuse at the start of the run, and the agents, their tool
+calls, and the Synthesiser export traces. One prompt is fetched per selected
+agent, named after it (`security_system`, `docs_drift_system`, …).
+
+The Synthesiser's own prompt is never fetched. It names the exact categories
+the run accepts, so a stored copy would go stale the moment the agent set
+changed — it is always built from the agents in play.
 
 Neither is load-bearing. If Langfuse is unreachable, slow, missing a prompt, or
 returns text that has lost its output contract, that prompt falls back to the

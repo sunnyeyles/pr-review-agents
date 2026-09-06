@@ -13,51 +13,62 @@ import {
   loadAgentDefinitions,
   parseAgentConfig,
 } from "./config.js";
-import { buildReviewSystemPrompt, agentPromptKey } from "./definition.js";
+import {
+  ALL_AGENTS,
+  SYNTHESIS_PROMPT_ID,
+  buildReviewSystemPrompt,
+  agentPromptKey,
+} from "./definition.js";
+import { BUILT_IN_AGENT_NAMES } from "./specialists/index.js";
 import { inCodePrompts } from "../prompts.js";
 
 const PATH = "config.yml";
 
-const performanceYaml = `
+const securityYaml = `
 agents:
-  - category: performance
-    role: Performance reviewer
-    focus: |
-      Review ONLY for performance problems.
+  - agent: security
 `;
 
-/** The categories a config document defines, in order. */
+/** The categories a config document names, in order. */
 function categories(source: string): string[] {
   return parseAgentConfig(source, PATH).map((agent) => agent.category);
 }
 
-describe("parseAgentConfig", () => {
-  it("returns the agents in the order they are written", () => {
-    expect(
-      categories(`${performanceYaml}  - category: security
-    role: Security reviewer
-    focus: Review ONLY for security problems.
-`),
-    ).toEqual(["performance", "security"]);
+describe("the built-in agents", () => {
+  it("ships the specialists the configuration may name", () => {
+    expect([...BUILT_IN_AGENT_NAMES]).toEqual(["security", "docs-drift"]);
   });
 
-  it("keeps an optional contextGuidance and omits it otherwise", () => {
-    const [plain] = parseAgentConfig(performanceYaml, PATH);
-    expect(plain?.contextGuidance).toBeUndefined();
+  it("gives every built-in a slug that is not a reserved name", () => {
+    for (const name of BUILT_IN_AGENT_NAMES) {
+      expect(name).toMatch(/^[a-z][a-z0-9-]*$/);
+      expect(name).not.toBe(SYNTHESIS_PROMPT_ID);
+      expect(name).not.toBe(ALL_AGENTS);
+    }
+  });
+});
 
-    const [guided] = parseAgentConfig(
-      `${performanceYaml}    contextGuidance: Read the neighbours first.\n`,
-      PATH,
-    );
-    expect(guided?.contextGuidance).toBe("Read the neighbours first.");
+describe("parseAgentConfig", () => {
+  it("returns the agents in the order they are named", () => {
+    expect(categories("agents:\n  - docs-drift\n  - security\n")).toEqual([
+      "docs-drift",
+      "security",
+    ]);
+  });
+
+  it("carries the built-in's own contextGuidance, and omits it otherwise", () => {
+    expect(parseAgentConfig("agents:\n  - security\n", PATH)[0]?.contextGuidance)
+      .toBeUndefined();
+    expect(
+      parseAgentConfig("agents:\n  - docs-drift\n", PATH)[0]?.contextGuidance,
+    ).toMatch(/retrieve the documentation/i);
   });
 
   it("keeps an optional model and omits it otherwise", () => {
-    const [plain] = parseAgentConfig(performanceYaml, PATH);
-    expect(plain?.model).toBeUndefined();
+    expect(parseAgentConfig(securityYaml, PATH)[0]?.model).toBeUndefined();
 
     const [overridden] = parseAgentConfig(
-      `${performanceYaml}    model: claude-haiku-4-5\n`,
+      `${securityYaml}    model: claude-haiku-4-5\n`,
       PATH,
     );
     expect(overridden?.model).toBe("claude-haiku-4-5");
@@ -66,12 +77,12 @@ describe("parseAgentConfig", () => {
   it("rejects an empty model, which would name no model at all", () => {
     for (const value of ['""', '"   "']) {
       expect(() =>
-        parseAgentConfig(`${performanceYaml}    model: ${value}\n`, PATH),
+        parseAgentConfig(`${securityYaml}    model: ${value}\n`, PATH),
       ).toThrow(AgentConfigError);
     }
   });
 
-  it("rejects an empty document, which would define no agents", () => {
+  it("rejects an empty document, which would name no agents", () => {
     for (const source of ["", "# just a comment\n", "agents: []\n"]) {
       expect(() => parseAgentConfig(source, PATH)).toThrow(AgentConfigError);
     }
@@ -81,65 +92,46 @@ describe("parseAgentConfig", () => {
     expect(() => parseAgentConfig("agents: [\n", PATH)).toThrow(/config\.yml/);
   });
 
-  it("rejects an agent missing its role or focus", () => {
+  it("rejects an entry defining an agent instead of naming one", () => {
+    // The form was removed; the message must say so rather than list keys.
     expect(() =>
-      parseAgentConfig("agents:\n  - category: performance\n", PATH),
-    ).toThrow(/role/);
+      parseAgentConfig(
+        "agents:\n  - category: performance\n    role: Performance reviewer\n    focus: Review ONLY for performance.\n",
+        PATH,
+      ),
+    ).toThrow(/does not name a built-in agent/);
   });
 
-  it("rejects a category that is not a lowercase slug", () => {
-    for (const bad of ["Performance", "perf ormance", "9lives"]) {
-      expect(() =>
-        parseAgentConfig(performanceYaml.replace("performance", bad), PATH),
-      ).toThrow(AgentConfigError);
-    }
+  it("names the built-ins when an entry misspells one", () => {
+    expect(() => parseAgentConfig("agents:\n  - securty\n", PATH)).toThrow(
+      /unknown built-in agent: "securty"/,
+    );
   });
 
-  it("rejects the reserved synthesis and all names", () => {
-    for (const reserved of ["synthesis", "all"]) {
-      expect(() =>
-        parseAgentConfig(performanceYaml.replace("performance", reserved), PATH),
-      ).toThrow(/reserved/);
-    }
-  });
-
-  it("rejects the same agent defined twice", () => {
+  it("rejects the same agent named twice", () => {
     // One of the two would silently win, and prompt keys would collide.
     expect(() =>
-      parseAgentConfig(`${performanceYaml}${performanceYaml.replace("agents:\n", "")}`, PATH),
+      parseAgentConfig("agents:\n  - security\n  - agent: security\n", PATH),
     ).toThrow(/twice/);
   });
 
   it("rejects an unknown top-level key rather than ignoring it", () => {
     // A typo'd key would silently review with the wrong agents.
-    expect(() =>
-      parseAgentConfig("agent:\n  - category: performance\n", PATH),
-    ).toThrow(AgentConfigError);
-  });
-
-  it("rejects an unknown key within an agent", () => {
-    // contextGuidance is optional, so a misspelling would drop the
-    // agent's evidence requirement without a word.
-    for (const typo of ["contextguidance", "context_guidance", "guidance", "modle"]) {
-      expect(() =>
-        parseAgentConfig(`${performanceYaml}    ${typo}: Read the neighbours first.\n`, PATH),
-      ).toThrow(AgentConfigError);
-    }
+    expect(() => parseAgentConfig("agent:\n  - security\n", PATH)).toThrow(
+      AgentConfigError,
+    );
   });
 });
 
 describe("parseAgentConfig: path filters", () => {
-  const gatedYaml = `${performanceYaml}    paths:
-      - "packages/**"
-      - "!**/*.test.ts"
-`;
-
   it("keeps an agent's paths and omits them otherwise", () => {
-    expect(parseAgentConfig(performanceYaml, PATH)[0]?.paths).toBeUndefined();
-    expect(parseAgentConfig(gatedYaml, PATH)[0]?.paths).toEqual([
-      "packages/**",
-      "!**/*.test.ts",
-    ]);
+    expect(parseAgentConfig(securityYaml, PATH)[0]?.paths).toBeUndefined();
+    expect(
+      parseAgentConfig(
+        `${securityYaml}    paths:\n      - "packages/**"\n      - "!**/*.test.ts"\n`,
+        PATH,
+      )[0]?.paths,
+    ).toEqual(["packages/**", "!**/*.test.ts"]);
   });
 
   it("gates a built-in through the `agent:` form", () => {
@@ -159,22 +151,6 @@ describe("parseAgentConfig: path filters", () => {
     );
   });
 
-  it("names the built-ins when the `agent:` form misspells one", () => {
-    expect(() =>
-      parseAgentConfig("agents:\n  - agent: securty\n", PATH),
-    ).toThrow(/unknown built-in agent: "securty"/);
-  });
-
-  it("gives a built-in its own model through the `agent:` form", () => {
-    const [agent] = parseAgentConfig(
-      "agents:\n  - agent: security\n    model: claude-opus-5\n",
-      PATH,
-    );
-
-    expect(agent?.category).toBe("security");
-    expect(agent?.model).toBe("claude-opus-5");
-  });
-
   it("rejects an unknown key beside `agent:`", () => {
     // Otherwise `path:` would drop the gate and run the agent always.
     expect(() =>
@@ -184,9 +160,9 @@ describe("parseAgentConfig: path filters", () => {
 
   it("rejects paths that would match nothing", () => {
     // Each of these retires the agent in silence otherwise.
-    for (const paths of ['[]', '["!**/*.md"]', '["/packages/**"]', '["./src/**"]']) {
+    for (const paths of ["[]", '["!**/*.md"]', '["/packages/**"]', '["./src/**"]']) {
       expect(() =>
-        parseAgentConfig(`${performanceYaml}    paths: ${paths}\n`, PATH),
+        parseAgentConfig(`${securityYaml}    paths: ${paths}\n`, PATH),
       ).toThrow(AgentConfigError);
     }
   });
@@ -199,7 +175,7 @@ describe("loadAgentDefinitions", () => {
     await loadAgentDefinitions({
       readFile: async (path) => {
         paths.push(path);
-        return performanceYaml;
+        return securityYaml;
       },
     });
 
@@ -212,7 +188,7 @@ describe("loadAgentDefinitions", () => {
     await loadAgentDefinitions({
       readFile: async (path) => {
         paths.push(path);
-        return performanceYaml;
+        return securityYaml;
       },
       path: "config/agents.yml",
     });
@@ -237,33 +213,26 @@ describe("loadAgentDefinitions", () => {
   });
 });
 
-/** The whole point: a repository whose agents share nothing with this one. */
-describe("a repository configuring one agent of its own", () => {
-  const onlyPerformance = `
-agents:
-  - category: performance
-    role: Performance reviewer
-    focus: |
-      Review ONLY for performance problems. Do NOT report style.
-`;
-
+/** The whole point: a repository whose agent set is not this one's. */
+describe("a repository naming a narrower set than this one", () => {
   it("carries that agent through selection, prompts, and synthesis", async () => {
-    const agents = await loadAgentDefinitions({ readFile: async () => onlyPerformance });
+    const agents = await loadAgentDefinitions({
+      readFile: async () => "agents:\n  - docs-drift\n",
+    });
 
-    expect(agents.map((agent) => agent.category)).toEqual(["performance"]);
+    expect(agents.map((agent) => agent.category)).toEqual(["docs-drift"]);
     expect(Object.keys(inCodePrompts(agents)).map(agentPromptKey)).toEqual([
-      "performance_system",
-      "synthesis_system",
+      "docs_drift_system",
     ]);
-    expect(inCodePrompts(agents)["performance"]).toContain(
-      '"category": always "performance"',
+    expect(inCodePrompts(agents)["docs-drift"]).toContain(
+      '"category": always "docs-drift"',
     );
     expect(buildSynthesisSystemPrompt(agents)).toContain(
-      "1 review agent — Performance — has proposed",
+      "1 review agent — Docs drift — has proposed",
     );
     expect(
       resolveAgentDefinitions("all", agents).map((agent) => agent.category),
-    ).toEqual(["performance"]);
+    ).toEqual(["docs-drift"]);
     expect(() => resolveAgentDefinitions("security", agents)).toThrow(
       /Unknown review agent: security/,
     );
@@ -271,19 +240,18 @@ agents:
 });
 
 /**
- * The prose in .github/pr-review-agents.yml is configuration, so what it must
- * say belongs here rather than in the engine's own tests.
+ * What this repository's own review actually asks for. The prose lives in the
+ * specialists, so these assert the agents the configuration selects.
  */
 describe("this repository's own configuration", () => {
   const focusOf = (category: string): string =>
     buildReviewSystemPrompt(repositoryAgent(category));
 
-  it("parses, and defines the agents the docs describe", () => {
+  it("parses, and names the agents the docs describe", () => {
     // The README points newcomers at this file as their starting point.
     expect(repositoryAgents().map((agent) => agent.category)).toEqual([
-      "correctness",
       "security",
-      "architecture",
+      "docs-drift",
     ]);
   });
 
@@ -305,23 +273,21 @@ describe("this repository's own configuration", () => {
     expect(system).toMatch(/no finding.*(over|rather than).*speculative/is);
   });
 
-  it("aims the architecture agent at the spec §11 targets", () => {
-    const system = focusOf("architecture");
+  it("aims the docs-drift agent at documentation this change made wrong", () => {
+    const system = focusOf("docs-drift");
 
     for (const target of [
-      /abstraction/i,
-      /duplicat/i,
-      /dependenc/i,
-      /boundar/i,
-      /existing pattern/i,
-      /business logic/i,
+      /README/i,
+      /command|flag|environment variable|file path/i,
+      /comment/i,
+      /example/i,
     ]) {
       expect(system).toMatch(target);
     }
-    // An architectural claim needs the surrounding code, not just the diff.
+    // Drift is invisible in the diff alone; the passage must be read first.
     expect(system).toMatch(
-      /(get_file|search_repository).*(before|prior to).*claim|before.*claim.*(get_file|search_repository)/is,
+      /(get_file|search_repository).*(before|prior to).*report|before.*report.*(get_file|search_repository)/is,
     );
-    expect(system).toMatch(/surrounding repository context/i);
+    expect(system).toMatch(/already stale/i);
   });
 });

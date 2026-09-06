@@ -6,12 +6,10 @@ import {
   agentPromptKey,
   type AgentDefinition,
 } from "./agents/definition.js";
-import { buildSynthesisSystemPrompt } from "./agents/synthesiser.js";
 import {
   repositoryAgent,
   repositoryAgents,
   validRemotePrompt,
-  validRemoteSynthesisPrompt,
 } from "./agent-test-support.js";
 import {
   DEFAULT_PROMPT_LABEL,
@@ -21,14 +19,10 @@ import {
 } from "./prompts.js";
 
 const configuredAgents = repositoryAgents();
-const CORRECTNESS_FALLBACK = buildReviewSystemPrompt(
-  repositoryAgent("correctness"),
-);
 const SECURITY_FALLBACK = buildReviewSystemPrompt(repositoryAgent("security"));
-const ARCHITECTURE_FALLBACK = buildReviewSystemPrompt(
-  repositoryAgent("architecture"),
+const DOCS_DRIFT_FALLBACK = buildReviewSystemPrompt(
+  repositoryAgent("docs-drift"),
 );
-const SYNTHESIS_FALLBACK = buildSynthesisSystemPrompt(configuredAgents);
 
 /** A string resolves, an Error rejects, and an unlisted name is a test bug. */
 function makeClient(
@@ -51,10 +45,8 @@ function makeClient(
 /** Every prompt resolves, all valid. */
 function allValid(): Record<string, string> {
   return {
-    correctness_system: validRemotePrompt("correctness", "REMOTE CORRECTNESS"),
     security_system: validRemotePrompt("security", "REMOTE SECURITY"),
-    architecture_system: validRemotePrompt("architecture", "REMOTE ARCHITECTURE"),
-    synthesis_system: validRemoteSynthesisPrompt("REMOTE SYNTHESIS"),
+    docs_drift_system: validRemotePrompt("docs-drift", "REMOTE DOCS DRIFT"),
   };
 }
 
@@ -69,14 +61,12 @@ describe("managed prompt names", () => {
   it("uses the stable remote prompt names for the configured agents", () => {
     // Renaming one of these silently orphans the prompt in Langfuse.
     expect(remoteNames(configuredAgents)).toEqual({
-      correctness: "correctness_system",
       security: "security_system",
-      architecture: "architecture_system",
-      synthesis: "synthesis_system",
+      "docs-drift": "docs_drift_system",
     });
   });
 
-  it("derives a name for any configured agent, and always the synthesiser", () => {
+  it("derives a name for any configured agent, and no synthesis prompt", () => {
     expect(
       remoteNames([
         {
@@ -85,10 +75,7 @@ describe("managed prompt names", () => {
           focus: "Review ONLY for data-access problems.",
         },
       ]),
-    ).toEqual({
-      "data-access": "data_access_system",
-      synthesis: "synthesis_system",
-    });
+    ).toEqual({ "data-access": "data_access_system" });
   });
 });
 
@@ -103,26 +90,22 @@ describe("loadManagedPrompts", () => {
       logger,
     });
 
-    expect(prompts.correctness).toBe(responses["correctness_system"]);
     expect(prompts.security).toBe(responses["security_system"]);
-    expect(prompts.architecture).toBe(responses["architecture_system"]);
-    expect(prompts.synthesis).toBe(responses["synthesis_system"]);
+    expect(prompts["docs-drift"]).toBe(responses["docs_drift_system"]);
     expect(sources).toEqual({
-      correctness: "langfuse",
       security: "langfuse",
-      architecture: "langfuse",
-      synthesis: "langfuse",
+      "docs-drift": "langfuse",
     });
-    expect(client.getTextPrompt).toHaveBeenCalledTimes(4);
+    expect(client.getTextPrompt).toHaveBeenCalledTimes(2);
     expect(entries).toContainEqual(
       expect.objectContaining({
         event: "langfuse.prompts.loaded",
-        loadedCount: 4,
+        loadedCount: 2,
         fallbackCount: 0,
       }),
     );
     // Prompt bodies are never log fields.
-    expect(JSON.stringify(entries)).not.toContain("REMOTE CORRECTNESS");
+    expect(JSON.stringify(entries)).not.toContain("REMOTE SECURITY");
   });
 
   it("falls back per-prompt when some fetches fail", async () => {
@@ -130,7 +113,6 @@ describe("loadManagedPrompts", () => {
     const client = makeClient({
       ...responses,
       security_system: new Error("langfuse unavailable"),
-      synthesis_system: new Error("prompt not found"),
     });
     const { logger, entries } = createCapturingLogger();
 
@@ -139,21 +121,17 @@ describe("loadManagedPrompts", () => {
       logger,
     });
 
-    expect(prompts.correctness).toBe(responses["correctness_system"]);
     expect(prompts.security).toBe(SECURITY_FALLBACK);
-    expect(prompts.architecture).toBe(responses["architecture_system"]);
-    expect(prompts.synthesis).toBe(SYNTHESIS_FALLBACK);
+    expect(prompts["docs-drift"]).toBe(responses["docs_drift_system"]);
     expect(sources).toEqual({
-      correctness: "langfuse",
       security: "fallback",
-      architecture: "langfuse",
-      synthesis: "fallback",
+      "docs-drift": "langfuse",
     });
 
     const fellBack = entries
       .filter((entry) => entry["event"] === "langfuse.prompts.fallback_used")
       .map((entry) => entry["promptKey"]);
-    expect(fellBack.sort()).toEqual(["security_system", "synthesis_system"]);
+    expect(fellBack).toEqual(["security_system"]);
     expect(JSON.stringify(entries)).not.toContain(
       SECURITY_FALLBACK.slice(0, 40),
     );
@@ -161,10 +139,8 @@ describe("loadManagedPrompts", () => {
 
   it("falls back to every in-code prompt when all fetches fail", async () => {
     const client = makeClient({
-      correctness_system: new Error("down"),
       security_system: new Error("down"),
-      architecture_system: new Error("down"),
-      synthesis_system: new Error("down"),
+      docs_drift_system: new Error("down"),
     });
     const { logger, entries } = createCapturingLogger();
 
@@ -174,17 +150,15 @@ describe("loadManagedPrompts", () => {
     });
 
     expect(prompts).toEqual({
-      correctness: CORRECTNESS_FALLBACK,
       security: SECURITY_FALLBACK,
-      architecture: ARCHITECTURE_FALLBACK,
-      synthesis: SYNTHESIS_FALLBACK,
+      "docs-drift": DOCS_DRIFT_FALLBACK,
     });
     expect(Object.values(sources).every((s) => s === "fallback")).toBe(true);
     expect(entries).toContainEqual(
       expect.objectContaining({
         event: "langfuse.prompts.loaded",
         loadedCount: 0,
-        fallbackCount: 4,
+        fallbackCount: 2,
       }),
     );
   });
@@ -193,10 +167,13 @@ describe("loadManagedPrompts", () => {
     // Pins that the empty-content check lives in the client, not here.
     const client: LangfusePromptClient = {
       getTextPrompt: vi.fn(async (name: string) => {
-        if (name === "correctness_system") {
+        if (name === "security_system") {
           throw new Error(`Langfuse prompt "${name}" is empty`);
         }
-        return validRemotePrompt(name.replace("_system", ""), "REMOTE");
+        return validRemotePrompt(
+          name.replace("_system", "").replace(/_/g, "-"),
+          "REMOTE",
+        );
       }),
     };
 
@@ -205,8 +182,8 @@ describe("loadManagedPrompts", () => {
       logger: createCapturingLogger().logger,
     });
 
-    expect(sources.correctness).toBe("fallback");
-    expect(sources.security).toBe("langfuse");
+    expect(sources.security).toBe("fallback");
+    expect(sources["docs-drift"]).toBe("langfuse");
   });
 
   it("requests the configured label", async () => {
@@ -218,7 +195,7 @@ describe("loadManagedPrompts", () => {
       label: "staging",
     });
 
-    expect(client.getTextPrompt).toHaveBeenCalledWith("correctness_system", {
+    expect(client.getTextPrompt).toHaveBeenCalledWith("security_system", {
       label: "staging",
     });
   });
@@ -232,18 +209,22 @@ describe("loadManagedPrompts", () => {
     });
 
     expect(DEFAULT_PROMPT_LABEL).toBe("production");
-    expect(client.getTextPrompt).toHaveBeenCalledWith("correctness_system", {
+    expect(client.getTextPrompt).toHaveBeenCalledWith("security_system", {
       label: DEFAULT_PROMPT_LABEL,
     });
   });
 
   it("falls back rather than hanging when a fetch never settles", async () => {
     const client: LangfusePromptClient = {
-      getTextPrompt: vi.fn(
-        (name: string) =>
-          name === "correctness_system"
-            ? new Promise<string>(() => {})
-            : Promise.resolve(validRemotePrompt(name.replace("_system", ""), "R")),
+      getTextPrompt: vi.fn((name: string) =>
+        name === "security_system"
+          ? new Promise<string>(() => {})
+          : Promise.resolve(
+              validRemotePrompt(
+                name.replace("_system", "").replace(/_/g, "-"),
+                "R",
+              ),
+            ),
       ),
     };
     const { logger, entries } = createCapturingLogger();
@@ -254,13 +235,13 @@ describe("loadManagedPrompts", () => {
       timeoutMs: 10,
     });
 
-    expect(sources.correctness).toBe("fallback");
-    expect(prompts.correctness).toBe(CORRECTNESS_FALLBACK);
-    expect(sources.security).toBe("langfuse");
+    expect(sources.security).toBe("fallback");
+    expect(prompts.security).toBe(SECURITY_FALLBACK);
+    expect(sources["docs-drift"]).toBe("langfuse");
     expect(entries).toContainEqual(
       expect.objectContaining({
         event: "langfuse.prompts.fallback_used",
-        promptKey: "correctness_system",
+        promptKey: "security_system",
         reason: expect.stringContaining("timed out"),
       }),
     );
@@ -300,8 +281,8 @@ describe("the prompt contract guard", () => {
   it("rejects a prompt that dropped its injection hardening", async () => {
     const client = makeClient({
       ...allValid(),
-      architecture_system:
-        'Review the diff. Respond with JSON: {"findings": [{"category": "architecture"}]}',
+      docs_drift_system:
+        'Review the diff. Respond with JSON: {"findings": [{"category": "docs-drift"}]}',
     });
     const { logger, entries } = createCapturingLogger();
 
@@ -310,10 +291,10 @@ describe("the prompt contract guard", () => {
       logger,
     });
 
-    expect(sources.architecture).toBe("fallback");
+    expect(sources["docs-drift"]).toBe("fallback");
     expect(entries).toContainEqual(
       expect.objectContaining({
-        promptKey: "architecture_system",
+        promptKey: "docs_drift_system",
         reason: expect.stringContaining("missing-injection-hardening"),
       }),
     );
@@ -322,19 +303,16 @@ describe("the prompt contract guard", () => {
   it("accepts every in-code prompt it guards", () => {
     // Otherwise the fallback path would be rejecting its own fallback.
     const client = makeClient({
-      correctness_system: CORRECTNESS_FALLBACK,
       security_system: SECURITY_FALLBACK,
-      architecture_system: ARCHITECTURE_FALLBACK,
-      synthesis_system: SYNTHESIS_FALLBACK,
+      docs_drift_system: DOCS_DRIFT_FALLBACK,
     });
 
     return loadManagedPrompts(client, {
       agents: configuredAgents,
       logger: createCapturingLogger().logger,
     }).then(({ sources }) => {
-      expect(sources.correctness).toBe("langfuse");
       expect(sources.security).toBe("langfuse");
-      expect(sources.architecture).toBe("langfuse");
+      expect(sources["docs-drift"]).toBe("langfuse");
     });
   });
 });

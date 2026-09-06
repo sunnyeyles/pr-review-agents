@@ -12,7 +12,6 @@ import {
   repositoryAgentConfigYaml,
   textBlock,
   validRemotePrompt,
-  validRemoteSynthesisPrompt,
 } from "../../../packages/ai/src/agent-test-support.js";
 import { createCapturingLogger } from "@pr-review/logging";
 import type { FileContentsRequest, GithubInstallationClient } from "@pr-review/github";
@@ -438,9 +437,7 @@ describe("runAction", () => {
   });
 
   const perAgentModelYaml = `agents:
-  - category: security
-    role: Security reviewer
-    focus: Review ONLY for security problems.
+  - agent: security
     model: gpt-mini-test
 `;
 
@@ -564,7 +561,7 @@ describe("runAction", () => {
 
 /**
  * Where the agent configuration comes from. Reading it from the head or merge
- * ref would let the branch under review rewrite its own reviewers.
+ * ref would let the branch under review choose its own reviewers.
  */
 describe("agent configuration", () => {
   it("reads it from the pull request's base commit", async () => {
@@ -624,16 +621,16 @@ describe("agent selection", () => {
     expect(selection(entries)).toEqual({
       level: "info",
       event: "review.agents_selected",
-      agents: ["correctness", "security", "architecture"],
-      configuredAgents: ["correctness", "security", "architecture"],
-      pathFilteredAgents: [],
+      agents: ["security", "docs-drift"],
+      configuredAgents: ["security", "docs-drift"],
+      pathFilteredAgents: ["security", "docs-drift"],
     });
   });
 
   it("reports the narrowed set, in spec order", async () => {
     const { environment, entries, modelCalls } = harness({
       ...reviewEnv,
-      INPUT_AGENTS: "architecture,correctness",
+      INPUT_AGENTS: "docs-drift,security",
     });
 
     await runAction(environment);
@@ -641,8 +638,8 @@ describe("agent selection", () => {
     expect(selection(entries)).toEqual({
       level: "info",
       event: "review.agents_selected",
-      agents: ["correctness", "architecture"],
-      configuredAgents: ["correctness", "security", "architecture"],
+      agents: ["security", "docs-drift"],
+      configuredAgents: ["security", "docs-drift"],
       pathFilteredAgents: [],
     });
     expect(modelCalls()).toBe(2);
@@ -656,11 +653,7 @@ describe("agent selection", () => {
 
     await runAction(environment);
 
-    expect(selection(entries)?.["agents"]).toEqual([
-      "correctness",
-      "security",
-      "architecture",
-    ]);
+    expect(selection(entries)?.["agents"]).toEqual(["security", "docs-drift"]);
   });
 
   it("fails on an unknown name before building the model client", async () => {
@@ -681,9 +674,7 @@ describe("agent selection", () => {
 
 // The fixture pull request changes only `src/sessions.ts`.
 const gatedConfigYaml = `agents:
-  - category: security
-    role: Security reviewer
-    focus: Review ONLY for security problems.
+  - agent: security
     paths:
       - "packages/github/**"
 `;
@@ -718,10 +709,8 @@ describe("path filters", () => {
 });
 
 const remotePrompts = {
-  correctness_system: validRemotePrompt("correctness", "REMOTE CORRECTNESS"),
   security_system: validRemotePrompt("security", "REMOTE SECURITY"),
-  architecture_system: validRemotePrompt("architecture", "REMOTE ARCHITECTURE"),
-  synthesis_system: validRemoteSynthesisPrompt("REMOTE SYNTHESIS"),
+  docs_drift_system: validRemotePrompt("docs-drift", "REMOTE DOCS DRIFT"),
 };
 
 const langfuseInputs = {
@@ -771,17 +760,15 @@ describe("Langfuse wiring", () => {
       },
     ]);
     expect(promptFetches.map((fetch) => fetch.name).sort()).toEqual([
-      "architecture_system",
-      "correctness_system",
+      "docs_drift_system",
       "security_system",
-      "synthesis_system",
     ]);
     expect(promptFetches.every((fetch) => fetch.label === "production")).toBe(true);
-    // Fetching is not accepting: the contract guard could still reject all four.
+    // Fetching is not accepting: the contract guard could still reject them all.
     expect(entries).toContainEqual(
       expect.objectContaining({
         event: "langfuse.prompts.loaded",
-        loadedCount: 4,
+        loadedCount: 2,
         fallbackCount: 0,
       }),
     );
@@ -855,10 +842,8 @@ describe("Langfuse wiring", () => {
       pullRequestEvent(),
       {
         prompts: {
-          correctness_system: new Error("langfuse unavailable"),
           security_system: new Error("langfuse unavailable"),
-          architecture_system: new Error("langfuse unavailable"),
-          synthesis_system: new Error("langfuse unavailable"),
+          docs_drift_system: new Error("langfuse unavailable"),
         },
       },
     );
@@ -869,7 +854,7 @@ describe("Langfuse wiring", () => {
       expect.objectContaining({
         event: "langfuse.prompts.loaded",
         loadedCount: 0,
-        fallbackCount: 4,
+        fallbackCount: 2,
       }),
     );
   });

@@ -291,17 +291,17 @@ describe("generated diffs", () => {
 });
 
 describe("the full pipeline against a fixture", () => {
-  it("passes the correctness fixture when the planted bug is reported", async () => {
-    const fixture = loadFixture("correctness-admin-check");
-    const contents = headFile(fixture, "src/routes/admin-audit.ts");
+  it("passes the security fixture when the planted bug is reported", async () => {
+    const fixture = loadFixture("security-tenant-scope");
+    const contents = headFile(fixture, "src/data/customers.ts");
     const review = await runFixtureReview(
       fixture,
       scriptedDeps({
-        correctness: [
-          makeFinding("correctness", {
-            file: "src/routes/admin-audit.ts",
-            line: lineOf(contents, 'user.role = "admin"'),
-            title: "The admin check assigns instead of comparing",
+        security: [
+          makeFinding("security", {
+            file: "src/data/customers.ts",
+            line: lineOf(contents, "export async function findCustomerById"),
+            title: "The customer query never validates the tenant",
           }),
         ],
       }),
@@ -319,17 +319,17 @@ describe("the full pipeline against a fixture", () => {
     }
   });
 
-  it("fails the correctness expectation when the finding lands elsewhere", async () => {
-    const fixture = loadFixture("correctness-admin-check");
+  it("fails the security expectation when the finding lands elsewhere", async () => {
+    const fixture = loadFixture("security-tenant-scope");
     const contents = headFile(fixture, "src/routes/index.ts");
     const review = await runFixtureReview(
       fixture,
       scriptedDeps({
         // A real finding on a real added line, but not the planted bug.
-        correctness: [
-          makeFinding("correctness", {
+        security: [
+          makeFinding("security", {
             file: "src/routes/index.ts",
-            line: lineOf(contents, 'router.get("/admin/audit-events"'),
+            line: lineOf(contents, 'router.get("/customers/:customerId"'),
           }),
         ],
       }),
@@ -338,18 +338,18 @@ describe("the full pipeline against a fixture", () => {
     expect(review.result.findings.length).toBe(1);
     const outcome = evaluateExpectation(review, findingExpectationFor(fixture.name));
     expect(outcome.passed).toBe(false);
-    expect(outcome.detail).toContain("No correctness finding landed");
+    expect(outcome.detail).toContain("No security finding landed");
   });
 
-  it("fails the correctness expectation when the finding is in the wrong category", async () => {
-    const fixture = loadFixture("correctness-admin-check");
-    const contents = headFile(fixture, "src/routes/admin-audit.ts");
-    const line = lineOf(contents, 'user.role = "admin"');
+  it("fails the security expectation when the finding is in the wrong category", async () => {
+    const fixture = loadFixture("security-tenant-scope");
+    const contents = headFile(fixture, "src/data/customers.ts");
+    const line = lineOf(contents, "export async function findCustomerById");
     const review = await runFixtureReview(
       fixture,
       scriptedDeps({
-        security: [
-          makeFinding("security", { file: "src/routes/admin-audit.ts", line }),
+        "docs-drift": [
+          makeFinding("docs-drift", { file: "src/data/customers.ts", line }),
         ],
       }),
     );
@@ -376,11 +376,11 @@ describe("the full pipeline against a fixture", () => {
     const noisy = await runFixtureReview(
       fixture,
       scriptedDeps({
-        architecture: [
-          makeFinding("architecture", {
+        "docs-drift": [
+          makeFinding("docs-drift", {
             file: "src/http/pagination.ts",
             line: lineOf(contents, "export function parsePagination"),
-            title: "Pagination parsing could live in a shared package",
+            title: "The README still documents the old pagination defaults",
           }),
         ],
       }),
@@ -411,10 +411,10 @@ describe("the full pipeline against a fixture", () => {
 
     const outcome = evaluateExpectation(review, {
       kind: "agents-completed",
-      description: "all three review agents complete",
+      description: "every review agent completes",
     });
     expect(outcome.passed).toBe(false);
-    expect(outcome.detail).toContain("correctness: model overloaded");
+    expect(outcome.detail).toContain("security: model overloaded");
   });
 });
 

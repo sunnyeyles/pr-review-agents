@@ -1,6 +1,6 @@
 /**
  * The shared agent-runtime behaviours — loop, tool wiring, output
- * parsing, failure semantics — exercised through the Correctness agent.
+ * parsing, failure semantics — exercised through the Security agent.
  */
 import { createCapturingLogger } from "@pr-review/logging";
 import { describe, expect, it } from "vitest";
@@ -30,7 +30,7 @@ type ScriptedResponse = ReturnType<typeof message>;
 /** One provider-level call as the SDK assembled it. */
 type Call = { prompt: unknown[]; tools?: unknown[] };
 
-const correctnessAgent = repositoryAgent("correctness");
+const securityAgent = repositoryAgent("security");
 
 /** The system instructions of one recorded call. */
 function systemOf(call: Call | undefined): string {
@@ -91,7 +91,7 @@ function toolResultsOf(call: Call | undefined): ToolResultPart[] {
 const finding = {
   file: "src/sessions.ts",
   line: 42,
-  category: "correctness" as const,
+  category: "security" as const,
   severity: "high" as const,
   title: "Assignment instead of comparison in admin check",
   explanation: "The if condition assigns instead of comparing, so every user passes.",
@@ -107,7 +107,7 @@ function makeAgent(
   const { model, doGenerate: create, calls } = makeModel(responses);
   const github = makeGithub();
   const { logger, entries } = createCapturingLogger();
-  const agent = createReviewAgent(correctnessAgent, {
+  const agent = createReviewAgent(securityAgent, {
     model,
     github,
     logger,
@@ -119,11 +119,11 @@ function makeAgent(
   return { agent, create, calls: calls as unknown as Call[], github, entries };
 }
 
-describe("the Correctness agent", () => {
-  it("is named correctness", () => {
+describe("the Security agent", () => {
+  it("is named security", () => {
     const { agent } = makeAgent([]);
 
-    expect(agent.name).toBe("correctness");
+    expect(agent.name).toBe("security");
   });
 
   it("returns findings parsed from the model's final JSON message", async () => {
@@ -174,12 +174,12 @@ describe("the Correctness agent", () => {
     await agent.run(context);
 
     const system = systemOf(calls[0]);
-    // The hardening rules plus the correctness agent's own focus.
+    // The hardening rules plus the security agent's own focus.
     expect(system).toMatch(/data.*not instructions|never instructions/is);
     expect(system).toMatch(/comments?.*(never|not).*instructions/is);
     expect(system).toMatch(/tool (results?|output).*(no|cannot|never).*(permission|privilege)/is);
     expect(system).toMatch(/final JSON/i);
-    expect(system).toMatch(/correctness/i);
+    expect(system).toMatch(/security/i);
     expect(system).toMatch(/(not|never).*(formatting|style)/is);
   });
 
@@ -320,7 +320,7 @@ describe("the Correctness agent", () => {
   it("propagates model API failures", async () => {
     const { model, doGenerate } = makeModel([]);
     doGenerate.mockRejectedValueOnce(new Error("529 overloaded"));
-    const agent = createReviewAgent(correctnessAgent, {
+    const agent = createReviewAgent(securityAgent, {
       model,
       github: makeGithub(),
       logger: createCapturingLogger().logger,
@@ -334,12 +334,12 @@ describe("category integrity", () => {
   // The runtime filters rather than re-stamps: relabelling would
   // fabricate a claim the model never made.
   it("drops findings outside the agent's own category and keeps its own", async () => {
-    const own = makeFinding("correctness");
-    const leakedSecurity = makeFinding("security", { line: 43 });
-    const leakedArchitecture = makeFinding("architecture", { line: 44 });
+    const own = makeFinding("security");
+    const leakedOther = makeFinding("docs-drift", { line: 43 });
+    const leakedThird = makeFinding("performance", { line: 44 });
     const { agent } = makeAgent([
       message(
-        [textBlock(finalFindingsJson([leakedSecurity, own, leakedArchitecture]))],
+        [textBlock(finalFindingsJson([leakedOther, own, leakedThird]))],
         "end_turn",
       ),
     ]);
@@ -350,7 +350,7 @@ describe("category integrity", () => {
   it("returns an empty set when every finding leaked out of category", async () => {
     const { agent } = makeAgent([
       message(
-        [textBlock(finalFindingsJson([makeFinding("security")]))],
+        [textBlock(finalFindingsJson([makeFinding("docs-drift")]))],
         "end_turn",
       ),
     ]);
@@ -365,7 +365,7 @@ describe("lifecycle events (spec §26)", () => {
     repository: "octo-org/example-service",
     pullRequestNumber: 42,
     headSha,
-    agent: "correctness",
+    agent: "security",
   };
 
   it("emits agent.started with the correlation fields before any model call", async () => {
@@ -444,7 +444,7 @@ describe("lifecycle events (spec §26)", () => {
     const { model, doGenerate } = makeModel([]);
     doGenerate.mockRejectedValueOnce(new Error("529 overloaded"));
     const { logger, entries } = createCapturingLogger();
-    const agent = createReviewAgent(correctnessAgent, {
+    const agent = createReviewAgent(securityAgent, {
       model,
       github: makeGithub(),
       logger,
@@ -474,7 +474,7 @@ describe("lifecycle events (spec §26)", () => {
       .mockImplementationOnce(async () => toolTurn)
       .mockRejectedValueOnce(new Error("529 overloaded"));
     const { logger, entries } = createCapturingLogger();
-    const agent = createReviewAgent(correctnessAgent, {
+    const agent = createReviewAgent(securityAgent, {
       model,
       github: makeGithub(),
       logger,
@@ -525,7 +525,7 @@ describe("prompt caching", () => {
 
     expect(create).toHaveBeenCalledTimes(2);
     for (const call of calls) {
-      expect(systemOf(call)).toBe(buildReviewSystemPrompt(correctnessAgent));
+      expect(systemOf(call)).toBe(buildReviewSystemPrompt(securityAgent));
       expect(cacheMarkersOf(call)).toEqual([{ type: "ephemeral" }]);
     }
   });
@@ -580,7 +580,7 @@ describe("pre-resolved system prompts", () => {
     const injected = "INJECTED CORRECTNESS SYSTEM PROMPT";
     const { agent, calls } = makeAgent(
       [message([textBlock(finalJson)], "end_turn")],
-      { systemPrompts: { correctness: injected } },
+      { systemPrompts: { security: injected } },
     );
 
     await agent.run(context);
@@ -592,11 +592,11 @@ describe("pre-resolved system prompts", () => {
     // A map covering only other agents must leave this one untouched.
     const { agent, calls } = makeAgent(
       [message([textBlock(finalJson)], "end_turn")],
-      { systemPrompts: { security: "SOMEONE ELSE'S PROMPT" } },
+      { systemPrompts: { "docs-drift": "SOMEONE ELSE'S PROMPT" } },
     );
 
     await agent.run(context);
 
-    expect(systemOf(calls[0])).toBe(buildReviewSystemPrompt(correctnessAgent));
+    expect(systemOf(calls[0])).toBe(buildReviewSystemPrompt(securityAgent));
   });
 });

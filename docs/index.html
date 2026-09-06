@@ -38,9 +38,9 @@
   --accent-ink: light-dark(#FFFFFF, #1A0710);
   --accent-wash:light-dark(#FBE9EE, #2A1119);
 
-  --agent-c:    light-dark(#12666A, #4FBDB6);  /* correctness  — teal    */
+  --agent-c:    light-dark(#12666A, #4FBDB6);  /* docs-drift   — teal    */
   --agent-s:    light-dark(#B4133F, #FF5B80);  /* security     — crimson */
-  --agent-a:    light-dark(#7E5A12, #D9A94A);  /* architecture — bronze  */
+  --agent-a:    light-dark(#7E5A12, #D9A94A);  /* third agent  — bronze  */
 
   --code-bg:    light-dark(#10151C, #070B0F);
   --code-fg:    light-dark(#DCE4EC, #D3DCE5);
@@ -415,16 +415,15 @@ html { scroll-behavior: smooth; }
 
         <div class="node terminal">START<span class="n-sub">runReviewPipeline</span></div>
 
-        <div class="fan out"><i></i><i></i><i></i></div>
+        <div class="fan out"><i></i><i></i></div>
 
         <div class="agents">
-          <div class="agent c"><b>correctness</b><span>bugs · async · edges</span></div>
           <div class="agent s"><b>security</b><span>authz · injection · leaks</span></div>
-          <div class="agent a"><b>architecture</b><span>layers · coupling · reuse</span></div>
+          <div class="agent c"><b>docs-drift</b><span>README · flags · examples</span></div>
         </div>
-        <div class="agents-note">this repository's <code>.github/pr-review-agents.yml</code> — yours defines its own, any number</div>
+        <div class="agents-note">this repository's <code>.github/pr-review-agents.yml</code> — yours names its own subset of the shipped specialists</div>
 
-        <div class="fan in"><i></i><i></i><i></i></div>
+        <div class="fan in"><i></i><i></i></div>
 
         <div class="node">join<span class="n-sub">fan-in, re-sorted to agent order</span></div>
         <div class="link"></div>
@@ -543,7 +542,7 @@ html { scroll-behavior: smooth; }
       <div class="prose">
         <p>
           The config is read at the <strong>base</strong> commit, so a pull
-          request cannot rewrite the agents that review it.
+          request cannot choose the agents that review it.
         </p>
       </div>
 
@@ -591,34 +590,30 @@ html { scroll-behavior: smooth; }
       </div>
       <div class="prose">
         <p>
-          Three spellings, one resolved <code>AgentDefinition</code>. Nothing
-          runs by default: the action reviews with exactly what this file lists,
-          in the order it lists them.
+          Two spellings, one resolved <code>AgentDefinition</code>. Every entry
+          names a specialist that ships with the action; the file selects and
+          tunes them rather than defining them. Nothing runs by default: the
+          action reviews with exactly what this file names, in the order it
+          names them.
         </p>
       </div>
 
       <figure class="code">
-        <div class="code-head"><span class="p">.github/pr-review-agents.yml</span><span class="ln">the three forms</span></div>
+        <div class="code-head"><span class="p">.github/pr-review-agents.yml</span><span class="ln">the two forms</span></div>
 <pre>agents:
   - security                         <span class="c-com"># a built-in, as shipped</span>
 
-  - agent: docs-drift                <span class="c-com"># a built-in, path-gated</span>
-    paths: [<span class="c-str">"docs/**"</span>, <span class="c-str">"README.md"</span>, <span class="c-str">"!**/*.test.ts"</span>]
-
-  - category: correctness            <span class="c-com"># written out in full</span>
-    role: Correctness reviewer
-    focus: |
-      Review the pull request ONLY for correctness problems: ...</pre>
+  - agent: docs-drift                <span class="c-com"># a built-in, tuned</span>
+    model: gpt-5-mini
+    paths: [<span class="c-str">"docs/**"</span>, <span class="c-str">"README.md"</span>, <span class="c-str">"!**/*.test.ts"</span>]</pre>
       </figure>
 
       <div class="table-wrap">
         <table>
           <thead><tr><th>Field</th><th>Required</th><th>Meaning</th></tr></thead>
           <tbody>
-            <tr><td><code>category</code></td><td><span class="badge stop">Yes</span></td><td>The agent's name <em>and</em> the one finding category it may report. <code>synthesis</code> and <code>all</code> are reserved</td></tr>
-            <tr><td><code>role</code></td><td><span class="badge stop">Yes</span></td><td>How the agent is addressed in its system prompt</td></tr>
-            <tr><td><code>focus</code></td><td><span class="badge stop">Yes</span></td><td>What it reviews for, and what is out of scope</td></tr>
-            <tr><td><code>contextGuidance</code></td><td><span class="badge ok">No</span></td><td>Makes the agent retrieve repository context before it may make a claim</td></tr>
+            <tr><td><code>agent</code></td><td><span class="badge stop">Yes</span></td><td>A built-in's name: <code>security</code> or <code>docs-drift</code>. Also the one finding category it may report</td></tr>
+            <tr><td><code>model</code></td><td><span class="badge ok">No</span></td><td>Model id for this agent alone, as the provider spells it</td></tr>
             <tr><td><code>paths</code></td><td><span class="badge ok">No</span></td><td>Globs deciding whether the agent runs at all. Never reaches a prompt</td></tr>
           </tbody>
         </table>
@@ -626,7 +621,10 @@ html { scroll-behavior: smooth; }
       <div class="prose">
         <p>
           The schema is <code>.strict()</code>: a misspelled optional key is an
-          error, not a silently dropped field.
+          error, not a silently dropped field. The role, focus, and context
+          guidance live in the specialist's own file under
+          <code>specialists/</code>, so the reviewers' prompts stay under code
+          review like the rest of the action.
         </p>
       </div>
     </section>
@@ -1166,10 +1164,9 @@ ANTHROPIC_API_KEY=... pnpm eval</pre>
 
       <div class="prose">
         <p>
-          The three fixtures are chosen to fail in different directions:
-          <code>correctness-admin-check</code> hides an assignment where a
-          comparison belongs, <code>security-tenant-scope</code> queries
-          customers without checking the tenant, and
+          The fixtures are chosen to fail in different directions:
+          <code>security-tenant-scope</code> queries customers without
+          checking the tenant, and
           <code>clean-pagination</code> is correct code that must produce
           <strong>no</strong> findings at all — the case that catches a model
           inventing problems to look useful.
