@@ -355,8 +355,8 @@ html { scroll-behavior: smooth; }
   <nav class="rail" aria-label="Pipeline stages">
     <div class="rail-title">Stages</div>
     <ol>
-      <li><a href="#s1"><span class="n">01</span><span>Boot</span></a></li>
-      <li><a href="#s2"><span class="n">02</span><span>Inspect event</span></a></li>
+      <li><a href="#s1"><span class="n">01</span><span>Inspect event</span></a></li>
+      <li><a href="#s2"><span class="n">02</span><span>Boot</span></a></li>
       <li><a href="#s3"><span class="n">03</span><span>Load &amp; gate</span></a></li>
       <li><a href="#s4"><span class="n">04</span><span>The pipeline</span></a></li>
       <li><a href="#s5"><span class="n">05</span><span>Render</span></a></li>
@@ -364,6 +364,7 @@ html { scroll-behavior: smooth; }
       <li><a href="#fail"><span class="n">—</span><span>Failure modes</span></a></li>
       <li><a href="#logs"><span class="n">—</span><span>Log events</span></a></li>
       <li><a href="#map"><span class="n">—</span><span>File map</span></a></li>
+      <li><a href="#run"><span class="n">—</span><span>Run it yourself</span></a></li>
     </ol>
   </nav>
 
@@ -400,10 +401,10 @@ html { scroll-behavior: smooth; }
         <div class="node terminal">pull_request event<span class="n-sub">GITHUB_EVENT_PATH</span></div>
         <div class="link"></div>
 
-        <div class="node">runAction<span class="n-sub">agents · clients · tracing · prompts</span></div>
+        <div class="node">inspectEvent<span class="n-sub">reviewable? otherwise a clean no-op</span></div>
         <div class="link"></div>
 
-        <div class="node">inspectEvent<span class="n-sub">reviewable? otherwise a clean no-op</span></div>
+        <div class="node">runAction<span class="n-sub">client · agents · model · tracing · prompts</span></div>
         <div class="link"></div>
 
         <div class="node">reviewPullRequest<span class="n-sub">load PR + changed files + diff</span></div>
@@ -449,10 +450,64 @@ html { scroll-behavior: smooth; }
       </div>
     </section>
 
-    <!-- ========== 1 · BOOT ========== -->
+    <!-- ========== 1 · EVENT ========== -->
     <section class="stage" id="s1">
       <div class="stage-head">
         <span class="stage-num">01</span>
+        <h2>Is this even a review?</h2>
+      </div>
+      <div class="paths">
+        <span class="chip">apps/action/src/<b>event.ts</b> · inspectEvent</span>
+        <span class="chip">packages/schemas/src/<b>pull-request-event.ts</b> · the trigger list</span>
+      </div>
+      <div class="prose">
+        <p>
+          This runs before any client, any config read, and any model — it is
+          the first thing <code>runAction</code> does after parsing
+          <code>GITHUB_EVENT_PATH</code>. An event that will not be reviewed has
+          no base commit to read an agent config from, so asking the question
+          first is what lets the answer "no" cost nothing.
+        </p>
+        <p>
+          Two outcomes, and the difference between them is the whole point of
+          this file.
+        </p>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Outcome</th><th>When</th><th>Result</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>Not a review</td>
+              <td>Wrong event name, or an ignored action like <code>labeled</code></td>
+              <td>Logs <code>review.skipped</code>, step <span class="badge ok">succeeds</span></td>
+            </tr>
+            <tr>
+              <td>Malformed</td>
+              <td>Claims to be a supported <code>pull_request</code> event but fails the schema</td>
+              <td>Throws — <span class="badge stop">fails</span> the workflow</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="prose">
+        <p>
+          Most workflow triggers are not reviews, so ignoring one quietly has to
+          be a success. A payload that <em>should</em> have parsed and didn't is
+          a bug worth failing over.
+        </p>
+        <p>
+          A reviewable event yields the target, the base SHA, and whether the
+          pull request came from a fork. Only now does boot begin.
+        </p>
+      </div>
+    </section>
+
+    <!-- ========== 2 · BOOT ========== -->
+    <section class="stage" id="s2">
+      <div class="stage-head">
+        <span class="stage-num">02</span>
         <h2>Boot — the Action entrypoint</h2>
       </div>
       <div class="paths">
@@ -467,9 +522,10 @@ html { scroll-behavior: smooth; }
         </p>
         <p>
           <code>runAction</code> then resolves configuration in a deliberate
-          order. Agents are read from the repository <em>first</em>, before the
-          model client exists, because a missing config or a typo'd agent name
-          must cost nothing to discover.
+          order. The GitHub client comes first — the agent config lives in the
+          repository, so reading it needs a client. Agents are resolved next,
+          before the <em>model</em> client exists, because a missing config or a
+          typo'd agent name must cost nothing to discover.
         </p>
       </div>
 
@@ -505,12 +561,12 @@ html { scroll-behavior: smooth; }
         <table>
           <thead><tr><th>Step</th><th>Function</th><th>Fails the run?</th></tr></thead>
           <tbody>
+            <tr><td>GitHub client</td><td><code>createTokenClient</code></td><td><span class="badge stop">Yes</span> missing token</td></tr>
             <tr><td>Load configured agents</td><td><code>loadAgentDefinitions</code></td><td><span class="badge stop">Yes</span> missing or malformed config</td></tr>
             <tr><td>Narrow to the selection</td><td><code>resolveAgentDefinitions</code></td><td><span class="badge stop">Yes</span> unknown name</td></tr>
             <tr><td>Model client</td><td><code>createLanguageModel</code></td><td><span class="badge stop">Yes</span> unknown provider or missing key</td></tr>
             <tr><td>Langfuse tracing</td><td><code>createLangfuseRuntime</code></td><td><span class="badge ok">No</span> optional</td></tr>
             <tr><td>Managed prompts</td><td><code>loadManagedPrompts</code></td><td><span class="badge ok">No</span> falls back per prompt</td></tr>
-            <tr><td>GitHub client</td><td><code>createTokenClient</code></td><td><span class="badge stop">Yes</span> missing token</td></tr>
           </tbody>
         </table>
       </div>
@@ -518,6 +574,13 @@ html { scroll-behavior: smooth; }
         <p>
           Tracing starts before the prompt fetch, so the fetch's own spans are
           captured; prompts resolve before anything that consumes them is built.
+        </p>
+        <p>
+          <code>createLanguageModel</code> is the only place a provider is
+          chosen. <code>packages/ai/src/model.ts</code> holds the registry —
+          <code>anthropic</code> (the default, <code>claude-sonnet-5</code>) and
+          <code>openai</code> — and every model call in the run goes through
+          <code>generateText</code> from the AI SDK against whichever it built.
         </p>
       </div>
 
@@ -568,48 +631,6 @@ html { scroll-behavior: smooth; }
       </div>
     </section>
 
-    <!-- ========== 2 · EVENT ========== -->
-    <section class="stage" id="s2">
-      <div class="stage-head">
-        <span class="stage-num">02</span>
-        <h2>Is this even a review?</h2>
-      </div>
-      <div class="paths">
-        <span class="chip">apps/action/src/<b>event.ts</b> · inspectEvent</span>
-      </div>
-      <div class="prose">
-        <p>
-          Two outcomes, and the difference between them is the whole point of
-          this file.
-        </p>
-      </div>
-
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>Outcome</th><th>When</th><th>Result</th></tr></thead>
-          <tbody>
-            <tr>
-              <td>Not a review</td>
-              <td>Wrong event name, or an ignored action like <code>labeled</code></td>
-              <td>Logs <code>review.skipped</code>, step <span class="badge ok">succeeds</span></td>
-            </tr>
-            <tr>
-              <td>Malformed</td>
-              <td>Claims to be a supported <code>pull_request</code> event but fails the schema</td>
-              <td>Throws — <span class="badge stop">fails</span> the workflow</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      <div class="prose">
-        <p>
-          Most workflow triggers are not reviews, so ignoring one quietly has to
-          be a success. A payload that <em>should</em> have parsed and didn't is
-          a bug worth failing over.
-        </p>
-      </div>
-    </section>
-
     <!-- ========== 3 · LOAD ========== -->
     <section class="stage" id="s3">
       <div class="stage-head">
@@ -618,12 +639,19 @@ html { scroll-behavior: smooth; }
       </div>
       <div class="paths">
         <span class="chip">packages/reviewer/src/<b>review-pull-request.ts</b></span>
+        <span class="chip">packages/github/src/<b>client.ts</b> · the interface</span>
         <span class="chip">packages/ai/src/agents/<b>path-filter.ts</b></span>
       </div>
       <div class="prose">
         <p>
           Three GitHub reads, concurrently. This is the only place the review
           context is built.
+        </p>
+        <p>
+          <code>client.ts</code> is the interface and nothing else; the Octokit
+          implementation behind it lives in <code>app.ts</code>, which paginates
+          the file and comment lists and Zod-parses every response before it
+          becomes a type the rest of the run trusts.
         </p>
       </div>
 
@@ -700,6 +728,7 @@ html { scroll-behavior: smooth; }
       <div class="paths">
         <span class="chip">packages/ai/src/agents/<b>runtime.ts</b> · createReviewAgent</span>
         <span class="chip">packages/ai/src/agents/<b>definition.ts</b> · what an agent is</span>
+        <span class="chip">packages/ai/src/agents/<b>output.ts</b> · parsing the answer</span>
       </div>
       <div class="prose">
         <p>
@@ -741,7 +770,16 @@ html { scroll-behavior: smooth; }
           spent.
         </p>
         <p>
-          After parsing, the runtime <em>filters</em> findings down to the
+          Every agent sends the same shared prompt prefix with an Anthropic
+          cache breakpoint on the system message, so agents two and three read
+          it from cache rather than paying for it again. The evaluation report
+          prints the hit rate for exactly this reason.
+        </p>
+        <p>
+          <code>extractAgentOutput</code> takes the outermost JSON object out
+          of the final message and Zod-validates it; output it cannot parse
+          fails the agent rather than crashing the run. After that the runtime
+          <em>filters</em> findings down to the
           agent's own category. Cross-category leaks are dropped, never
           re-stamped — re-stamping would fabricate a claim the model never made,
           while dropping keeps category provenance deterministic.
@@ -774,10 +812,17 @@ html { scroll-behavior: smooth; }
       </div>
       <div class="prose">
         <p>
-          Every input is Zod-validated before it touches the GitHub client, and
-          a tool never throws: failures come back as <code>{ ok: false }</code>
-          and reach the model as an error <code>tool_result</code>, so a bad
-          tool call costs a turn rather than the run.
+          Every input is Zod-validated by the tool's own
+          <code>inputSchema</code> before it touches the GitHub client: paths
+          may not be absolute or contain traversal segments, and a search may
+          not carry <code>repo:</code>, <code>org:</code> or <code>user:</code>
+          qualifiers — the client adds the only scope there is. A failing
+          <code>execute</code> becomes an error result the model reads and
+          continues from, so a bad tool call costs a step rather than the run.
+        </p>
+        <p>
+          Every result is truncated at 50k characters, so one enormous file
+          cannot spend the whole context.
         </p>
       </div>
 
@@ -806,7 +851,9 @@ html { scroll-behavior: smooth; }
       </div>
       <div class="prose">
         <p>
-          <strong>One</strong> model call. No tools, no loop. It removes
+          <strong>One</strong> model call. No tools, no loop. Candidates that
+          are not well-formed findings are dropped before the call, so
+          malformed agent output never buys tokens. From what is left it removes
           duplicates, merges overlapping findings, drops speculation, corrects
           severity where it is clearly wrong, and orders what survives most
           important first.
@@ -1035,38 +1082,108 @@ review.started<br>
         <table>
           <thead><tr><th>Path</th><th>Owns</th></tr></thead>
           <tbody>
-            <tr><td><code>apps/action/src/index.ts</code></td><td>Inputs, client construction, wiring</td></tr>
-            <tr><td><code>apps/action/src/event.ts</code></td><td>Actions event parsing, the ignore-quietly rule</td></tr>
-            <tr><td><code>apps/action/src/summary.ts</code></td><td>Fork fallback to the job summary</td></tr>
-            <tr><td><code>apps/action/src/langfuse.ts</code></td><td>Span export for one run</td></tr>
-            <tr><td><code>packages/reviewer/src/review-pull-request.ts</code></td><td>One review, end to end; the path gate</td></tr>
-            <tr><td><code>packages/reviewer/src/review-pipeline.ts</code></td><td>Agent fan-out, join, synthesise, validate</td></tr>
-            <tr><td><code>packages/reviewer/src/validate-findings.ts</code></td><td>The trust boundary</td></tr>
-            <tr><td><code>packages/reviewer/src/diff-lines.ts</code></td><td>Which lines a finding may anchor to</td></tr>
-            <tr><td><code>packages/reviewer/src/render-check-run.ts</code></td><td>Findings → check run payload</td></tr>
-            <tr><td><code>packages/reviewer/src/render-review.ts</code></td><td>Findings → review body + inline comments</td></tr>
-            <tr><td><code>packages/reviewer/src/finding-format.ts</code></td><td>How a finding reads on every surface</td></tr>
-            <tr><td><code>packages/reviewer/src/publish-review.ts</code></td><td>Comments then check run; which surface carries the findings</td></tr>
+            <tr><th colspan="2">Packaging</th></tr>
+            <tr><td><code>apps/action/action.yml</code></td><td>The Action manifest: every input, and the bundle it runs</td></tr>
+            <tr><td><code>scripts/build-bundle.mjs</code></td><td>esbuild → one self-contained <code>dist/index.mjs</code></td></tr>
+            <tr><th colspan="2" style="padding-top:1.5rem">01 · Is this even a review?</th></tr>
+            <tr><td><code>apps/action/src/event.ts</code></td><td>Actions event parsing, and the ignore-quietly rule</td></tr>
+            <tr><td><code>packages/schemas/src/pull-request-event.ts</code></td><td>Which <code>pull_request</code> actions trigger a review</td></tr>
+            <tr><th colspan="2" style="padding-top:1.5rem">02 · Boot</th></tr>
+            <tr><td><code>apps/action/src/index.ts</code></td><td>Inputs, client construction, wiring — every dependency is built here</td></tr>
+            <tr><td><code>packages/github/src/token.ts</code></td><td>The Octokit client, from the workflow token</td></tr>
+            <tr><td><code>packages/ai/src/model.ts</code></td><td>Provider registry: <code>anthropic</code> or <code>openai</code>, and the default model</td></tr>
             <tr><td><code>.github/pr-review-agents.yml</code></td><td>The agents this repository reviews with</td></tr>
             <tr><td><code>packages/ai/src/agents/config.ts</code></td><td>Reading and validating a repository's agents</td></tr>
             <tr><td><code>packages/ai/src/agents/definition.ts</code></td><td>What an agent is, and its shared system prompt</td></tr>
             <tr><td><code>packages/ai/src/agents/specialists/</code></td><td>The built-ins a config may name: <code>security</code>, <code>docs-drift</code></td></tr>
-            <tr><td><code>packages/ai/src/agents/path-filter.ts</code></td><td>The <code>paths</code> globs, and which agents they wake</td></tr>
-            <tr><td><code>packages/ai/src/agents/agent-set.ts</code></td><td>Narrowing an agent set, building its agents</td></tr>
-            <tr><td><code>packages/ai/src/agents/synthesiser.ts</code></td><td>The single refining model call</td></tr>
-            <tr><td><code>packages/ai/src/agents/runtime.ts</code></td><td>The shared agentic loop and its turn cap</td></tr>
-            <tr><td><code>packages/ai/src/agents/tools.ts</code></td><td>The six read-only tools</td></tr>
-            <tr><td><code>packages/ai/src/usage.ts</code></td><td>Token accounting for every model call</td></tr>
+            <tr><td><code>packages/ai/src/agents/agent-set.ts</code></td><td>Narrowing an agent set, gating it, building its agents</td></tr>
             <tr><td><code>packages/ai/src/prompts.ts</code></td><td>Managed prompts and their fallback</td></tr>
-            <tr><td><code>packages/github/src/errors.ts</code></td><td>What a 403/404 means for a write</td></tr>
+            <tr><td><code>apps/action/src/langfuse.ts</code></td><td>Span export for one run</td></tr>
+            <tr><th colspan="2" style="padding-top:1.5rem">03 · Load and gate</th></tr>
+            <tr><td><code>packages/reviewer/src/review-target.ts</code></td><td>The target triple every log event carries</td></tr>
+            <tr><td><code>packages/reviewer/src/review-pull-request.ts</code></td><td>One review, end to end; the path gate; the side-effect boundary</td></tr>
+            <tr><td><code>packages/github/src/client.ts</code></td><td>The client interface and every type the run reads</td></tr>
+            <tr><td><code>packages/github/src/app.ts</code></td><td>The Octokit implementation: pagination, Zod-parsed responses</td></tr>
+            <tr><td><code>packages/ai/src/agents/path-filter.ts</code></td><td>The <code>paths</code> globs, and which agents they wake</td></tr>
+            <tr><th colspan="2" style="padding-top:1.5rem">04 · The pipeline</th></tr>
+            <tr><td><code>packages/reviewer/src/review-pipeline.ts</code></td><td>Agent fan-out, join, synthesise, validate</td></tr>
+            <tr><td><code>packages/ai/src/agents/runtime.ts</code></td><td>The shared agent loop, its turn cap, and the category filter</td></tr>
+            <tr><td><code>packages/ai/src/agents/tools.ts</code></td><td>The six read-only tools</td></tr>
+            <tr><td><code>packages/ai/src/agents/output.ts</code></td><td>Parsing an agent's final JSON; bad output fails the agent, not the run</td></tr>
+            <tr><td><code>packages/ai/src/usage.ts</code></td><td>Token accounting for every model call</td></tr>
+            <tr><td><code>packages/ai/src/agents/synthesiser.ts</code></td><td>The single refining model call</td></tr>
+            <tr><td><code>packages/reviewer/src/validate-findings.ts</code></td><td>The trust boundary</td></tr>
+            <tr><td><code>packages/reviewer/src/diff-lines.ts</code></td><td>Which lines a finding may anchor to</td></tr>
             <tr><td><code>packages/schemas/src/review-finding.ts</code></td><td>The finding contract</td></tr>
+            <tr><th colspan="2" style="padding-top:1.5rem">05–06 · Render and publish</th></tr>
+            <tr><td><code>packages/reviewer/src/render-check-run.ts</code></td><td>Findings → check run payload</td></tr>
+            <tr><td><code>packages/reviewer/src/render-review.ts</code></td><td>Findings → review body + inline comments</td></tr>
+            <tr><td><code>packages/reviewer/src/finding-format.ts</code></td><td>How a finding reads on every surface</td></tr>
+            <tr><td><code>packages/reviewer/src/publish-review.ts</code></td><td>Comments then check run; which surface carries the findings</td></tr>
+            <tr><td><code>packages/github/src/errors.ts</code></td><td>What a 403/404 means for a write</td></tr>
+            <tr><td><code>apps/action/src/summary.ts</code></td><td>Fork fallback to the job summary</td></tr>
+            <tr><td><code>packages/logging/src/index.ts</code></td><td>One JSON line per lifecycle event</td></tr>
+            <tr><th colspan="2" style="padding-top:1.5rem">Proving it</th></tr>
+            <tr><td><code>evals/fixtures/</code></td><td>Three fixture repositories, each a pull request with a known answer</td></tr>
+            <tr><td><code>evals/src/run-fixture-review.ts</code></td><td>The real pipeline over a fixture — only the client and publish differ</td></tr>
           </tbody>
         </table>
       </div>
 
+    </section>
+
+    <!-- ========== RUN IT ========== -->
+    <section class="stage" id="run">
+      <div class="stage-head">
+        <span class="stage-num">—</span>
+        <h2>Run it yourself</h2>
+      </div>
+      <div class="paths">
+        <span class="chip">evals/src/<b>run-fixture-review.ts</b></span>
+        <span class="chip">evals/<b>fixtures/</b></span>
+      </div>
+      <div class="prose">
+        <p>
+          The whole path above runs against a fixture repository on your own
+          machine. A fixture is a directory: <code>repo/</code> is the tree at
+          the head commit, <code>base/</code> holds the previous contents of the
+          modified files, and a manifest names the pull request. The harness
+          builds the diff from those two trees and serves every tool call from
+          memory, so nothing reaches GitHub — and the two publish steps are the
+          only things replaced.
+        </p>
+      </div>
+
+      <figure class="code">
+        <div class="code-head"><span class="p">from the repository root</span><span class="ln">shell</span></div>
+<pre><span class="c-com"># The full pipeline over a fixture, with scripted agents.</span>
+<span class="c-com"># No API key, no network, part of the ordinary suite.</span>
+pnpm test
+
+<span class="c-com"># The same pipeline, with a real model reviewing real code.</span>
+ANTHROPIC_API_KEY=... pnpm eval</pre>
+      </figure>
+
+      <div class="prose">
+        <p>
+          The three fixtures are chosen to fail in different directions:
+          <code>correctness-admin-check</code> hides an assignment where a
+          comparison belongs, <code>security-tenant-scope</code> queries
+          customers without checking the tenant, and
+          <code>clean-pagination</code> is correct code that must produce
+          <strong>no</strong> findings at all — the case that catches a model
+          inventing problems to look useful.
+        </p>
+        <p>
+          Each run prints candidates per agent, the synthesis outcome, how many
+          findings survived validation, every repository read the agents made,
+          tokens, and the prompt-cache hit rate.
+        </p>
+      </div>
+
       <div class="foot">
         <span>pnpm test · pnpm typecheck · pnpm build · pnpm eval</span>
-        <span>docs/agent-flow.md</span>
+        <span>github.com/sunnyeyles/pr-review-agents</span>
       </div>
     </section>
 
