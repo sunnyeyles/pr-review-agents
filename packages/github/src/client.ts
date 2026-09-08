@@ -129,6 +129,8 @@ export interface CheckRun {
 export interface ReviewComment {
   path: string;
   line: number;
+  /** First line of a multi-line comment; omit to comment on `line` alone. */
+  startLine?: number | undefined;
   body: string;
 }
 
@@ -152,9 +154,47 @@ export interface ExistingReviewComment {
   body: string;
 }
 
+/** One file's complete new contents in a commit built over the API. */
+export interface CommitFileChange {
+  path: string;
+  content: string;
+}
+
+/** A request for one branch's current tip commit. */
+export interface BranchTipRequest {
+  owner: string;
+  repo: string;
+  /** Branch name without the `refs/heads/` prefix. */
+  branch: string;
+}
+
+/** A request for one commit's message. */
+export interface CommitMessageRequest {
+  owner: string;
+  repo: string;
+  sha: string;
+}
+
 /**
- * A GitHub client for one repository's installation. Read-only except
- * createCheckRun and createReview; every method is repository-scoped.
+ * One commit fast-forwarded onto `branch`. `baseSha` is both the parent and
+ * the tip the update requires, so a concurrent push is rejected, not overwritten.
+ */
+export interface CreateCommitInput {
+  owner: string;
+  repo: string;
+  branch: string;
+  baseSha: string;
+  message: string;
+  files: readonly CommitFileChange[];
+}
+
+export interface CommitRef {
+  sha: string;
+}
+
+/**
+ * Repository-scoped throughout. Read-only except createCheckRun,
+ * createReview, and createCommitOnBranch.
  */
 export interface GithubInstallationClient {
   getPullRequest(ref: PullRequestRef): Promise<PullRequestDetails>;
@@ -170,7 +210,13 @@ export interface GithubInstallationClient {
   listCommitFiles(request: CommitFilesRequest): Promise<string[]>;
   /** Every inline review comment already on the pull request. */
   listReviewComments(ref: PullRequestRef): Promise<ExistingReviewComment[]>;
+  /** The commit one branch currently points at. */
+  getBranchTip(request: BranchTipRequest): Promise<string>;
+  /** One commit's message, used to recognise this system's own commits. */
+  getCommitMessage(request: CommitMessageRequest): Promise<string>;
   createCheckRun(input: CreateCheckRunInput): Promise<CheckRun>;
   /** Publishes one advisory review with inline comments. */
   createReview(input: CreateReviewInput): Promise<PullRequestReview>;
+  /** Commits file contents onto a branch. Write; never forces. */
+  createCommitOnBranch(input: CreateCommitInput): Promise<CommitRef>;
 }

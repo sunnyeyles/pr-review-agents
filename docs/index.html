@@ -932,6 +932,32 @@ html { scroll-behavior: smooth; }
         score is dropped here — regardless of how confident the model sounded
         when it proposed it.
       </div>
+
+      <h3>4e · <code>verifyPatches</code> — proving a fix</h3>
+      <div class="paths">
+        <span class="chip">packages/reviewer/src/<b>validate-patches.ts</b></span>
+      </div>
+      <div class="prose">
+        <p>
+          A finding may carry a <code>patch</code>: a replacement for a line
+          range, quoted alongside the <code>expected</code> text it replaces.
+          The quote is the whole mechanism. The file is re-read at the head
+          commit and compared character for character — there is no fuzzy match
+          and no apply-with-offset.
+        </p>
+      </div>
+      <ol class="rules">
+        <li><b>The range's current text equals <code>expected</code></b> — byte for byte, at the head commit</li>
+        <li><b>The range touches the diff</b> — an agent may not rewrite a part of the file this PR never changed</li>
+        <li><b>No two kept patches overlap</b> in one file</li>
+        <li><b>Cap at 5 files and 200 lines</b> — <code>MAX_PATCHED_FILES</code>, <code>MAX_PATCHED_LINES</code></li>
+      </ol>
+      <div class="note">
+        <span class="eyebrow">A failed patch costs the fix, never the finding</span>
+        Every rejection strips only the <code>patch</code>. The finding is
+        published as it would have been without one, so a miscounted line
+        number never silences a real problem.
+      </div>
     </section>
 
     <!-- ========== 5 · RENDER ========== -->
@@ -1082,6 +1108,8 @@ review.started<br>
 &nbsp;&nbsp;&nbsp;&nbsp;→ agent.started ×N&nbsp;&nbsp;→ agent.completed <span class="dim">/</span> agent.failed ×N<br>
 &nbsp;&nbsp;&nbsp;&nbsp;→ synthesis.started → synthesis.completed <span class="dim">/</span> .failed <span class="dim">/</span> .skipped<br>
 &nbsp;&nbsp;&nbsp;&nbsp;→ findings.validated<br>
+&nbsp;&nbsp;&nbsp;&nbsp;→ patches.verified<br>
+&nbsp;&nbsp;→ review.fixes.applied <span class="dim">/</span> .degraded <span class="dim">/</span> .disabled<br>
 &nbsp;&nbsp;→ review.comments.published <span class="dim">/</span> .degraded <span class="dim">/</span> .list_failed<br>
 &nbsp;&nbsp;→ review.published <span class="dim">/</span> review.published.degraded <span class="dim">/</span> review.failed
       </div>
@@ -1135,13 +1163,15 @@ review.started<br>
             <tr><td><code>packages/ai/src/usage.ts</code></td><td>Token accounting for every model call</td></tr>
             <tr><td><code>packages/ai/src/agents/synthesiser.ts</code></td><td>The single refining model call</td></tr>
             <tr><td><code>packages/reviewer/src/validate-findings.ts</code></td><td>The trust boundary</td></tr>
+            <tr><td><code>packages/reviewer/src/validate-patches.ts</code></td><td>Proving a proposed fix against the file at head</td></tr>
             <tr><td><code>packages/reviewer/src/diff-lines.ts</code></td><td>Which lines a finding may anchor to</td></tr>
             <tr><td><code>packages/schemas/src/review-finding.ts</code></td><td>The finding contract</td></tr>
             <tr><th colspan="2" style="padding-top:1.5rem">05–06 · Render and publish</th></tr>
             <tr><td><code>packages/reviewer/src/render-check-run.ts</code></td><td>Findings → check run payload</td></tr>
             <tr><td><code>packages/reviewer/src/render-review.ts</code></td><td>Findings → review body + inline comments</td></tr>
             <tr><td><code>packages/reviewer/src/finding-format.ts</code></td><td>How a finding reads on every surface</td></tr>
-            <tr><td><code>packages/reviewer/src/publish-review.ts</code></td><td>Comments then check run; which surface carries the findings</td></tr>
+            <tr><td><code>packages/reviewer/src/publish-review.ts</code></td><td>Fixes, then comments, then check run; which surface carries what</td></tr>
+            <tr><td><code>packages/reviewer/src/apply-fixes.ts</code></td><td>Committing verified fixes, and every reason not to</td></tr>
             <tr><td><code>packages/github/src/errors.ts</code></td><td>What a 403/404 means for a write</td></tr>
             <tr><td><code>apps/action/src/summary.ts</code></td><td>Fork fallback to the job summary</td></tr>
             <tr><td><code>packages/logging/src/index.ts</code></td><td>One JSON line per lifecycle event</td></tr>

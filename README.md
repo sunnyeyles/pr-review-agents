@@ -19,6 +19,14 @@ default.
 The agents never touch GitHub. They propose structured findings; deterministic
 application code decides what actually gets published.
 
+A finding may carry a **patch**: a replacement for a range of lines, quoted
+alongside the exact text it expects to replace. Deterministic code checks that
+quote against the file at the head commit character for character before the
+patch can go anywhere. With [`fix: true`](#fixes) the surviving patches are
+committed to the pull request branch in one commit; otherwise — and whenever
+the commit cannot be made — they arrive as one-click suggested changes on the
+review comments. The agent still never writes anything itself.
+
 ---
 
 ## Delivery path
@@ -113,6 +121,17 @@ Agents ──► raw candidates (unknown[])
    └──────────────────────────────────────┘
               │
               ▼
+   ┌──────────────────────────────────────┐
+   │ verifyPatches()     — no model here  │
+   │  1. file is read at the head commit  │
+   │  2. `expected` matches those lines   │
+   │     byte for byte, or the patch dies │
+   │  3. range touches the diff           │
+   │  4. no two patches overlap           │
+   │  5. cap at 5 files / 200 lines       │
+   └──────────────────────────────────────┘
+              │
+              ▼
         GitHub API (application code only)
 ```
 
@@ -133,6 +152,13 @@ Reinforcing rules:
   provenance stays deterministic.
 - The check run conclusion is `neutral` whenever findings exist — the app is
   advisory and never blocks a merge.
+- A **patch never reaches a file on the agent's word**. The agent quotes the
+  lines it means to replace; application code re-reads them at the head commit
+  and discards the patch on any mismatch. The finding survives without it, so a
+  miscounted line costs the fix, never the review.
+- Fixes are **committed, never forced**. The branch tip must still be the commit
+  the review read, and the ref update is a plain fast-forward — a push that
+  landed mid-review wins the race, and the fixes become suggestions instead.
 
 ---
 
@@ -192,6 +218,7 @@ Set as `with:` inputs on the Action step ([`apps/action/action.yml`](apps/action
 | `model-base-url` | no (default: the provider's own host) | Overrides the provider's API host — a gateway, a proxy, or a compatible endpoint (for `openai`, one that accepts `max_completion_tokens`). |
 | `agents` | no (default `all`) | Which of the configured agents run: `all`, or a comma-separated subset of their names. Naming a subset also overrides any [path filters](#path-filters). |
 | `agent-config` | no (default `.github/pr-review-agents.yml`) | Path to the YAML file naming the agents. Required — nothing runs until a repository names it. |
+| `fix` | no (default `false`) | Whether verified [fixes](#fixes) are committed to the pull request branch. `true` turns it on; any other value leaves it off. Needs `contents: write`. |
 | `langfuse-public-key` | no | Supply this and the secret key to fetch the agent system prompts from [Langfuse](#seeding-the-managed-prompts) and export traces there. Both unset is the default, and runs on the in-code prompts. |
 | `langfuse-secret-key` | no | The other half. Setting only one of the two disables both features and logs `langfuse.disabled_incomplete_credentials`. |
 | `langfuse-base-url` | no (default `https://cloud.langfuse.com`) | Langfuse host, for a self-hosted or regional instance. Keys are region-scoped: the wrong host 401s and drops every trace. |
@@ -402,16 +429,56 @@ Nothing is read from a secrets store at runtime — the workflow token and the
 `api-key` input are the only credentials involved, and neither ever needs to be
 provisioned outside GitHub's own secret settings.
 
+### Fixes
+
+Off by default. Turning it on lets one review commit its verified patches:
+
+```yaml
+permissions:
+  contents: write        # only needed for fix: true
+  pull-requests: write
+  checks: write
+
+# ...
+        with:
+          api-key: ${{ secrets.OPENAI_API_KEY }}
+          fix: "true"
+```
+
+What is committed is never what an agent said, only what deterministic code
+could prove: every patch quotes the lines it replaces, and a quote that does
+not match the file at the head commit character for character is discarded
+while its finding is still published. At most 5 files and 200 lines change per
+review, and the commit is a plain fast-forward on the branch tip the review
+read — a push that landed during the review wins.
+
+Leaving `fix` off loses nothing. The same verified patches are rendered as
+GitHub suggested changes on the review comments, which apply in one click; that
+is also what happens on a fork, whose token cannot write, or when the branch
+moved. The review body always says which of the two happened.
+
+This repository has not turned it on for itself.
+[`.github/workflows/self-review.yml`](.github/workflows/self-review.yml) still
+grants `contents: read` and omits `fix`, so its own reviews propose fixes as
+suggested changes and commit nothing. Enabling it is two lines, and is a
+deliberate decision rather than the state this repository ships in.
+
+The commit is authored by `github-actions[bot]` and carries a marker line. A
+push made with `GITHUB_TOKEN` does not trigger workflows, so the review does not
+re-run itself; if you swap in a PAT that does, the marker is the second guard —
+a run whose head commit is one of ours reviews as normal but fixes nothing.
+
 ### Token permissions
 
-Every one of them degrades rather than fails, except the first. The Action
-never requests write access to file contents, merges, or approvals.
+Every one of them degrades rather than fails, except the first. Write access to
+file contents is requested only for `fix: true`; merges and approvals never.
 
 | Permission | With it | Without it |
 | --- | --- | --- |
 | `contents: read` | Reads files at the head and base commits, and the agent configuration | The action cannot run |
 | `pull-requests: write` | Findings post as inline review comments | The check run annotates the same lines instead, and logs `review.comments.degraded` |
 | `checks: write` | Publishes the `AI PR Review` check run and its annotations | The whole review is written to the workflow job summary instead, and logs `review.published.degraded` |
+| `contents: write` | Commits verified fixes to the pull request branch, when `fix: true` | The same fixes are offered as suggested changes, and it logs `review.fixes.degraded` |
 
 A fork-triggered workflow gets a read-only token, so both degradations fire at
 once and the review lands in the job summary. The step still exits 0.

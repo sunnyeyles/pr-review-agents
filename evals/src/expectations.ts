@@ -26,7 +26,8 @@ export type FixtureExpectation =
       anchors: FindingAnchor[];
     }
   | { kind: "no-findings"; description: string }
-  | { kind: "agents-completed"; description: string };
+  | { kind: "agents-completed"; description: string }
+  | { kind: "patches-verify"; description: string };
 
 /** The judgement of one expectation against one fixture review. */
 interface ExpectationOutcome {
@@ -129,6 +130,20 @@ export function evaluateExpectation(
           : `these agents failed:\n${failures
               .map((failure) => `  - ${failure.agent}: ${failure.error}`)
               .join("\n")}`,
+    };
+  }
+
+  if (expectation.kind === "patches-verify") {
+    // Precision only: proposing no patch passes. What fails is a patch whose
+    // quoted lines do not match the file, which means the model miscounted.
+    const { proposed, verified } = review.result.patches;
+    return {
+      passed: proposed === verified,
+      detail:
+        proposed === verified
+          ? `${verified} of ${proposed} proposed patch(es) matched the file`
+          : `${proposed - verified} of ${proposed} proposed patch(es) did not match the ` +
+            `file at head and were discarded.\n\n${rendered}`,
     };
   }
 

@@ -132,3 +132,63 @@ describe("renderReview", () => {
     expect(rendered?.body).toContain("`packages/github/**`");
   });
 });
+
+describe("renderReview with a verified patch", () => {
+  const diffLines = new Map([["src/sessions.ts", new Set([11, 12, 13])]]);
+  const patched = () =>
+    finding({
+      patch: {
+        startLine: 11,
+        endLine: 12,
+        expected: "if ((user.isAdmin = true)) {",
+        replacement: "if (user.isAdmin) {",
+      },
+    });
+
+  it("offers the patch as a suggestion spanning the replaced lines", () => {
+    const rendered = renderReview([patched()], {
+      diffLines,
+      offerSuggestions: true,
+    });
+
+    expect(rendered?.comments).toEqual([
+      {
+        path: "src/sessions.ts",
+        startLine: 11,
+        line: 12,
+        body: expect.stringContaining("```suggestion\nif (user.isAdmin) {\n```"),
+      },
+    ]);
+  });
+
+  it("offers nothing once the patch was committed", () => {
+    const rendered = renderReview([patched()], {
+      diffLines,
+      offerSuggestions: false,
+    });
+
+    expect(rendered?.comments[0]).toEqual({
+      path: "src/sessions.ts",
+      line: 12,
+      body: expect.not.stringContaining("```suggestion"),
+    });
+  });
+
+  it("withholds a suggestion whose range leaves the diff", () => {
+    const rendered = renderReview([patched()], {
+      diffLines: new Map([["src/sessions.ts", new Set([12])]]),
+      offerSuggestions: true,
+    });
+
+    expect(rendered?.comments[0]?.startLine).toBeUndefined();
+    expect(rendered?.comments[0]?.body).not.toContain("```suggestion");
+  });
+
+  it("carries the fix note into the review body", () => {
+    const rendered = renderReview([patched()], {
+      fixNote: "> **Note:** 1 fix committed to this branch as `abc1234`.",
+    });
+
+    expect(rendered?.body).toContain("1 fix committed to this branch");
+  });
+});

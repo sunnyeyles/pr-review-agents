@@ -16,7 +16,7 @@ import {
   reviewPullRequest,
   runReviewPipeline,
   type RenderedCheckRun,
-  type ReviewPipelineResult,
+  type ReviewOutcome,
 } from "@pr-review/reviewer";
 
 import { createFixtureClient } from "./fixture-client.js";
@@ -40,8 +40,8 @@ export interface FixtureReviewDeps {
 /** Everything one fixture review produced, for expectations to judge. */
 export interface FixtureReview {
   fixture: LoadedFixture;
-  /** The pipeline's own result: candidates, failures, final findings. */
-  result: ReviewPipelineResult;
+  /** The pipeline's own result: candidates, failures, final findings, patches. */
+  result: ReviewOutcome;
   /** The check run a real review would have published. */
   rendered: RenderedCheckRun;
 }

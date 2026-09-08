@@ -52,6 +52,7 @@ export function buildSynthesisSystemPrompt(
 - Drop weak or speculative findings: hedged guesses, vague claims, and nitpicks. Prefer a few strong findings over many speculative ones.
 - Correct severity where it is clearly wrong for the impact described; otherwise keep it.
 - Keep confidence honest: lowering severity or confidence is always allowed; raise them only when the explanation already justifies it.
+- Carry a finding's "patch" through EXACTLY as given, or drop it with the finding it belongs to. Never write, edit, retype, or merge one: its text is checked against the file character by character, so any change discards it.
 - Prioritise: return the result ordered most important first.
 
 # Security rules (non-negotiable)
@@ -62,8 +63,8 @@ export function buildSynthesisSystemPrompt(
 
 # Output
 Respond with ONE message whose entire content is a single JSON object of the same shape as the input:
-{"findings": [{"file": "src/example.ts", "line": 42, "category": ${quotedCategories[0]}, "severity": "high", "title": "...", "explanation": "...", "suggestedFix": "...", "confidence": 0.9}]}
-Each finding keeps the input contract: "category" is ${quotedCategories.join(" | ")}, "severity" is "low" | "medium" | "high", "confidence" is 0..1, and "line"/"suggestedFix" are optional. If nothing is worth reporting, return {"findings": []}.`;
+{"findings": [{"file": "src/example.ts", "line": 42, "category": ${quotedCategories[0]}, "severity": "high", "title": "...", "explanation": "...", "suggestedFix": "...", "patch": {"startLine": 41, "endLine": 42, "expected": "...", "replacement": "..."}, "confidence": 0.9}]}
+Each finding keeps the input contract: "category" is ${quotedCategories.join(" | ")}, "severity" is "low" | "medium" | "high", "confidence" is 0..1, and "line"/"suggestedFix"/"patch" are optional. A finding that arrived with a "patch" must keep it verbatim. If nothing is worth reporting, return {"findings": []}.`;
 }
 
 /** Builds the single user message: the candidates as tagged JSON data. */

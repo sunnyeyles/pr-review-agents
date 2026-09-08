@@ -17,14 +17,18 @@ import {
   type StructuredLogger,
 } from "@pr-review/logging";
 
+import { buildDiffLineIndex } from "./diff-lines.js";
 import {
   createCheckRunPublisher,
+  createFixPublisher,
   createReviewCommentPublisher,
   deliverReview,
+  type PublishFixes,
   type PublishReview,
   type PublishReviewComments,
 } from "./publish-review.js";
 import { renderNoAgentMatched } from "./render-check-run.js";
+import { verifyPatches, type PatchSummary } from "./validate-patches.js";
 import { postedFindingKeys } from "./render-review.js";
 import {
   skippedSynthesis,
@@ -47,6 +51,10 @@ interface ReviewPullRequestDeps {
   publishReview?: PublishReview | undefined;
   /** Defaults to publishing a review through `client`. */
   publishReviewComments?: PublishReviewComments | undefined;
+  /** Whether verified patches may be committed to the head branch. */
+  applyFixes?: boolean | undefined;
+  /** Defaults to committing through `client`, when applyFixes is on. */
+  publishFixes?: PublishFixes | undefined;
   /** Every event carries repository, PR number, and head SHA. */
   logger?: StructuredLogger | undefined;
 }
@@ -106,13 +114,19 @@ function logSynthesisOutcome(
   });
 }
 
+/** One review's outcome, plus how the patches its agents proposed fared. */
+export interface ReviewOutcome extends ReviewPipelineResult {
+  patches: PatchSummary;
+}
+
 /** The result of a review that never reached the pipeline. */
-function unreviewed(): ReviewPipelineResult {
+function unreviewed(): ReviewOutcome {
   return {
     candidates: [],
     agentFailures: [],
     synthesis: skippedSynthesis(),
     findings: [],
+    patches: { proposed: 0, verified: 0 },
   };
 }
 
@@ -125,9 +139,11 @@ export async function reviewPullRequest(
     runReviewPipeline,
     publishReview,
     publishReviewComments,
+    applyFixes = false,
+    publishFixes,
     logger = createConsoleLogger(),
   }: ReviewPullRequestDeps,
-): Promise<ReviewPipelineResult> {
+): Promise<ReviewOutcome> {
   const fields = reviewCorrelation(target);
   const [pullRequest, changedFiles, diff] = await Promise.all([
     client.getPullRequest(target),
@@ -183,12 +199,33 @@ export async function reviewPullRequest(
     findingCount: review.findings.length,
   });
 
+  // Still inside the AI boundary: a patch is proved against the head commit
+  // before any of it can be committed or offered.
+  const verified = await verifyPatches(review.findings, changedFiles, {
+    client,
+    owner: target.owner,
+    repo: target.repo,
+    headSha: target.headSha,
+  });
+  logger.info("patches.verified", {
+    ...fields,
+    proposedCount: verified.summary.proposed,
+    verifiedCount: verified.summary.verified,
+    files: verified.files.map((file) => file.path),
+  });
+
   await deliverReview(
     target,
     {
-      findings: review.findings,
+      findings: verified.findings,
       agentFailures: review.agentFailures,
       skippedAgents: skipped,
+      diffLines: buildDiffLineIndex(changedFiles),
+      patches: {
+        branch: pullRequest.headRef,
+        files: verified.files,
+        patchCount: verified.patchCount,
+      },
       alreadyPosted: postedFindingKeys(
         await listPostedComments(client, target, logger),
       ),
@@ -197,9 +234,12 @@ export async function reviewPullRequest(
       publishCheckRun: publish,
       publishComments:
         publishReviewComments ?? createReviewCommentPublisher(client, logger),
+      ...(applyFixes
+        ? { publishFixes: publishFixes ?? createFixPublisher(client, logger) }
+        : {}),
       logger,
     },
   );
 
-  return review;
+  return { ...review, findings: verified.findings, patches: verified.summary };
 }
