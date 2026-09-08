@@ -60,6 +60,11 @@ export function skipNotes(skippedAgents: readonly SkippedAgent[]): string[] {
   );
 }
 
+/** "1 fix" / "3 fixes", which countLabel's added "s" cannot spell. */
+export function fixCount(count: number): string {
+  return count === 1 ? "1 fix" : `${count} fixes`;
+}
+
 /** "1 finding" / "3 agents". Pluralised by adding an "s". */
 export function countLabel(count: number, noun: string): string {
   return count === 1 ? `1 ${noun}` : `${count} ${noun}s`;

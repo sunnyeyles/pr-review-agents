@@ -27,9 +27,21 @@ inputs:
       Token used for the eight read-only repository tools, for the review
       comments, and for publishing the check run. The default workflow token
       is enough when the job grants contents: read, pull-requests: write, and
-      checks: write.
+      checks: write — and contents: write when `fix` is on.
     required: false
     default: ${{ github.token }}
+  fix:
+    description: >-
+      Whether verified fixes are committed to the pull request branch. Set to
+      `true` to turn it on; any other value leaves it off. A fix is only ever
+      committed when deterministic code has matched its replaced lines against
+      the head commit character for character, at most 5 files and 200 lines
+      per review. Requires contents: write. When this is off — and whenever the
+      commit cannot be made, a fork's read-only token included — the same
+      verified fixes are offered as suggested changes on the review comments
+      instead, so nothing is lost by leaving it off.
+    required: false
+    default: "false"
   model:
     description: >-
       Default model id, as the selected provider spells it. An agent may

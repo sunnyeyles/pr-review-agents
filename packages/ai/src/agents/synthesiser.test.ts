@@ -311,6 +311,14 @@ describe("buildSynthesisSystemPrompt", () => {
     );
   });
 
+  it("names the patch field, without which synthesis would strip it", () => {
+    // The schema drops unknown keys, and the model never emits a field the
+    // prompt does not name.
+    expect(SYNTHESIS_SYSTEM_PROMPT).toContain('"patch"');
+    expect(SYNTHESIS_SYSTEM_PROMPT).toContain("must keep it verbatim");
+    expect(SYNTHESIS_SYSTEM_PROMPT).toMatch(/never write, edit, retype, or merge one/i);
+  });
+
   it("agrees with itself on a configured agent set", () => {
     const prompt = buildSynthesisSystemPrompt([
       {

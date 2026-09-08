@@ -42,9 +42,11 @@ import {
 } from "@pr-review/logging";
 import {
   createCheckRunPublisher,
+  isFixCommit,
   reviewCorrelation,
   reviewPullRequest,
   runReviewPipeline,
+  type ReviewTarget,
 } from "@pr-review/reviewer";
 
 import { inspectEvent } from "./event.js";
@@ -239,6 +241,38 @@ export function readAtCommit(
   };
 }
 
+/**
+ * Whether this run may commit fixes. Fixing our own fix commit would loop, so
+ * an unreadable head commit disables the step rather than risking one.
+ */
+async function fixesAllowed(
+  client: GithubInstallationClient,
+  target: ReviewTarget,
+  logger: StructuredLogger,
+): Promise<boolean> {
+  try {
+    const message = await client.getCommitMessage({
+      owner: target.owner,
+      repo: target.repo,
+      sha: target.headSha,
+    });
+    if (isFixCommit(message)) {
+      logger.info("review.fixes.disabled", {
+        ...reviewCorrelation(target),
+        reason: "the head commit is this action's own fix",
+      });
+      return false;
+    }
+    return true;
+  } catch (error: unknown) {
+    logger.error("review.fixes.disabled", {
+      ...reviewCorrelation(target),
+      reason: errorMessage(error),
+    });
+    return false;
+  }
+}
+
 /** One action run. Failures propagate to runEntrypoint's catch. */
 export async function runAction(
   environment: ActionEnvironment = actionEnvironment(),
@@ -318,9 +352,17 @@ export async function runAction(
     const synthesiser = createSynthesiser({ model, agents });
     // Event-inspection knowledge: the reviewer only ever sees the permission
     // failure a fork's token causes, never the fork itself.
-    logger.info("review.started", { ...reviewCorrelation(target), isFork });
+    const applyFixes =
+      getInput(env, "fix") === "true" &&
+      (await fixesAllowed(client, target, logger));
+    logger.info("review.started", {
+      ...reviewCorrelation(target),
+      isFork,
+      applyFixes,
+    });
 
     await reviewPullRequest(target, {
+      applyFixes,
       client,
       agents,
       // `activeAgents` is the subset the path gate woke, decided once the

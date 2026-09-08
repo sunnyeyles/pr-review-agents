@@ -38,18 +38,54 @@ export function changedLinesFromPatch(patch: string): Set<number> {
 }
 
 /**
- * Indexes changed files by filename, each mapped to its added new-side
- * line numbers. Files without a patch map to an empty set.
+ * Every new-side line a patch shows, context included. GitHub accepts a
+ * comment only on these, which is a wider set than the added lines alone.
  */
-export function buildChangedLineIndex(
+export function diffLinesFromPatch(patch: string): Set<number> {
+  const shown = new Set<number>();
+  let newLine: number | undefined;
+
+  for (const line of patch.split("\n")) {
+    const hunk = HUNK_HEADER.exec(line);
+    if (hunk) {
+      newLine = Number(hunk[1] ?? "0");
+      continue;
+    }
+    if (newLine === undefined || line.startsWith("-") || line.startsWith("\\")) {
+      continue;
+    }
+    shown.add(newLine);
+    newLine += 1;
+  }
+
+  return shown;
+}
+
+/** Indexes changed files by filename. Files without a patch map to an empty set. */
+function buildLineIndex(
   files: readonly ChangedFile[],
+  linesOf: (patch: string) => Set<number>,
 ): Map<string, Set<number>> {
   const index = new Map<string, Set<number>>();
   for (const file of files) {
     index.set(
       file.filename,
-      file.patch === undefined ? new Set() : changedLinesFromPatch(file.patch),
+      file.patch === undefined ? new Set() : linesOf(file.patch),
     );
   }
   return index;
+}
+
+/** Added new-side lines per file: where a finding may anchor. */
+export function buildChangedLineIndex(
+  files: readonly ChangedFile[],
+): Map<string, Set<number>> {
+  return buildLineIndex(files, changedLinesFromPatch);
+}
+
+/** Every new-side line per file the diff shows: where a comment may anchor. */
+export function buildDiffLineIndex(
+  files: readonly ChangedFile[],
+): Map<string, Set<number>> {
+  return buildLineIndex(files, diffLinesFromPatch);
 }

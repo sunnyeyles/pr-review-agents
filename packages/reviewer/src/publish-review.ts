@@ -10,6 +10,8 @@ import {
 import type { StructuredLogger } from "@pr-review/logging";
 import type { ReviewFinding } from "@pr-review/schemas";
 
+import { applyFixes, type FixInput, type FixOutcome } from "./apply-fixes.js";
+import { fixCount } from "./finding-format.js";
 import {
   renderCheckRun,
   type RenderedCheckRun,
@@ -44,14 +46,28 @@ export type PublishReviewComments = (
   rendered: RenderedReview,
 ) => Promise<CommentsPublished>;
 
+/** Delivers the verified patches as a commit on the pull request branch. */
+export type PublishFixes = (
+  target: ReviewTarget,
+  input: FixInput,
+) => Promise<FixOutcome>;
+
 /** Everything one review has to say, before it is split across surfaces. */
-interface ReviewDeliveryInput extends ReviewNotes {
+interface ReviewDeliveryInput
+  extends Pick<
+    ReviewNotes,
+    "agentFailures" | "alreadyPosted" | "skippedAgents" | "diffLines"
+  > {
   findings: readonly ReviewFinding[];
+  /** Verified patches: committed when a publisher can, offered otherwise. */
+  patches?: FixInput | undefined;
 }
 
 interface ReviewDeliveryDeps {
   publishCheckRun: PublishReview;
   publishComments: PublishReviewComments;
+  /** Absent when the run may not write to the branch. */
+  publishFixes?: PublishFixes | undefined;
   logger: StructuredLogger;
 }
 
@@ -104,14 +120,48 @@ export function createReviewCommentPublisher(
   };
 }
 
-/** Comments first; the check run annotates only what nothing else carries. */
+/** Commits the verified patches; the default writes to the head branch. */
+export function createFixPublisher(
+  client: GithubInstallationClient,
+  logger: StructuredLogger,
+): PublishFixes {
+  return (target, input) => applyFixes(target, input, { client, logger });
+}
+
+/** How the review body reports the fixes; undefined when there were none. */
+function fixNote(outcome: FixOutcome, patchCount: number): string | undefined {
+  if (patchCount === 0) {
+    return undefined;
+  }
+  if (outcome.status === "applied") {
+    return `> **Note:** ${fixCount(patchCount)} committed to this branch as \`${outcome.sha.slice(0, 7)}\`.`;
+  }
+  if (outcome.status === "unavailable") {
+    return `> **Note:** ${fixCount(patchCount)} could not be committed (${outcome.reason}), and ${patchCount === 1 ? "is" : "are"} offered as suggested changes below.`;
+  }
+  return `> **Note:** ${fixCount(patchCount)} offered as suggested changes below.`;
+}
+
+/** Fixes, then comments; the check run annotates only what nothing else carries. */
 export async function deliverReview(
   target: ReviewTarget,
   input: ReviewDeliveryInput,
   deps: ReviewDeliveryDeps,
 ): Promise<void> {
   const fields = reviewCorrelation(target);
-  const review = renderReview(input.findings, input);
+  const patchCount = input.patches?.patchCount ?? 0;
+
+  let fixes: FixOutcome = { status: "skipped", reason: "fixes are not enabled" };
+  if (input.patches !== undefined && deps.publishFixes !== undefined) {
+    fixes = await deps.publishFixes(target, input.patches);
+  }
+
+  const review = renderReview(input.findings, {
+    ...input,
+    // A committed patch must not also arrive as a suggestion to apply again.
+    offerSuggestions: fixes.status !== "applied",
+    fixNote: fixNote(fixes, patchCount),
+  });
 
   let comments: CommentsOutcome;
   if (review === undefined) {
@@ -145,5 +195,7 @@ export async function deliverReview(
     skippedAgents: input.skippedAgents.map((skip) => skip.agent),
     comments,
     annotated,
+    fixes: fixes.status,
+    patchCount,
   });
 }

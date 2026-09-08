@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import {
   CHECK_RUN_NAME,
+  type BranchTipRequest,
   type ChangedFile,
   type CheckRun,
   type CheckRunAnnotation,
@@ -9,7 +10,10 @@ import {
   type CodeSearchResult,
   type CommitFilesRequest,
   type CommitHistoryRequest,
+  type CommitMessageRequest,
+  type CommitRef,
   type CreateCheckRunInput,
+  type CreateCommitInput,
   type CreateReviewInput,
   type ExistingReviewComment,
   type FileContentsRequest,
@@ -57,6 +61,8 @@ export interface OctokitLike {
           path: string;
           line: number;
           side: "RIGHT";
+          start_line?: number;
+          start_side?: "RIGHT";
           body: string;
         }[];
       }): Promise<{ data: unknown }>;
@@ -78,6 +84,38 @@ export interface OctokitLike {
         owner: string;
         repo: string;
         ref: string;
+      }): Promise<{ data: unknown }>;
+    };
+    git: {
+      getRef(params: {
+        owner: string;
+        repo: string;
+        ref: string;
+      }): Promise<{ data: unknown }>;
+      createTree(params: {
+        owner: string;
+        repo: string;
+        base_tree: string;
+        tree: {
+          path: string;
+          mode: "100644";
+          type: "blob";
+          content: string;
+        }[];
+      }): Promise<{ data: unknown }>;
+      createCommit(params: {
+        owner: string;
+        repo: string;
+        message: string;
+        tree: string;
+        parents: string[];
+      }): Promise<{ data: unknown }>;
+      updateRef(params: {
+        owner: string;
+        repo: string;
+        ref: string;
+        sha: string;
+        force: boolean;
       }): Promise<{ data: unknown }>;
     };
     search: {
@@ -155,6 +193,14 @@ const textMatchesSchema = z
   .optional();
 
 const commitListSchema = z.array(z.object({ sha: z.string() }));
+
+const objectShaSchema = z.object({ sha: z.string() });
+
+const refSchema = z.object({ object: z.object({ sha: z.string() }) });
+
+const commitMessageSchema = z.object({
+  commit: z.object({ message: z.string() }),
+});
 
 /** An empty commit (a merge with no conflicts) carries no files array. */
 const commitFilesSchema = z.object({
@@ -322,6 +368,24 @@ export function createInstallationClient(
       return (data.files ?? []).map((file) => file.filename);
     },
 
+    async getBranchTip(request: BranchTipRequest): Promise<string> {
+      const response = await octokit.rest.git.getRef({
+        owner: request.owner,
+        repo: request.repo,
+        ref: `heads/${request.branch}`,
+      });
+      return refSchema.parse(response.data).object.sha;
+    },
+
+    async getCommitMessage(request: CommitMessageRequest): Promise<string> {
+      const response = await octokit.rest.repos.getCommit({
+        owner: request.owner,
+        repo: request.repo,
+        ref: request.sha,
+      });
+      return commitMessageSchema.parse(response.data).commit.message;
+    },
+
     async createCheckRun(input: CreateCheckRunInput): Promise<CheckRun> {
       const output: {
         title: string;
@@ -372,11 +436,47 @@ export function createInstallationClient(
         comments: input.comments.map((comment) => ({
           path: comment.path,
           line: comment.line,
-          side: "RIGHT",
+          side: "RIGHT" as const,
+          // GitHub rejects start_line when it equals line.
+          ...(comment.startLine !== undefined && comment.startLine < comment.line
+            ? { start_line: comment.startLine, start_side: "RIGHT" as const }
+            : {}),
           body: comment.body,
         })),
       });
       return reviewResponseSchema.parse(response.data);
+    },
+
+    async createCommitOnBranch(input: CreateCommitInput): Promise<CommitRef> {
+      // A commit SHA is a valid base_tree, so the tree needs no extra read.
+      const tree = await octokit.rest.git.createTree({
+        owner: input.owner,
+        repo: input.repo,
+        base_tree: input.baseSha,
+        tree: input.files.map((file) => ({
+          path: file.path,
+          mode: "100644" as const,
+          type: "blob" as const,
+          content: file.content,
+        })),
+      });
+      const commit = await octokit.rest.git.createCommit({
+        owner: input.owner,
+        repo: input.repo,
+        message: input.message,
+        tree: objectShaSchema.parse(tree.data).sha,
+        parents: [input.baseSha],
+      });
+      const sha = objectShaSchema.parse(commit.data).sha;
+      // Never forced: a branch that moved during the review must lose the race.
+      await octokit.rest.git.updateRef({
+        owner: input.owner,
+        repo: input.repo,
+        ref: `heads/${input.branch}`,
+        sha,
+        force: false,
+      });
+      return { sha };
     },
   };
 }

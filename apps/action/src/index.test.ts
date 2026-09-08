@@ -14,7 +14,8 @@ import {
   validRemotePrompt,
 } from "../../../packages/ai/src/agent-test-support.js";
 import { createCapturingLogger } from "@pr-review/logging";
-import type { FileContentsRequest, GithubInstallationClient } from "@pr-review/github";
+import { FIX_COMMIT_MARKER } from "@pr-review/reviewer";
+import type { FileContentsRequest } from "@pr-review/github";
 import { afterAll, describe, expect, it, vi } from "vitest";
 
 const originalGithubActions = vi.hoisted(() => {
@@ -91,6 +92,8 @@ interface Harness {
   /** How many times a review agent called the model. */
   modelCalls: () => number;
   exitCodes: number[];
+  /** The GitHub client the run was given, so writes can be asserted on. */
+  client: ReturnType<typeof makeGithub>;
 }
 
 interface HarnessOptions {
@@ -120,7 +123,7 @@ function harness(
   const exitCodes: number[] = [];
 
   const configured = options.config ?? agentConfigYaml;
-  const client: GithubInstallationClient = {
+  const client = {
     ...makeGithub(),
     getFileContents: vi.fn(async (request: FileContentsRequest) => {
       fileReads.push({ path: request.path, ref: request.ref });
@@ -132,6 +135,7 @@ function harness(
   };
 
   return {
+    client,
     entries,
     modelConfigs,
     tokenConfigs,
@@ -960,5 +964,80 @@ describe("actionEnvironment", () => {
     expect(typeof environment.setExitCode).toBe("function");
     expect(typeof environment.logger.info).toBe("function");
     expect(typeof environment.logger.error).toBe("function");
+  });
+});
+
+describe("the fix input", () => {
+  /** Whether the run decided it may commit fixes. */
+  function applyFixes(entries: Harness["entries"]): unknown {
+    return entries.find((entry) => entry["event"] === "review.started")?.[
+      "applyFixes"
+    ];
+  }
+
+  it("leaves fixes off when the input is absent", async () => {
+    const { environment, entries, client } = harness({ ...reviewEnv });
+
+    await runAction(environment);
+
+    expect(applyFixes(entries)).toBe(false);
+    expect(client.getCommitMessage).not.toHaveBeenCalled();
+  });
+
+  it.each(["false", "yes", "TRUE", "1"])(
+    "leaves fixes off for the value %s",
+    async (value) => {
+      const { environment, entries } = harness({ ...reviewEnv, INPUT_FIX: value });
+
+      await runAction(environment);
+
+      expect(applyFixes(entries)).toBe(false);
+    },
+  );
+
+  it("turns fixes on for an ordinary head commit", async () => {
+    const { environment, entries, client } = harness({
+      ...reviewEnv,
+      INPUT_FIX: "true",
+    });
+
+    await runAction(environment);
+
+    expect(applyFixes(entries)).toBe(true);
+    expect(client.getCommitMessage).toHaveBeenCalledWith({
+      owner: "octo-org",
+      repo: "example-service",
+      sha: headSha,
+    });
+  });
+
+  it("refuses to fix its own fix commit", async () => {
+    const { environment, entries, client } = harness({
+      ...reviewEnv,
+      INPUT_FIX: "true",
+    });
+    client.getCommitMessage.mockResolvedValue(
+      `Apply 1 fix from the AI review\n\n${FIX_COMMIT_MARKER}`,
+    );
+
+    await runAction(environment);
+
+    expect(applyFixes(entries)).toBe(false);
+    expect(
+      entries.find((entry) => entry["event"] === "review.fixes.disabled"),
+    ).toMatchObject({ reason: "the head commit is this action's own fix" });
+  });
+
+  it("leaves fixes off when the head commit cannot be read", async () => {
+    const { environment, entries, client } = harness({
+      ...reviewEnv,
+      INPUT_FIX: "true",
+    });
+    client.getCommitMessage.mockRejectedValue(httpError(403));
+
+    await runAction(environment);
+
+    // Fail closed: an unreadable head commit could be one of ours.
+    expect(applyFixes(entries)).toBe(false);
   });
 });

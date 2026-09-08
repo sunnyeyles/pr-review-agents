@@ -3,8 +3,10 @@ export { isSupportedPullRequestAction } from "./pull-request-event.js";
 export {
   categoryLabel,
   findingCategorySchema,
+  findingPatchSchema,
   reviewFindingSchema,
   wellFormedFindings,
   type FindingCategory,
+  type FindingPatch,
   type ReviewFinding,
 } from "./review-finding.js";

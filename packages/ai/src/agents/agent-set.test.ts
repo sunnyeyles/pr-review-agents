@@ -193,6 +193,16 @@ describe("the composed agent prompt", () => {
       expectInjectionHardened(buildReviewSystemPrompt(agent), agent.category);
     }
   });
+
+  it("tells every agent that a patch's expected text is copied, not retyped", () => {
+    // A reworded `expected` never matches the file, so the fix is discarded.
+    for (const agent of configuredAgents) {
+      const prompt = buildReviewSystemPrompt(agent);
+      expect(prompt).toContain('"patch"');
+      expect(prompt).toContain("VERBATIM");
+      expect(prompt).toMatch(/at least one line in the range must be a line this pull request adds/i);
+    }
+  });
 });
 
 describe("per-agent model", () => {

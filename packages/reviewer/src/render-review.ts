@@ -54,13 +54,40 @@ export function postedFindingKeys(
 }
 
 /** One finding as the body of its own inline comment. */
-function commentBody(finding: ReviewFinding): string {
+function commentBody(finding: ReviewFinding, suggest: boolean): string {
   const lines = [`**${heading(finding)}**`, "", finding.explanation];
   if (finding.suggestedFix !== undefined) {
     lines.push("", `**Suggested fix:** ${finding.suggestedFix}`);
   }
+  if (suggest && finding.patch !== undefined) {
+    lines.push("", "```suggestion", finding.patch.replacement, "```");
+  }
   lines.push("", findingMarker(finding));
   return lines.join("\n");
+}
+
+/**
+ * GitHub rejects the whole review if any commented line is outside the diff,
+ * so a suggestion is only offered when its every line is one the diff shows.
+ */
+function suggestionAnchor(
+  finding: ReviewFinding,
+  diffLines: ReadonlyMap<string, ReadonlySet<number>>,
+): { startLine: number; line: number } | undefined {
+  const { patch } = finding;
+  if (patch === undefined) {
+    return undefined;
+  }
+  const shown = diffLines.get(finding.file);
+  if (shown === undefined) {
+    return undefined;
+  }
+  for (let line = patch.startLine; line <= patch.endLine; line += 1) {
+    if (!shown.has(line)) {
+      return undefined;
+    }
+  }
+  return { startLine: patch.startLine, line: patch.endLine };
 }
 
 export interface ReviewNotes {
@@ -68,6 +95,12 @@ export interface ReviewNotes {
   /** Finding keys already carrying a comment from an earlier commit. */
   alreadyPosted: ReadonlySet<string>;
   skippedAgents: readonly SkippedAgent[];
+  /** New-side lines each file's diff shows; needed to place a suggestion. */
+  diffLines: ReadonlyMap<string, ReadonlySet<number>>;
+  /** False once the patches were committed, so nothing is offered twice. */
+  offerSuggestions: boolean;
+  /** One sentence on what happened to the proposed fixes. */
+  fixNote: string | undefined;
 }
 
 /**
@@ -80,6 +113,9 @@ export function renderReview(
     agentFailures = [],
     alreadyPosted = new Set(),
     skippedAgents = [],
+    diffLines = new Map(),
+    offerSuggestions = false,
+    fixNote,
   }: Partial<ReviewNotes> = {},
 ): RenderedReview | undefined {
   const fresh = findings.filter(
@@ -94,6 +130,18 @@ export function renderReview(
   const fileLevel: ReviewFinding[] = [];
 
   for (const finding of ordered) {
+    const anchor = offerSuggestions
+      ? suggestionAnchor(finding, diffLines)
+      : undefined;
+    if (anchor !== undefined) {
+      comments.push({
+        path: finding.file,
+        startLine: anchor.startLine,
+        line: anchor.line,
+        body: commentBody(finding, true),
+      });
+      continue;
+    }
     if (finding.line === undefined) {
       fileLevel.push(finding);
       continue;
@@ -101,7 +149,7 @@ export function renderReview(
     comments.push({
       path: finding.file,
       line: finding.line,
-      body: commentBody(finding),
+      body: commentBody(finding, false),
     });
   }
 
@@ -116,6 +164,9 @@ export function renderReview(
       "These findings apply to a file rather than a line:",
       ...fileLevel.map(summarise),
     );
+  }
+  if (fixNote !== undefined) {
+    sections.push(fixNote);
   }
   sections.push(...failureNotes(agentFailures), ...skipNotes(skippedAgents));
 

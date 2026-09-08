@@ -7,7 +7,10 @@ import type {
   CheckRun,
   CodeSearchMatch,
   CodeSearchResult,
+  CommitMessageRequest,
+  CommitRef,
   CreateCheckRunInput,
+  CreateCommitInput,
   CreateReviewInput,
   ExistingReviewComment,
   FileContentsRequest,
@@ -190,6 +193,24 @@ export function createFixtureClient(fixture: LoadedFixture): FixtureClient {
       throw new Error(
         `the evaluation harness must never publish: createReview called for ` +
           `${input.owner}/${input.repo}#${input.pullRequestNumber}`,
+      );
+    },
+
+    // The branch never moves, so patch verification sees the head it proved against.
+    async getBranchTip(): Promise<string> {
+      return fixture.pullRequest.headSha;
+    },
+
+    async getCommitMessage(request: CommitMessageRequest): Promise<string> {
+      throw new FixtureNotFoundError(
+        `fixture ${fixture.name} has no commit history, so ${request.sha} does not exist`,
+      );
+    },
+
+    async createCommitOnBranch(input: CreateCommitInput): Promise<CommitRef> {
+      throw new Error(
+        `the evaluation harness must never publish: createCommitOnBranch called for ` +
+          `${input.owner}/${input.repo}@${input.branch}`,
       );
     },
   };

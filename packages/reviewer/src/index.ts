@@ -10,8 +10,23 @@ export { validateFindings } from "./validate-findings.js";
 export type { RenderedCheckRun } from "./render-check-run.js";
 export {
   createCheckRunPublisher,
+  createFixPublisher,
+  type PublishFixes,
   type PublishReview,
   type PublishReviewComments,
 } from "./publish-review.js";
-export { reviewPullRequest } from "./review-pull-request.js";
+export {
+  FIX_COMMIT_MARKER,
+  isFixCommit,
+  type FixOutcome,
+} from "./apply-fixes.js";
+export {
+  verifyPatches,
+  type PatchSummary,
+  type PatchedFile,
+} from "./validate-patches.js";
+export {
+  reviewPullRequest,
+  type ReviewOutcome,
+} from "./review-pull-request.js";
 export { reviewCorrelation, type ReviewTarget } from "./review-target.js";

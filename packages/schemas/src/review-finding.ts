@@ -12,6 +12,24 @@ export const findingCategorySchema = z
 export type FindingCategory = z.infer<typeof findingCategorySchema>;
 
 /**
+ * A mechanical replacement of new-side lines `startLine`..`endLine`.
+ * `expected` is that range's exact current text; a mismatch discards the patch.
+ */
+export const findingPatchSchema = z
+  .object({
+    startLine: z.number().int().positive(),
+    endLine: z.number().int().positive(),
+    expected: z.string().min(1),
+    // Empty deletes the range.
+    replacement: z.string(),
+  })
+  .refine((patch) => patch.endLine >= patch.startLine, {
+    message: "endLine must not precede startLine",
+  });
+
+export type FindingPatch = z.infer<typeof findingPatchSchema>;
+
+/**
  * One structured review finding. `line` is a new-side line number and is
  * optional; `confidence` is the agent's self-assessed certainty in [0, 1].
  */
@@ -23,6 +41,7 @@ export const reviewFindingSchema = z.object({
   title: z.string().min(1),
   explanation: z.string().min(1),
   suggestedFix: z.string().min(1).optional(),
+  patch: findingPatchSchema.optional(),
   confidence: z.number().min(0).max(1),
 });
 

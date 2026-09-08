@@ -20,11 +20,18 @@ const agentsCompleted: FixtureExpectation = {
   description: "every review agent completes",
 };
 
+/** Precision on fixes: a proposed patch must match the file it edits. */
+const patchesVerify: FixtureExpectation = {
+  kind: "patches-verify",
+  description: "every patch an agent proposed matches the file at head",
+};
+
 export const evalCases: EvalCase[] = [
   {
     fixture: "security-tenant-scope",
     expectations: [
       agentsCompleted,
+      patchesVerify,
       {
         kind: "finding",
         description:
@@ -47,6 +54,7 @@ export const evalCases: EvalCase[] = [
     fixture: "clean-pagination",
     expectations: [
       agentsCompleted,
+      patchesVerify,
       {
         kind: "no-findings",
         description: "reports no findings at all on correct, idiomatic code",

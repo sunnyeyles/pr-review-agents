@@ -138,6 +138,7 @@ of this action's repository — copy it and edit.
 | `model-base-url` | no | the provider's own host | Overrides the provider's API host — a gateway, a proxy, or a compatible endpoint (for `openai`, one that accepts `max_completion_tokens`). |
 | `agents` | no | `all` | Which of the configured agents run: `all`, or a comma-separated subset of their names. Naming a subset also overrides their `paths`. |
 | `agent-config` | no | `.github/pr-review-agents.yml` | Path to the YAML file naming this repository's agents, read from the pull request's base commit. The file itself is required — nothing runs by default, and a missing one fails the step. |
+| `fix` | no | `false` | Whether verified fixes are committed to the pull request branch. `true` turns it on; any other value leaves it off. Needs `contents: write`. Off, or when the commit cannot be made, the same fixes are offered as suggested changes on the review comments. |
 | `langfuse-public-key` | no | — | Langfuse public key. Set this and the secret key to manage prompts and collect traces. |
 | `langfuse-secret-key` | no | — | Langfuse secret key. Store it as a secret. |
 | `langfuse-base-url` | no | `https://cloud.langfuse.com` | Langfuse host, for self-hosted instances. |
@@ -193,6 +194,7 @@ Every one of them degrades rather than fails, except the first.
 | `contents: read` | Reads files at the head and base commits, and the agent configuration | The action cannot run |
 | `pull-requests: write` | Findings post as inline review comments | The check run annotates the same lines instead, and logs `review.comments.degraded` |
 | `checks: write` | Publishes the `AI PR Review` check run and its annotations | The whole review is written to the workflow job summary instead, and logs `review.published.degraded` |
+| `contents: write` | Commits verified fixes to the pull request branch, when `fix: true` | The same fixes are offered as suggested changes, and it logs `review.fixes.degraded` |
 
 **Fork pull requests.** GitHub gives a fork-triggered workflow a read-only
 token, so both degradations fire at once and the review lands in the job
