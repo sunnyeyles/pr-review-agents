@@ -1,0 +1,22 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "tasks": {
+    "transit": { "dependsOn": ["^transit"] },
+    "typecheck": { "dependsOn": ["transit"], "outputs": [] },
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**", ".next/**", "!.next/cache/**", "!.next/dev/**"]
+    },
+    "dev": { "cache": false, "persistent": true },
+    "//#test": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "apps/**",
+        "packages/**",
+        "vitest.config.ts"
+      ],
+      "outputs": []
+    },
+    "//#eval": { "cache": false }
+  }
+}
