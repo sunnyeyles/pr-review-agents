@@ -13,6 +13,10 @@
     "test": "vitest run",
     "eval": "vitest run --config evals/vitest.eval.config.ts",
     "seed-prompts": "node scripts/seed-prompts.mjs",
+    "db:generate": "pnpm --filter @pr-review/db db:generate",
+    "db:migrate": "pnpm --filter @pr-review/db db:migrate",
+    "db:push": "pnpm --filter @pr-review/db db:push",
+    "db:studio": "pnpm --filter @pr-review/db db:studio",
     "build": "turbo run build",
     "dev": "turbo run dev"
   },
