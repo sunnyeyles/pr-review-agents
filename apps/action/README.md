@@ -6,7 +6,7 @@ Findings post as inline pull request review comments, alongside a check run
 named `AI PR Review` carrying the full summary. The model provider is
 configurable.
 
-This action ships two specialists and runs neither by default. You name
+This action ships five specialists and runs none by default. You name
 the ones you want in `.github/pr-review-agents.yml` and the review runs exactly
 those — see [Choosing your agents](#choosing-your-agents), which you need
 before the first run.
@@ -48,11 +48,14 @@ copy, and the code under review is never executed.
 
 ## Choosing your agents
 
-Two specialists ship with this action:
+Five specialists ship with this action:
 
 | Name | Reviews for |
 | --- | --- |
 | `security` | Auth, cross-tenant access, injection, secret leakage, privilege |
+| `correctness` | Logic errors, wrong bounds, unhandled null, broken error handling |
+| `performance` | N+1 queries, unbounded reads, quadratic scans, blocking I/O |
+| `test-coverage` | Branches this change adds or changes and leaves untested |
 | `docs-drift` | Documentation this change made wrong |
 
 Name the ones you want in `.github/pr-review-agents.yml`. Nothing runs until
@@ -61,6 +64,9 @@ you do — there is no default review to inherit.
 ```yaml
 agents:
   - security
+  - correctness
+  - performance
+  - test-coverage
   - docs-drift
 ```
 

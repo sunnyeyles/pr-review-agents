@@ -6,6 +6,16 @@ agents:
     paths:
       - "**/*.ts"
       - ".github/workflows/**"
+  - agent: correctness
+    paths:
+      - "**/*.ts"
+  - agent: performance
+    paths:
+      - "**/*.ts"
+  # Tests live beside the sources they cover, so one gate reaches both.
+  - agent: test-coverage
+    paths:
+      - "**/*.ts"
   # Code is what makes documentation stale, so this gate lets code through too.
   - agent: docs-drift
     paths:

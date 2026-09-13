@@ -1,0 +1,20 @@
+{
+  "name": "test-coverage-untested-branch",
+  "title": "Test coverage — new bulk discount tier with no test case",
+  "owner": "northbay-logistics",
+  "repo": "shipping-pricing",
+  "baseSha": "4c1b9f7a26d380e5b1fa47c0836925de17b4cae9",
+  "headSha": "b73e0a5c92148fd6307ae5b48c19d2f60ba58d17",
+  "pullRequest": {
+    "number": 184,
+    "title": "Add the bulk discount tier",
+    "body": "Sales agreed a bulk tier for warehouse customers: once an order reaches the parcel minimum it earns a per-parcel discount, still capped at the usual maximum. Below the minimum a bulk account prices like a standard one.\n\nAdds \"bulk\" to CustomerTier and the matching branch in applyDiscount.",
+    "author": "rmarchetti",
+    "baseRef": "main",
+    "headRef": "feature/bulk-discount-tier"
+  },
+  "changedFiles": [
+    { "path": "src/pricing/tiers.ts", "status": "modified" },
+    { "path": "src/pricing/discount.ts", "status": "modified" }
+  ]
+}

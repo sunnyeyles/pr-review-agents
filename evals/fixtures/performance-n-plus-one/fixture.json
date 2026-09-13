@@ -1,0 +1,22 @@
+{
+  "name": "performance-n-plus-one",
+  "title": "Performance — product lookup per order line",
+  "owner": "northwind-labs",
+  "repo": "invoicing-service",
+  "baseSha": "7c41b09e5da28f3610b7e4c92af5d3681e0b74a9",
+  "headSha": "d38f1a6027bc45e9812f7a3d05be6417c9ad20fe",
+  "pullRequest": {
+    "number": 412,
+    "title": "Show product names on the order summary",
+    "body": "Invoices currently list a SKU per line, which support has to look up by hand.\n\nAdds findProductById to the product data module and uses it from buildOrderSummary so every summary line carries the product name and category alongside the SKU.",
+    "author": "marta-okonkwo",
+    "baseRef": "main",
+    "headRef": "feature/summary-product-names"
+  },
+  "changedFiles": [
+    { "path": "src/data/products.ts", "status": "modified" },
+    { "path": "src/services/order-summary.ts", "status": "modified" },
+    { "path": "src/services/order-summary.test.ts", "status": "modified" },
+    { "path": "src/routes/order-summary.ts", "status": "modified" }
+  ]
+}

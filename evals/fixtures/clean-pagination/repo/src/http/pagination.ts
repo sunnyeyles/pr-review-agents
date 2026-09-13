@@ -15,11 +15,7 @@ export const DEFAULT_PAGE_SIZE = 25;
 /** The largest page a caller may ask for. */
 export const MAX_PAGE_SIZE = 100;
 
-/**
- * The highest page number accepted. Deep pages are answered from the
- * cursor endpoints instead, so an offset can never grow beyond
- * MAX_PAGE * MAX_PAGE_SIZE.
- */
+/** The highest page number accepted, so an offset never exceeds MAX_PAGE * MAX_PAGE_SIZE. */
 export const MAX_PAGE = 1000;
 
 export interface Pagination {

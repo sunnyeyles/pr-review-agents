@@ -153,8 +153,11 @@ describe("main", () => {
     await expect(main([], environment)).resolves.toBe(0);
 
     expect(published.map((entry) => entry.name).sort()).toEqual([
+      "correctness_system",
       "docs_drift_system",
+      "performance_system",
       "security_system",
+      "test_coverage_system",
     ]);
     expect(lines.join("\n")).toContain("security");
   });

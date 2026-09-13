@@ -105,10 +105,17 @@ describe("resolveAgentDefinitions", () => {
 
   it("treats an absent selection and an explicit `all` alike", () => {
     // An unset action input arrives as "", so the two must not differ.
-    expect(names("")).toEqual(["security", "docs-drift"]);
-    expect(names("   ")).toEqual(["security", "docs-drift"]);
-    expect(names(ALL_AGENTS)).toEqual(["security", "docs-drift"]);
-    expect(names("ALL")).toEqual(["security", "docs-drift"]);
+    const all = [
+      "security",
+      "correctness",
+      "performance",
+      "test-coverage",
+      "docs-drift",
+    ];
+    expect(names("")).toEqual(all);
+    expect(names("   ")).toEqual(all);
+    expect(names(ALL_AGENTS)).toEqual(all);
+    expect(names("ALL")).toEqual(all);
   });
 
   it("selects a single agent", () => {
