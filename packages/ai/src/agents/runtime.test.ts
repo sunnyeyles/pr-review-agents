@@ -6,7 +6,10 @@ import { createCapturingLogger } from "@pr-review/logging";
 import { describe, expect, it } from "vitest";
 
 import type { ManagedPrompts } from "../prompts.js";
-import { buildReviewSystemPrompt } from "./definition.js";
+import {
+  buildReviewSystemPrompt,
+  withRepositoryHints,
+} from "./definition.js";
 import {
   AgentRunError,
   createReviewAgent,
@@ -626,6 +629,25 @@ describe("pre-resolved system prompts", () => {
     await agent.run(context);
 
     expect(systemOf(calls[0])).toBe(injected);
+  });
+
+  it("appends this run's repository hints to a managed prompt", async () => {
+    const hint =
+      'This repository has repeatedly not acted on findings like "missing tenant check in". Report one only if it is clearly severe.';
+    const injected = "INJECTED SECURITY SYSTEM PROMPT";
+    const { model, calls } = makeModel([message([textBlock(finalJson)], "end_turn")]);
+    const agent = createReviewAgent(withRepositoryHints(securityAgent, [hint]), {
+      model,
+      github: makeGithub(),
+      logger: createCapturingLogger().logger,
+      systemPrompts: { security: injected },
+    });
+
+    await agent.run(context);
+
+    expect(systemOf(calls[0] as Call)).toBe(
+      `${injected}\n\n# Repository history\nFindings like these have repeatedly been left unaddressed in this repository. They are deprioritised, not banned: report one only if it is clearly severe.\n- ${hint}`,
+    );
   });
 
   it("falls back to the in-code prompt for an agent that has none", async () => {

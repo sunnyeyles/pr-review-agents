@@ -58,7 +58,7 @@ describe("inspectEvent", () => {
     },
   );
 
-  it.each(["closed", "labeled", "assigned", "edited"])(
+  it.each(["labeled", "assigned", "edited"])(
     "ignores the %s action without failing",
     (action) => {
       expect(inspectEvent(payload({ action }), "pull_request")).toEqual({
@@ -118,6 +118,74 @@ describe("inspectEvent", () => {
 
   it("throws on a payload with no action at all", () => {
     expect(() => inspectEvent({}, "pull_request")).toThrow(/no action field/);
+  });
+
+  it("learns from a merged pull request without reviewing it", () => {
+    const merged = payload({
+      action: "closed",
+      pull_request: {
+        number: 42,
+        merged: true,
+        base: { sha: baseSha },
+        head: { sha: headSha, repo: { full_name: "octo-org/example-service" } },
+      },
+    });
+
+    expect(inspectEvent(merged, "pull_request")).toEqual({
+      review: false,
+      learn: true,
+      target: {
+        owner: "octo-org",
+        repo: "example-service",
+        pullRequestNumber: 42,
+        headSha,
+      },
+    });
+  });
+
+  it.each([false, null, undefined])(
+    "skips a closed pull request whose merged flag is %o",
+    (merged) => {
+      expect(
+        inspectEvent(
+          payload({
+            action: "closed",
+            pull_request: {
+              number: 42,
+              ...(merged === undefined ? {} : { merged }),
+              base: { sha: baseSha },
+              head: { sha: headSha },
+            },
+          }),
+          "pull_request",
+        ),
+      ).toEqual({
+        review: false,
+        reason: "pull request closed without merging",
+      });
+    },
+  );
+
+  it("learns from a merged pull_request_target too", () => {
+    const inspection = inspectEvent(
+      payload({
+        action: "closed",
+        pull_request: {
+          number: 42,
+          merged: true,
+          base: { sha: baseSha },
+          head: { sha: headSha },
+        },
+      }),
+      "pull_request_target",
+    );
+    expect(inspection).toMatchObject({ review: false, learn: true });
+  });
+
+  it("throws on a merged event whose payload is malformed", () => {
+    expect(() =>
+      inspectEvent({ action: "closed", repository: {} }, "pull_request"),
+    ).toThrow(/failed schema validation/);
   });
 
   it("rejects a head SHA that is not a full commit SHA", () => {

@@ -11,11 +11,18 @@ import type {
   GithubInstallationClient,
   PullRequestDetails,
   PullRequestRef,
+  ReviewThread,
+  WriteFileRequest,
 } from "@pr-review/github";
 import { createCapturingLogger } from "@pr-review/logging";
-import type { ReviewFinding } from "@pr-review/schemas";
+import {
+  reviewMemorySchema,
+  type MemoryShape,
+  type ReviewFinding,
+} from "@pr-review/schemas";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type { MemoryStore } from "./memory.js";
 import type { PublishReview } from "./publish-review.js";
 import { findingMarker } from "./render-review.js";
 import {
@@ -85,8 +92,10 @@ function makeClient() {
     listCommitShas: vi.fn(async () => []),
     listCommitFiles: vi.fn(async () => []),
     listReviewComments: vi.fn(async (): Promise<ExistingReviewComment[]> => []),
+    listReviewThreads: vi.fn(async (): Promise<ReviewThread[]> => []),
     createCheckRun: vi.fn(async (_input: CreateCheckRunInput) => ({ id: 987 })),
     createReview: vi.fn(async (_input: CreateReviewInput) => ({ id: 654 })),
+    writeFileOnBranch: vi.fn(async (_request: WriteFileRequest) => {}),
   } satisfies GithubInstallationClient;
 }
 
@@ -127,6 +136,8 @@ function makeAgent(
 interface DepsOptions {
   agents?: readonly AgentDefinition[];
   publishReview?: PublishReview;
+  memoryStore?: MemoryStore;
+  now?: () => Date;
 }
 
 function makeDeps(
@@ -569,5 +580,126 @@ describe("reviewPullRequest: path filters", () => {
       expect(client.createCheckRun).not.toHaveBeenCalled();
       expect(publishReview).toHaveBeenCalledTimes(1);
     });
+  });
+});
+
+
+const NOW = new Date("2026-09-13T12:00:00.000Z");
+
+/** A memory file holding one shape, built through the schema the reader parses. */
+function memoryFile(overrides: Partial<MemoryShape> = {}): string {
+  return JSON.stringify(
+    reviewMemorySchema.parse({
+      version: 1,
+      shapes: [
+        {
+          category: "correctness",
+          shape: "assignment instead of comparison in",
+          resolved: 0,
+          ignored: 5,
+          outdated: 0,
+          lastSignalAt: NOW.toISOString(),
+          ...overrides,
+        },
+      ],
+    }),
+  );
+}
+
+function readOnlyStore(content: string): MemoryStore {
+  return {
+    read: () => Promise.resolve(content),
+    write: () => Promise.resolve(),
+  };
+}
+
+describe("reviewPullRequest: repository hints", () => {
+  it("hands the pipeline agents carrying the memory's qualifying shapes", async () => {
+    const { deps, runReviewPipeline } = makeDeps(reviewResult(), {
+      memoryStore: readOnlyStore(memoryFile()),
+      now: () => NOW,
+    });
+
+    await reviewPullRequest(target, deps);
+
+    const [hinted] = runReviewPipeline.mock.calls[0]?.[2] ?? [];
+    expect(hinted?.repositoryHints).toHaveLength(1);
+    expect(hinted?.repositoryHints?.[0]).toContain(
+      '"assignment instead of comparison in"',
+    );
+  });
+
+  it("logs which agents the hints reached", async () => {
+    const { deps, entries } = makeDeps(reviewResult(), {
+      memoryStore: readOnlyStore(memoryFile()),
+      now: () => NOW,
+    });
+
+    await reviewPullRequest(target, deps);
+
+    expect(entries).toContainEqual(
+      expect.objectContaining({
+        event: "memory.hints_attached",
+        repository: "octo-org/example-service",
+        hintCount: 1,
+        agents: ["correctness"],
+      }),
+    );
+  });
+
+  it("logs an empty attachment when no shape qualifies", async () => {
+    const { deps, runReviewPipeline, entries } = makeDeps(reviewResult(), {
+      memoryStore: readOnlyStore(memoryFile({ ignored: 1 })),
+      now: () => NOW,
+    });
+
+    await reviewPullRequest(target, deps);
+
+    const [unhinted] = runReviewPipeline.mock.calls[0]?.[2] ?? [];
+    expect(unhinted?.repositoryHints).toBeUndefined();
+    expect(entries).toContainEqual(
+      expect.objectContaining({
+        event: "memory.hints_attached",
+        hintCount: 0,
+        agents: [],
+      }),
+    );
+  });
+
+  it("passes the agents through untouched when there is no memory store", async () => {
+    const agent = makeAgent("correctness");
+    const { deps, runReviewPipeline, entries } = makeDeps(reviewResult(), {
+      agents: [agent],
+    });
+
+    await reviewPullRequest(target, deps);
+
+    expect(runReviewPipeline.mock.calls[0]?.[2]?.[0]).toBe(agent);
+    expect(entries.map((entry) => entry["event"])).not.toContain(
+      "memory.hints_attached",
+    );
+  });
+
+  it("reviews without hints when the memory cannot be read", async () => {
+    const agent = makeAgent("correctness");
+    const { deps, client, runReviewPipeline, entries } = makeDeps(
+      reviewResult({ candidates: [finding] }),
+      {
+        agents: [agent],
+        memoryStore: {
+          read: () => Promise.reject(new Error("branch unreachable")),
+          write: () => Promise.resolve(),
+        },
+      },
+    );
+
+    await reviewPullRequest(target, deps);
+
+    expect(client.createCheckRun).toHaveBeenCalledTimes(1);
+    expect(runReviewPipeline.mock.calls[0]?.[2]?.[0]).toBe(agent);
+    // readMemory absorbs the transport error, so it surfaces as memory.invalid.
+    expect(entries).toContainEqual(
+      expect.objectContaining({ level: "error", event: "memory.invalid" }),
+    );
   });
 });

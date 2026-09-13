@@ -4,6 +4,7 @@
  */
 import {
   gateAgentsByPaths,
+  withRepositoryHints,
   type AgentDefinition,
   type ReviewContext,
 } from "@pr-review/ai";
@@ -24,6 +25,7 @@ import {
   type PublishReview,
   type PublishReviewComments,
 } from "./publish-review.js";
+import { computeHints, readMemory, type MemoryStore } from "./memory.js";
 import { renderNoAgentMatched } from "./render-check-run.js";
 import { postedFindingKeys } from "./render-review.js";
 import {
@@ -49,6 +51,10 @@ interface ReviewPullRequestDeps {
   publishReviewComments?: PublishReviewComments | undefined;
   /** Every event carries repository, PR number, and head SHA. */
   logger?: StructuredLogger | undefined;
+  /** Where this repository's review memory lives; undefined means no hints. */
+  memoryStore?: MemoryStore | undefined;
+  /** Injectable clock, so a test can pin what counts as a fresh signal. */
+  now?: (() => Date) | undefined;
 }
 
 /** The comments already on the pull request; none if they cannot be read. */
@@ -67,6 +73,42 @@ async function listPostedComments(
     });
     return [];
   }
+}
+
+/** The same agents carrying this repository's hints; unhinted if the read fails. */
+async function attachRepositoryHints(
+  agents: readonly AgentDefinition[],
+  store: MemoryStore,
+  target: ReviewTarget,
+  logger: StructuredLogger,
+  now: Date,
+): Promise<readonly AgentDefinition[]> {
+  let hints: ReadonlyMap<string, readonly string[]>;
+  try {
+    hints = computeHints(await readMemory(store, logger), now);
+  } catch (error) {
+    logger.error("memory.read_failed", {
+      ...reviewCorrelation(target),
+      reason: errorMessage(error),
+      fallback: "reviewing without repository hints",
+    });
+    return agents;
+  }
+
+  let hintCount = 0;
+  for (const sentences of hints.values()) {
+    hintCount += sentences.length;
+  }
+  logger.info("memory.hints_attached", {
+    ...reviewCorrelation(target),
+    hintCount,
+    agents: agents
+      .map((agent) => agent.category)
+      .filter((category) => (hints.get(category)?.length ?? 0) > 0),
+  });
+  return agents.map((agent) =>
+    withRepositoryHints(agent, hints.get(agent.category) ?? []),
+  );
 }
 
 /** Logs the synthesis outcome: skipped, completed, or failed. */
@@ -126,6 +168,8 @@ export async function reviewPullRequest(
     publishReview,
     publishReviewComments,
     logger = createConsoleLogger(),
+    memoryStore,
+    now = () => new Date(),
   }: ReviewPullRequestDeps,
 ): Promise<ReviewPipelineResult> {
   const fields = reviewCorrelation(target);
@@ -141,7 +185,12 @@ export async function reviewPullRequest(
     diffLength: diff.length,
   });
 
-  const { active, skipped } = gateAgentsByPaths(agents, filenames);
+  const hinted =
+    memoryStore === undefined
+      ? agents
+      : await attachRepositoryHints(agents, memoryStore, target, logger, now());
+
+  const { active, skipped } = gateAgentsByPaths(hinted, filenames);
   const skippedNames = skipped.map((skip) => skip.agent);
   for (const skip of skipped) {
     logger.info("agent.skipped", {

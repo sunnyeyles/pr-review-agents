@@ -31,10 +31,10 @@ workflow's own token authenticates the reads and publishes the check run.
 name: AI PR Review
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, closed]
 
 permissions:
-  contents: read
+  contents: write      # read is enough; write only for `memory-branch`
   pull-requests: write
   checks: write        # omit and reviews still land, in the job summary
 
@@ -46,6 +46,10 @@ jobs:
         with:
           api-key: ${{ secrets.OPENAI_API_KEY }}
 ```
+
+The `closed` trigger and `contents: write` are needed only for
+[`memory-branch`](#configuration); without it, drop both back to
+`types: [opened, synchronize, reopened]` and `contents: read`.
 
 Source lives in [`apps/action`](apps/action); `release-action.yml` publishes the
 bundle to the public action repository. `v2` made the provider configurable and
@@ -192,6 +196,7 @@ Set as `with:` inputs on the Action step ([`apps/action/action.yml`](apps/action
 | `model-base-url` | no (default: the provider's own host) | Overrides the provider's API host — a gateway, a proxy, or a compatible endpoint (for `openai`, one that accepts `max_completion_tokens`). |
 | `agents` | no (default `all`) | Which of the configured agents run: `all`, or a comma-separated subset of their names. Naming a subset also overrides any [path filters](#path-filters). |
 | `agent-config` | no (default `.github/pr-review-agents.yml`) | Path to the YAML file naming the agents. Required — nothing runs until a repository names it. |
+| `memory-branch` | no (default: empty, the feature off) | Branch the action stores its review memory on: one JSON file recording what this repository did with each past finding, so repeatedly ignored shapes are deprioritised later. Needs `contents: write` and `closed` in the workflow's `types`. |
 | `langfuse-public-key` | no | Supply this and the secret key to fetch the agent system prompts from [Langfuse](#seeding-the-managed-prompts) and export traces there. Both unset is the default, and runs on the in-code prompts. |
 | `langfuse-secret-key` | no | The other half. Setting only one of the two disables both features and logs `langfuse.disabled_incomplete_credentials`. |
 | `langfuse-base-url` | no (default `https://cloud.langfuse.com`) | Langfuse host, for a self-hosted or regional instance. Keys are region-scoped: the wrong host 401s and drops every trace. |

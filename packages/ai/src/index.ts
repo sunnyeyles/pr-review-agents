@@ -17,7 +17,11 @@ export {
 export type { ReviewAgent, ReviewContext } from "./agent-contract.js";
 export { emptyTokenUsage, type TokenUsage } from "./usage.js";
 export { createReviewAgent } from "./agents/runtime.js";
-export { type AgentDefinition } from "./agents/definition.js";
+export {
+  renderRepositoryHints,
+  withRepositoryHints,
+  type AgentDefinition,
+} from "./agents/definition.js";
 export {
   createReviewAgents,
   gateAgentsByPaths,

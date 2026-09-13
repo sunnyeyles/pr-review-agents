@@ -37,7 +37,13 @@ export function findingMarker(finding: ReviewFinding): string {
   return `<!-- pr-review-finding: ${findingKey(finding)} -->`;
 }
 
+/** The finding marker carries no category, so the category rides its own. */
+export function categoryMarker(finding: ReviewFinding): string {
+  return `<!-- pr-review-category: ${finding.category} -->`;
+}
+
 const MARKER = /<!-- pr-review-finding: (.*?) -->/;
+const CATEGORY_MARKER = /<!-- pr-review-category: (.*?) -->/;
 
 /** The finding keys already posted as comments on a pull request. */
 export function postedFindingKeys(
@@ -53,13 +59,39 @@ export function postedFindingKeys(
   return keys;
 }
 
+export interface PostedFinding {
+  key: string;
+  file: string;
+  title: string;
+  category: string;
+}
+
+/** undefined for a comment predating either marker, or written by a human. */
+export function parsePostedFinding(body: string): PostedFinding | undefined {
+  const key = MARKER.exec(body)?.[1];
+  const category = CATEGORY_MARKER.exec(body)?.[1];
+  if (key === undefined || category === undefined) {
+    return undefined;
+  }
+  const separator = key.lastIndexOf("|");
+  if (separator === -1) {
+    return undefined;
+  }
+  return {
+    key,
+    file: key.slice(0, separator),
+    title: key.slice(separator + 1),
+    category,
+  };
+}
+
 /** One finding as the body of its own inline comment. */
 function commentBody(finding: ReviewFinding): string {
   const lines = [`**${heading(finding)}**`, "", finding.explanation];
   if (finding.suggestedFix !== undefined) {
     lines.push("", `**Suggested fix:** ${finding.suggestedFix}`);
   }
-  lines.push("", findingMarker(finding));
+  lines.push("", findingMarker(finding), categoryMarker(finding));
   return lines.join("\n");
 }
 

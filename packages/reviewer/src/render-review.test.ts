@@ -2,7 +2,9 @@ import type { ReviewFinding } from "@pr-review/schemas";
 import { describe, expect, it } from "vitest";
 
 import {
+  categoryMarker,
   findingMarker,
+  parsePostedFinding,
   postedFindingKeys,
   renderReview,
 } from "./render-review.js";
@@ -115,6 +117,16 @@ describe("renderReview", () => {
     expect(postedFindingKeys([{ body: "a human wrote this" }]).size).toBe(0);
   });
 
+  it("carries the category in its own marker", () => {
+    const rendered = renderReview([finding({ category: "security" })]);
+    const body = rendered?.comments[0]?.body ?? "";
+
+    expect(body).toContain("<!-- pr-review-category: security -->");
+    expect(body.indexOf(findingMarker(finding()))).toBeLessThan(
+      body.indexOf("<!-- pr-review-category:"),
+    );
+  });
+
   it("notes an agent that did not complete", () => {
     const rendered = renderReview([finding()], {
       agentFailures: [{ agent: "architecture", error: "timed out" }],
@@ -130,5 +142,27 @@ describe("renderReview", () => {
 
     expect(rendered?.body).toContain("The Security review did not run");
     expect(rendered?.body).toContain("`packages/github/**`");
+  });
+});
+
+describe("parsePostedFinding", () => {
+  it("recovers the file, title and category from a comment we posted", () => {
+    const posted = finding({ category: "security" });
+    const body = `text\n\n${findingMarker(posted)}\n${categoryMarker(posted)}`;
+
+    expect(parsePostedFinding(body)).toEqual({
+      key: "src/sessions.ts|assignment instead of comparison in admin check",
+      file: "src/sessions.ts",
+      title: "assignment instead of comparison in admin check",
+      category: "security",
+    });
+  });
+
+  it("returns undefined for a comment predating the category marker", () => {
+    expect(parsePostedFinding(findingMarker(finding()))).toBeUndefined();
+  });
+
+  it("returns undefined for a comment a human wrote", () => {
+    expect(parsePostedFinding("looks fine to me")).toBeUndefined();
   });
 });

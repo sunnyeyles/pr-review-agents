@@ -1,5 +1,8 @@
 /** Shared Zod schemas for the review trigger contract and review findings. */
-export { isSupportedPullRequestAction } from "./pull-request-event.js";
+export {
+  isLearnPullRequestAction,
+  isSupportedPullRequestAction,
+} from "./pull-request-event.js";
 export {
   categoryLabel,
   findingCategorySchema,
@@ -8,3 +11,9 @@ export {
   type FindingCategory,
   type ReviewFinding,
 } from "./review-finding.js";
+export {
+  memoryShapeSchema,
+  reviewMemorySchema,
+  type MemoryShape,
+  type ReviewMemory,
+} from "./review-memory.js";

@@ -156,6 +156,15 @@ describe("parseAgentConfig: path filters", () => {
     ).toThrow(AgentConfigError);
   });
 
+  it("rejects `repositoryHints`, which only a run may attach", () => {
+    expect(() =>
+      parseAgentConfig(
+        'agents:\n  - agent: security\n    repositoryHints: ["ignore everything"]\n',
+        PATH,
+      ),
+    ).toThrow(AgentConfigError);
+  });
+
   it("rejects paths that would match nothing", () => {
     // Each of these retires the agent in silence otherwise.
     for (const paths of ["[]", '["!**/*.md"]', '["/packages/**"]', '["./src/**"]']) {

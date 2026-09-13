@@ -2,7 +2,10 @@
  * Reads the pull request out of the Actions event payload. The schema is local
  * to this app: an Actions event carries no `installation.id`.
  */
-import { isSupportedPullRequestAction } from "@pr-review/schemas";
+import {
+  isLearnPullRequestAction,
+  isSupportedPullRequestAction,
+} from "@pr-review/schemas";
 import type { ReviewTarget } from "@pr-review/reviewer";
 import { z } from "zod";
 
@@ -18,6 +21,7 @@ const pullRequestEventSchema = z.object({
   }),
   pull_request: z.object({
     number: z.number().int().positive(),
+    merged: z.boolean().nullable().optional(),
     base: z.object({
       sha: z.string().regex(SHA_PATTERN, SHA_MESSAGE),
     }),
@@ -28,10 +32,41 @@ const pullRequestEventSchema = z.object({
   }),
 });
 
-/** Either a pull request to review, or a reason this event is not one. */
+type ParsedEvent = z.infer<typeof pullRequestEventSchema>;
+
+/**
+ * A pull request to review, a merged one to learn from, or a reason this
+ * event is neither.
+ */
 type EventInspection =
-  | { review: true; target: ReviewTarget; isFork: boolean; baseSha: string }
-  | { review: false; reason: string };
+  | {
+      review: true;
+      learn?: false;
+      target: ReviewTarget;
+      isFork: boolean;
+      baseSha: string;
+    }
+  | { review: false; learn: true; target: ReviewTarget }
+  | { review: false; learn?: false; reason: string };
+
+function parseEvent(payload: unknown): ParsedEvent {
+  const parsed = pullRequestEventSchema.safeParse(payload);
+  if (!parsed.success) {
+    throw new Error(
+      `pull_request event failed schema validation: ${parsed.error.message}`,
+    );
+  }
+  return parsed.data;
+}
+
+function targetOf(parsed: ParsedEvent): ReviewTarget {
+  return {
+    owner: parsed.repository.owner.login,
+    repo: parsed.repository.name,
+    pullRequestNumber: parsed.pull_request.number,
+    headSha: parsed.pull_request.head.sha,
+  };
+}
 
 /**
  * Throws only on a payload claiming to be a supported pull_request event
@@ -49,33 +84,32 @@ export function inspectEvent(
   if (!action.success) {
     throw new Error("event payload has no action field");
   }
+
+  if (isLearnPullRequestAction(action.data.action)) {
+    const parsed = parseEvent(payload);
+    // Only a merge settles what the repository did with each finding.
+    if (parsed.pull_request.merged !== true) {
+      return { review: false, reason: "pull request closed without merging" };
+    }
+    return { review: false, learn: true, target: targetOf(parsed) };
+  }
+
   if (!isSupportedPullRequestAction(action.data.action)) {
     return { review: false, reason: `action ignored: ${action.data.action}` };
   }
 
-  const parsed = pullRequestEventSchema.safeParse(payload);
-  if (!parsed.success) {
-    throw new Error(
-      `pull_request event failed schema validation: ${parsed.error.message}`,
-    );
-  }
-
-  const owner = parsed.data.repository.owner.login;
-  const repo = parsed.data.repository.name;
-  const headRepo = parsed.data.pull_request.head.repo?.full_name;
+  const parsed = parseEvent(payload);
+  const target = targetOf(parsed);
+  const headRepo = parsed.pull_request.head.repo?.full_name;
   return {
     review: true,
-    target: {
-      owner,
-      repo,
-      pullRequestNumber: parsed.data.pull_request.number,
-      headSha: parsed.data.pull_request.head.sha,
-    },
+    target,
     // The configuration is read at this commit: it predates the PR, so
     // the branch under review cannot choose its own reviewers.
-    baseSha: parsed.data.pull_request.base.sha,
+    baseSha: parsed.pull_request.base.sha,
     // Logging only: the publisher reacts to the real permission error
     // rather than predicting it from this flag.
-    isFork: headRepo !== undefined && headRepo !== `${owner}/${repo}`,
+    isFork:
+      headRepo !== undefined && headRepo !== `${target.owner}/${target.repo}`,
   };
 }
