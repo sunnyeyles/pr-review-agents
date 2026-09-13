@@ -304,10 +304,10 @@ describe("createSynthesiser", () => {
 describe("buildSynthesisSystemPrompt", () => {
   it("names the agent set it was built for, whatever its size", () => {
     expect(SYNTHESIS_SYSTEM_PROMPT).toContain(
-      "2 review agents — Security and Docs drift —",
+      "5 review agents — Security, Correctness, Performance, Test coverage, and Docs drift —",
     );
     expect(SYNTHESIS_SYSTEM_PROMPT).toContain(
-      '"category" is "security" | "docs-drift"',
+      '"category" is "security" | "correctness" | "performance" | "test-coverage" | "docs-drift"',
     );
   });
 

@@ -20,6 +20,15 @@ import {
 
 const configuredAgents = repositoryAgents();
 const SECURITY_FALLBACK = buildReviewSystemPrompt(repositoryAgent("security"));
+const CORRECTNESS_FALLBACK = buildReviewSystemPrompt(
+  repositoryAgent("correctness"),
+);
+const PERFORMANCE_FALLBACK = buildReviewSystemPrompt(
+  repositoryAgent("performance"),
+);
+const TEST_COVERAGE_FALLBACK = buildReviewSystemPrompt(
+  repositoryAgent("test-coverage"),
+);
 const DOCS_DRIFT_FALLBACK = buildReviewSystemPrompt(
   repositoryAgent("docs-drift"),
 );
@@ -46,6 +55,12 @@ function makeClient(
 function allValid(): Record<string, string> {
   return {
     security_system: validRemotePrompt("security", "REMOTE SECURITY"),
+    correctness_system: validRemotePrompt("correctness", "REMOTE CORRECTNESS"),
+    performance_system: validRemotePrompt("performance", "REMOTE PERFORMANCE"),
+    test_coverage_system: validRemotePrompt(
+      "test-coverage",
+      "REMOTE TEST COVERAGE",
+    ),
     docs_drift_system: validRemotePrompt("docs-drift", "REMOTE DOCS DRIFT"),
   };
 }
@@ -62,6 +77,9 @@ describe("managed prompt names", () => {
     // Renaming one of these silently orphans the prompt in Langfuse.
     expect(remoteNames(configuredAgents)).toEqual({
       security: "security_system",
+      correctness: "correctness_system",
+      performance: "performance_system",
+      "test-coverage": "test_coverage_system",
       "docs-drift": "docs_drift_system",
     });
   });
@@ -91,16 +109,22 @@ describe("loadManagedPrompts", () => {
     });
 
     expect(prompts.security).toBe(responses["security_system"]);
+    expect(prompts.correctness).toBe(responses["correctness_system"]);
+    expect(prompts.performance).toBe(responses["performance_system"]);
+    expect(prompts["test-coverage"]).toBe(responses["test_coverage_system"]);
     expect(prompts["docs-drift"]).toBe(responses["docs_drift_system"]);
     expect(sources).toEqual({
       security: "langfuse",
+      correctness: "langfuse",
+      performance: "langfuse",
+      "test-coverage": "langfuse",
       "docs-drift": "langfuse",
     });
-    expect(client.getTextPrompt).toHaveBeenCalledTimes(2);
+    expect(client.getTextPrompt).toHaveBeenCalledTimes(5);
     expect(entries).toContainEqual(
       expect.objectContaining({
         event: "langfuse.prompts.loaded",
-        loadedCount: 2,
+        loadedCount: 5,
         fallbackCount: 0,
       }),
     );
@@ -125,6 +149,9 @@ describe("loadManagedPrompts", () => {
     expect(prompts["docs-drift"]).toBe(responses["docs_drift_system"]);
     expect(sources).toEqual({
       security: "fallback",
+      correctness: "langfuse",
+      performance: "langfuse",
+      "test-coverage": "langfuse",
       "docs-drift": "langfuse",
     });
 
@@ -140,6 +167,9 @@ describe("loadManagedPrompts", () => {
   it("falls back to every in-code prompt when all fetches fail", async () => {
     const client = makeClient({
       security_system: new Error("down"),
+      correctness_system: new Error("down"),
+      performance_system: new Error("down"),
+      test_coverage_system: new Error("down"),
       docs_drift_system: new Error("down"),
     });
     const { logger, entries } = createCapturingLogger();
@@ -151,6 +181,9 @@ describe("loadManagedPrompts", () => {
 
     expect(prompts).toEqual({
       security: SECURITY_FALLBACK,
+      correctness: CORRECTNESS_FALLBACK,
+      performance: PERFORMANCE_FALLBACK,
+      "test-coverage": TEST_COVERAGE_FALLBACK,
       "docs-drift": DOCS_DRIFT_FALLBACK,
     });
     expect(Object.values(sources).every((s) => s === "fallback")).toBe(true);
@@ -158,7 +191,7 @@ describe("loadManagedPrompts", () => {
       expect.objectContaining({
         event: "langfuse.prompts.loaded",
         loadedCount: 0,
-        fallbackCount: 2,
+        fallbackCount: 5,
       }),
     );
   });

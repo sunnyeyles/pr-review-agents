@@ -6,15 +6,15 @@ check run carrying the full summary.
 
 The agents ship with the action, in
 [`packages/ai/src/agents/specialists/`](packages/ai/src/agents/specialists) —
-Security and Docs drift. Neither runs by
+Security, Correctness, Performance, Test coverage and Docs drift. None runs by
 default. A repository names the ones it wants in
 [`.github/pr-review-agents.yml`](#choosing-your-agents), and a review runs
 exactly those, in the order that file lists them; with no such file the step
 fails rather than guessing. Any subset can be selected per run.
 
 This repository's own [`.github/pr-review-agents.yml`](.github/pr-review-agents.yml) names
-both and is a working starting point to copy — but it is configuration, not a
-default.
+all five and is a working starting point to copy — but it is configuration, not
+a default.
 
 The agents never touch GitHub. They propose structured findings; deterministic
 application code decides what actually gets published.
@@ -223,12 +223,15 @@ at zero; that is expected, not a regression.
 
 ### Choosing your agents
 
-Two specialists ship with the action, one file each in
+Five specialists ship with the action, one file each in
 [`packages/ai/src/agents/specialists/`](packages/ai/src/agents/specialists):
 
 | Name | Reviews for |
 | --- | --- |
 | `security` | Auth, cross-tenant access, injection, secret leakage, privilege |
+| `correctness` | Logic errors, wrong bounds, unhandled null, broken error handling |
+| `performance` | N+1 queries, unbounded reads, quadratic scans, blocking I/O |
+| `test-coverage` | Branches this change adds or changes and leaves untested |
 | `docs-drift` | Documentation this change made wrong |
 
 A repository names the ones it wants in `.github/pr-review-agents.yml` (or
@@ -237,6 +240,9 @@ wherever `agent-config` points):
 ```yaml
 agents:
   - security
+  - correctness
+  - performance
+  - test-coverage
   - docs-drift
 ```
 
@@ -356,14 +362,14 @@ across the three agents it ran at the time:
 | Correctness | 9 | ~594k |
 | Security | 4 | ~185k |
 
-Architecture and Correctness were dropped after that run; only `security` and
-`docs-drift` ship today. The shape of the number is what carries over, not the
-row.
+Architecture was dropped after that run, and today's `correctness` agent is a
+different prompt from the one measured here. The shape of the number is what
+carries over, not the row.
 
 An agent declaring `contextGuidance` costs the most, because it must retrieve
 surrounding repository context before it may make a claim, and every retrieval
-is another round trip carrying the whole conversation. Of the shipped pair,
-that is `docs-drift`.
+is another round trip carrying the whole conversation. Every shipped agent but
+`security` declares one.
 
 Prompt caching reprices that traffic rather than reducing it: roughly 0.1x for
 a cache read against 1.25x for the write that put it there. Each agent turn asks
@@ -389,7 +395,7 @@ the sum of its agents, and narrowing the set cuts that roughly in proportion:
 ```yaml
         with:
           api-key: ${{ secrets.OPENAI_API_KEY }}
-          agents: security        # or: security,docs-drift
+          agents: security        # or: security,correctness
 ```
 
 An unrecognised name fails the step **before any model call**, rather than

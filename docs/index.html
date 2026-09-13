@@ -38,9 +38,11 @@
   --accent-ink: light-dark(#FFFFFF, #1A0710);
   --accent-wash:light-dark(#FBE9EE, #2A1119);
 
-  --agent-c:    light-dark(#12666A, #4FBDB6);  /* docs-drift   — teal    */
-  --agent-s:    light-dark(#B4133F, #FF5B80);  /* security     — crimson */
-  --agent-a:    light-dark(#7E5A12, #D9A94A);  /* third agent  — bronze  */
+  --agent-c:    light-dark(#12666A, #4FBDB6);  /* docs-drift    — teal    */
+  --agent-s:    light-dark(#B4133F, #FF5B80);  /* security      — crimson */
+  --agent-a:    light-dark(#7E5A12, #D9A94A);  /* correctness   — bronze  */
+  --agent-p:    light-dark(#2F4BA0, #8CA0EE);  /* performance   — indigo  */
+  --agent-t:    light-dark(#6B2C87, #C18FE2);  /* test-coverage — violet  */
 
   --code-bg:    light-dark(#10151C, #070B0F);
   --code-fg:    light-dark(#DCE4EC, #D3DCE5);
@@ -192,22 +194,24 @@ h1, h2, h3 { text-wrap: balance; line-height: 1.15; font-weight: 600; }
 .link { width: 2px; height: 22px; background: var(--rule); margin: 0 auto; }
 .link.long { height: 30px; }
 
-/* the agent cards: one column per configured agent, three here by example */
-.agents { display: grid; grid-template-columns: repeat(3, 1fr); gap: .6rem; }
+/* the agent cards: one column per configured agent, five here by example */
+.agents { display: grid; grid-template-columns: repeat(5, 1fr); gap: .4rem; }
 .agents-note { text-align: center; font-size: .64rem; color: var(--slate-dim); margin-top: .4rem; }
 .agent {
   border: 1px solid var(--rule); border-top: 3px solid var(--lc); border-radius: 3px;
-  background: var(--surface-2); padding: .65rem .5rem; text-align: center; font-size: .72rem;
+  background: var(--surface-2); padding: .6rem .3rem; text-align: center; font-size: .7rem;
 }
-.agent b { display: block; color: var(--lc); font-weight: 600; }
+.agent b { display: block; color: var(--lc); font-weight: 600; font-size: .68rem; }
 .agent span { display: block; font-size: .64rem; color: var(--slate-dim); margin-top: .15rem; }
 .agent.c { --lc: var(--agent-c); }
 .agent.s { --lc: var(--agent-s); }
 .agent.a { --lc: var(--agent-a); }
+.agent.p { --lc: var(--agent-p); }
+.agent.t { --lc: var(--agent-t); }
 
 /* fan brackets: ::before draws the horizontal half-segments,
    ::after drops the vertical stub at each column centre */
-.fan { display: grid; grid-template-columns: repeat(3, 1fr); height: 22px; }
+.fan { display: grid; grid-template-columns: repeat(5, 1fr); height: 22px; }
 .fan > i { position: relative; display: block; }
 .fan > i::after {
   content: ""; position: absolute; top: 0; bottom: 0;
@@ -216,9 +220,9 @@ h1, h2, h3 { text-wrap: balance; line-height: 1.15; font-weight: 600; }
 .fan > i::before { content: ""; position: absolute; height: 0; }
 .fan.out > i::before { top: 0; border-top: 2px solid var(--rule); }
 .fan.in  > i::before { bottom: 0; border-bottom: 2px solid var(--rule); }
-.fan > i:nth-child(1)::before { left: 50%; right: 0; }
-.fan > i:nth-child(2)::before { left: 0; right: 0; }
-.fan > i:nth-child(3)::before { left: 0; right: 50%; }
+.fan > i::before { left: 0; right: 0; }
+.fan > i:first-child::before { left: 50%; }
+.fan > i:last-child::before { right: 50%; }
 
 /* the two publish outcomes */
 .split { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem; }
@@ -415,15 +419,18 @@ html { scroll-behavior: smooth; }
 
         <div class="node terminal">START<span class="n-sub">runReviewPipeline</span></div>
 
-        <div class="fan out"><i></i><i></i></div>
+        <div class="fan out"><i></i><i></i><i></i><i></i><i></i></div>
 
         <div class="agents">
           <div class="agent s"><b>security</b><span>authz · injection · leaks</span></div>
+          <div class="agent a"><b>correctness</b><span>logic · bounds · nulls</span></div>
+          <div class="agent p"><b>performance</b><span>N+1 · scans · blocking</span></div>
+          <div class="agent t"><b>test-coverage</b><span>untested branches</span></div>
           <div class="agent c"><b>docs-drift</b><span>README · flags · examples</span></div>
         </div>
         <div class="agents-note">this repository's <code>.github/pr-review-agents.yml</code> — yours names its own subset of the shipped specialists</div>
 
-        <div class="fan in"><i></i><i></i></div>
+        <div class="fan in"><i></i><i></i><i></i><i></i><i></i></div>
 
         <div class="node">join<span class="n-sub">fan-in, re-sorted to agent order</span></div>
         <div class="link"></div>
@@ -614,7 +621,7 @@ html { scroll-behavior: smooth; }
         <table>
           <thead><tr><th>Field</th><th>Required</th><th>Meaning</th></tr></thead>
           <tbody>
-            <tr><td><code>agent</code></td><td><span class="badge stop">Yes</span></td><td>A built-in's name: <code>security</code> or <code>docs-drift</code>. Also the one finding category it may report</td></tr>
+            <tr><td><code>agent</code></td><td><span class="badge stop">Yes</span></td><td>A built-in's name: <code>security</code>, <code>correctness</code>, <code>performance</code>, <code>test-coverage</code>, or <code>docs-drift</code>. Also the one finding category it may report</td></tr>
             <tr><td><code>model</code></td><td><span class="badge ok">No</span></td><td>Model id for this agent alone, as the provider spells it</td></tr>
             <tr><td><code>paths</code></td><td><span class="badge ok">No</span></td><td>Globs deciding whether the agent runs at all. Never reaches a prompt</td></tr>
           </tbody>
@@ -1117,7 +1124,7 @@ review.started<br>
             <tr><td><code>.github/pr-review-agents.yml</code></td><td>The agents this repository reviews with</td></tr>
             <tr><td><code>packages/ai/src/agents/config.ts</code></td><td>Reading and validating a repository's agents</td></tr>
             <tr><td><code>packages/ai/src/agents/definition.ts</code></td><td>What an agent is, and its shared system prompt</td></tr>
-            <tr><td><code>packages/ai/src/agents/specialists/</code></td><td>The built-ins a config may name: <code>security</code>, <code>docs-drift</code></td></tr>
+            <tr><td><code>packages/ai/src/agents/specialists/</code></td><td>The built-ins a config may name: <code>security</code>, <code>correctness</code>, <code>performance</code>, <code>test-coverage</code>, <code>docs-drift</code></td></tr>
             <tr><td><code>packages/ai/src/agents/agent-set.ts</code></td><td>Narrowing an agent set, gating it, building its agents</td></tr>
             <tr><td><code>packages/ai/src/prompts.ts</code></td><td>Managed prompts and their fallback</td></tr>
             <tr><td><code>apps/action/src/langfuse.ts</code></td><td>Span export for one run</td></tr>
@@ -1188,17 +1195,22 @@ ANTHROPIC_API_KEY=... pnpm eval</pre>
 
       <div class="prose">
         <p>
-          The fixtures are chosen to fail in different directions:
-          <code>security-tenant-scope</code> queries customers without
-          checking the tenant, and
-          <code>clean-pagination</code> is correct code that must produce
+          The fixtures are chosen to fail in different directions. Four plant
+          one bug each for one agent to find —
+          <code>security-tenant-scope</code> queries customers without checking
+          the tenant, <code>correctness-admin-check</code> assigns where it
+          meant to compare, <code>performance-n-plus-one</code> queries once per
+          order line, and <code>test-coverage-untested-branch</code> adds a
+          pricing tier the untouched test never exercises. The fifth,
+          <code>clean-pagination</code>, is correct code that must produce
           <strong>no</strong> findings at all — the case that catches a model
           inventing problems to look useful.
         </p>
         <p>
-          A run is four assertions — a security finding anchored to the planted
-          bug, no findings on the clean fixture, and an agents-completed health
-          check on each. Everything else comes from the ordinary pipeline log:
+          A run is ten assertions — a finding of the right category anchored to
+          each planted bug, no findings on the clean fixture, and an
+          agents-completed health check on all five. Everything else comes from
+          the ordinary pipeline log:
           <code>agent.completed</code> carries the duration, the four token
           counters and the finding count per agent.
         </p>

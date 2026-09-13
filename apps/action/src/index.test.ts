@@ -621,9 +621,27 @@ describe("agent selection", () => {
     expect(selection(entries)).toEqual({
       level: "info",
       event: "review.agents_selected",
-      agents: ["security", "docs-drift"],
-      configuredAgents: ["security", "docs-drift"],
-      pathFilteredAgents: ["security", "docs-drift"],
+      agents: [
+      "security",
+      "correctness",
+      "performance",
+      "test-coverage",
+      "docs-drift",
+    ],
+      configuredAgents: [
+      "security",
+      "correctness",
+      "performance",
+      "test-coverage",
+      "docs-drift",
+    ],
+      pathFilteredAgents: [
+      "security",
+      "correctness",
+      "performance",
+      "test-coverage",
+      "docs-drift",
+    ],
     });
   });
 
@@ -639,7 +657,13 @@ describe("agent selection", () => {
       level: "info",
       event: "review.agents_selected",
       agents: ["security", "docs-drift"],
-      configuredAgents: ["security", "docs-drift"],
+      configuredAgents: [
+      "security",
+      "correctness",
+      "performance",
+      "test-coverage",
+      "docs-drift",
+    ],
       pathFilteredAgents: [],
     });
     expect(modelCalls()).toBe(2);
@@ -653,7 +677,13 @@ describe("agent selection", () => {
 
     await runAction(environment);
 
-    expect(selection(entries)?.["agents"]).toEqual(["security", "docs-drift"]);
+    expect(selection(entries)?.["agents"]).toEqual([
+      "security",
+      "correctness",
+      "performance",
+      "test-coverage",
+      "docs-drift",
+    ]);
   });
 
   it("fails on an unknown name before building the model client", async () => {
@@ -710,6 +740,12 @@ describe("path filters", () => {
 
 const remotePrompts = {
   security_system: validRemotePrompt("security", "REMOTE SECURITY"),
+  correctness_system: validRemotePrompt("correctness", "REMOTE CORRECTNESS"),
+  performance_system: validRemotePrompt("performance", "REMOTE PERFORMANCE"),
+  test_coverage_system: validRemotePrompt(
+    "test-coverage",
+    "REMOTE TEST COVERAGE",
+  ),
   docs_drift_system: validRemotePrompt("docs-drift", "REMOTE DOCS DRIFT"),
 };
 
@@ -760,15 +796,18 @@ describe("Langfuse wiring", () => {
       },
     ]);
     expect(promptFetches.map((fetch) => fetch.name).sort()).toEqual([
+      "correctness_system",
       "docs_drift_system",
+      "performance_system",
       "security_system",
+      "test_coverage_system",
     ]);
     expect(promptFetches.every((fetch) => fetch.label === "production")).toBe(true);
     // Fetching is not accepting: the contract guard could still reject them all.
     expect(entries).toContainEqual(
       expect.objectContaining({
         event: "langfuse.prompts.loaded",
-        loadedCount: 2,
+        loadedCount: 5,
         fallbackCount: 0,
       }),
     );
@@ -843,6 +882,9 @@ describe("Langfuse wiring", () => {
       {
         prompts: {
           security_system: new Error("langfuse unavailable"),
+          correctness_system: new Error("langfuse unavailable"),
+          performance_system: new Error("langfuse unavailable"),
+          test_coverage_system: new Error("langfuse unavailable"),
           docs_drift_system: new Error("langfuse unavailable"),
         },
       },
@@ -854,7 +896,7 @@ describe("Langfuse wiring", () => {
       expect.objectContaining({
         event: "langfuse.prompts.loaded",
         loadedCount: 0,
-        fallbackCount: 2,
+        fallbackCount: 5,
       }),
     );
   });

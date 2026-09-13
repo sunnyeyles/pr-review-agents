@@ -44,6 +44,64 @@ export const evalCases: EvalCase[] = [
     ],
   },
   {
+    fixture: "correctness-admin-check",
+    expectations: [
+      agentsCompleted,
+      {
+        kind: "finding",
+        description:
+          "reports a correctness finding on the since filter, which keeps the events before the timestamp instead of the events after it",
+        category: "correctness",
+        anchors: [
+          {
+            file: "src/routes/admin-audit.ts",
+            startMarker: "export async function getAuditEvents",
+          },
+        ],
+      },
+    ],
+  },
+  {
+    fixture: "test-coverage-untested-branch",
+    expectations: [
+      agentsCompleted,
+      {
+        kind: "finding",
+        description:
+          "reports a test-coverage finding on the new bulk tier branch the untouched discount test never exercises",
+        category: "test-coverage",
+        anchors: [
+          {
+            file: "src/pricing/discount.ts",
+            startMarker: "export const BULK_PARCEL_RATE",
+          },
+          {
+            file: "src/pricing/discount.ts",
+            startMarker: "export function applyDiscount",
+          },
+        ],
+      },
+    ],
+  },
+  {
+    fixture: "performance-n-plus-one",
+    expectations: [
+      agentsCompleted,
+      {
+        kind: "finding",
+        description:
+          "reports a performance finding on the summary loop that queries one product per order line",
+        category: "performance",
+        anchors: [
+          {
+            file: "src/services/order-summary.ts",
+            startMarker: "export async function buildOrderSummary",
+          },
+        ],
+      },
+    ],
+  },
+  {
     fixture: "clean-pagination",
     expectations: [
       agentsCompleted,
