@@ -23,10 +23,10 @@ confidence threshold. The review is advisory and never blocks a merge.
 name: AI PR Review
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, closed]
 
 permissions:
-  contents: read
+  contents: write
   pull-requests: write
   checks: write
 
@@ -38,6 +38,10 @@ jobs:
         with:
           api-key: ${{ secrets.OPENAI_API_KEY }}
 ```
+
+The `closed` trigger and `contents: write` are needed only for
+[`memory-branch`](#inputs); without it, `types: [opened, synchronize,
+reopened]` and `contents: read` are enough.
 
 Moving from `v1`: the `anthropic-api-key` input is now `api-key`, and
 `model-provider` selects OpenAI (the default) or Anthropic.
@@ -138,6 +142,7 @@ of this action's repository — copy it and edit.
 | `model-base-url` | no | the provider's own host | Overrides the provider's API host — a gateway, a proxy, or a compatible endpoint (for `openai`, one that accepts `max_completion_tokens`). |
 | `agents` | no | `all` | Which of the configured agents run: `all`, or a comma-separated subset of their names. Naming a subset also overrides their `paths`. |
 | `agent-config` | no | `.github/pr-review-agents.yml` | Path to the YAML file naming this repository's agents, read from the pull request's base commit. The file itself is required — nothing runs by default, and a missing one fails the step. |
+| `memory-branch` | no | — | Branch the action stores its review memory on: one JSON file recording what this repository did with each past finding, so repeatedly ignored shapes are deprioritised in later reviews. Empty turns the feature off. Needs `contents: write` and `closed` in the workflow's `types`. |
 | `langfuse-public-key` | no | — | Langfuse public key. Set this and the secret key to manage prompts and collect traces. |
 | `langfuse-secret-key` | no | — | Langfuse secret key. Store it as a secret. |
 | `langfuse-base-url` | no | `https://cloud.langfuse.com` | Langfuse host, for self-hosted instances. |
@@ -201,6 +206,6 @@ inline placement is lost.
 
 ## What it does not do
 
-No automatic fixing, no automatic merging or approval, no review history, no
-persistent memory between runs, and no writes of any kind beyond the single
-check run.
+No automatic fixing, no automatic merging or approval, and no review history.
+Without `memory-branch` it keeps no memory between runs and writes nothing
+beyond the check run and its comments.

@@ -8,6 +8,7 @@ import type {
   ChangedFile,
   GithubInstallationClient,
   PullRequestDetails,
+  WriteFileRequest,
 } from "@pr-review/github";
 import type { ReviewFinding } from "@pr-review/schemas";
 import { vi } from "vitest";
@@ -212,8 +213,12 @@ export function makeGithub() {
     listCommitShas: vi.fn(async () => ["c0ffee1"]),
     listCommitFiles: vi.fn(async () => ["src/sessions.ts", "docs/sessions.md"]),
     listReviewComments: vi.fn(async () => []),
+    listReviewThreads: vi.fn(async () => []),
     createCheckRun: vi.fn(async () => ({ id: 987 })),
     createReview: vi.fn(async () => ({ id: 654 })),
+    writeFileOnBranch: vi.fn(async (request: WriteFileRequest) => {
+      throw new Error(`unexpected write to ${request.path}`);
+    }),
   } satisfies GithubInstallationClient;
 }
 

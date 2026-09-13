@@ -4,6 +4,8 @@ import type {
   ExistingReviewComment,
   GithubInstallationClient,
   PullRequestDetails,
+  ReviewThread,
+  WriteFileRequest,
 } from "@pr-review/github";
 import { describe, expect, it, vi } from "vitest";
 
@@ -32,8 +34,10 @@ function makeClient() {
     listCommitShas: vi.fn(async () => []),
     listCommitFiles: vi.fn(async () => []),
     listReviewComments: vi.fn(async (): Promise<ExistingReviewComment[]> => []),
+    listReviewThreads: vi.fn(async (): Promise<ReviewThread[]> => []),
     createCheckRun: vi.fn(async (_input: CreateCheckRunInput) => ({ id: 987 })),
     createReview: vi.fn(async (_input: CreateReviewInput) => ({ id: 654 })),
+    writeFileOnBranch: vi.fn(async (_request: WriteFileRequest) => {}),
   } satisfies GithubInstallationClient;
 }
 

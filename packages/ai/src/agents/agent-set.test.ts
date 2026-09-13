@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 import {
   ALL_AGENTS,
   buildReviewSystemPrompt,
+  withRepositoryHints,
   type AgentDefinition,
 } from "./definition.js";
 import {
@@ -274,6 +275,39 @@ describe("prompt wiring", () => {
         .sort();
       expect(toolNames).toEqual(REVIEW_TOOL_NAMES);
     }
+  });
+});
+
+describe("repository hints", () => {
+  const hint =
+    'This repository has repeatedly not acted on findings like "missing tenant check in". Report one only if it is clearly severe.';
+
+  it("renders the hints between the context section and the security rules", () => {
+    const prompt = buildReviewSystemPrompt(
+      withRepositoryHints(securityAgent, [hint, "A second sentence."]),
+    );
+
+    expect(prompt).toContain(
+      `\n\n# Repository history\nFindings like these have repeatedly been left unaddressed in this repository. They are deprioritised, not banned: report one only if it is clearly severe.\n- ${hint}\n- A second sentence.\n\n# Security rules`,
+    );
+    expectInjectionHardened(prompt, "security");
+  });
+
+  it("renders nothing for an absent or empty hint list", () => {
+    const plain = buildReviewSystemPrompt(securityAgent);
+
+    expect(plain).not.toContain("# Repository history");
+    expect(buildReviewSystemPrompt({ ...securityAgent, repositoryHints: [] })).toBe(
+      plain,
+    );
+  });
+
+  it("returns the agent unchanged when there is nothing to deprioritise", () => {
+    expect(withRepositoryHints(securityAgent, [])).toBe(securityAgent);
+    expect(withRepositoryHints(securityAgent, [hint])).toEqual({
+      ...securityAgent,
+      repositoryHints: [hint],
+    });
   });
 });
 

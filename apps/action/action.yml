@@ -68,6 +68,16 @@ inputs:
       running a review nobody configured.
     required: false
     default: .github/pr-review-agents.yml
+  memory-branch:
+    description: >-
+      Branch this action stores its review memory on — one JSON file recording
+      what this repository did with each past finding, so shapes it repeatedly
+      ignores are deprioritised in later reviews. Leave empty, the default, and
+      the feature is off: nothing is read and nothing is written. Setting it
+      needs contents: write on the job, and a `closed` entry in the workflow's
+      pull_request `types`, which is when the outcomes are recorded.
+    required: false
+    default: ""
   langfuse-public-key:
     description: >-
       Langfuse public key. Supply this and langfuse-secret-key to fetch the

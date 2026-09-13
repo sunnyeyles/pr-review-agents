@@ -152,9 +152,26 @@ export interface ExistingReviewComment {
   body: string;
 }
 
+/** One review thread; `body` is its first comment, where our marker lives. */
+export interface ReviewThread {
+  body: string;
+  isResolved: boolean;
+  isOutdated: boolean;
+}
+
+/** One file written to a branch, created from the default branch if absent. */
+export interface WriteFileRequest {
+  owner: string;
+  repo: string;
+  branch: string;
+  path: string;
+  content: string;
+  message: string;
+}
+
 /**
  * A GitHub client for one repository's installation. Read-only except
- * createCheckRun and createReview; every method is repository-scoped.
+ * createCheckRun, createReview and writeFileOnBranch; all repository-scoped.
  */
 export interface GithubInstallationClient {
   getPullRequest(ref: PullRequestRef): Promise<PullRequestDetails>;
@@ -170,7 +187,11 @@ export interface GithubInstallationClient {
   listCommitFiles(request: CommitFilesRequest): Promise<string[]>;
   /** Every inline review comment already on the pull request. */
   listReviewComments(ref: PullRequestRef): Promise<ExistingReviewComment[]>;
+  /** Every review thread on the pull request, with its resolution state. */
+  listReviewThreads(ref: PullRequestRef): Promise<ReviewThread[]>;
   createCheckRun(input: CreateCheckRunInput): Promise<CheckRun>;
   /** Publishes one advisory review with inline comments. */
   createReview(input: CreateReviewInput): Promise<PullRequestReview>;
+  /** Writes one file to a branch, creating the branch from default if absent. */
+  writeFileOnBranch(request: WriteFileRequest): Promise<void>;
 }

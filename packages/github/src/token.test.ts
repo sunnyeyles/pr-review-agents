@@ -13,6 +13,8 @@ const ref: PullRequestRef = {
 
 const headSha = "6dcb09b5b57875f334f61aebed695e2e4193db5e";
 
+const defaultBranchSha = "1111111111111111111111111111111111111111";
+
 /** Stand-in for the workflow token Actions hands the step. */
 const token = "ghs_workflowtoken";
 
@@ -120,21 +122,59 @@ const commitResponse = {
   ],
 };
 
+/** An Octokit-shaped error: the status is all the client reacts to. */
+function notFound(): Error {
+  return Object.assign(new Error("Not Found"), { status: 404 });
+}
+
+/** One reviewThreads page; `body` undefined means a thread with no comments. */
+function thread(
+  body: string | undefined,
+  flags: { isResolved?: boolean; isOutdated?: boolean } = {},
+) {
+  return {
+    isResolved: flags.isResolved ?? false,
+    isOutdated: flags.isOutdated ?? false,
+    comments: { nodes: body === undefined ? [] : [{ body }] },
+  };
+}
+
+function threadPage(
+  nodes: unknown[],
+  pageInfo: { hasNextPage: boolean; endCursor: string | null } = {
+    hasNextPage: false,
+    endCursor: null,
+  },
+) {
+  return {
+    repository: { pullRequest: { reviewThreads: { pageInfo, nodes } } },
+  };
+}
+
 interface StubOptions {
   filePages?: unknown[][];
   pullData?: unknown;
   diffData?: unknown;
   contentData?: unknown;
+  /** When set, repos.getContent rejects with it instead of returning data. */
+  contentError?: unknown;
   searchData?: unknown;
   reviewData?: unknown;
   reviewCommentPages?: unknown[][];
   commitListData?: unknown;
   commitData?: unknown;
+  graphqlPages?: unknown[];
+  /** Refs that exist, keyed as git.getRef takes them ("heads/main"). */
+  refShas?: Record<string, string>;
+  repoData?: unknown;
 }
 
 function makeOctokit(options: StubOptions = {}) {
   const filePages = options.filePages ?? [[makeFile(1), makeFile(2)]];
   const commentPages = options.reviewCommentPages ?? [[]];
+  const graphqlPages = options.graphqlPages ?? [threadPage([])];
+  const refShas = options.refShas ?? { "heads/main": defaultBranchSha };
+  let graphqlCalls = 0;
   const octokit = {
     rest: {
       pulls: {
@@ -172,10 +212,16 @@ function makeOctokit(options: StubOptions = {}) {
         ),
       },
       repos: {
+        get: vi.fn(async (_params: { owner: string; repo: string }) => ({
+          data: options.repoData ?? { default_branch: "main" },
+        })),
         getContent: vi.fn(
-          async (_params: { owner: string; repo: string; path: string; ref: string }) => ({
-            data: options.contentData ?? fileContentsResponse,
-          }),
+          async (_params: { owner: string; repo: string; path: string; ref: string }) => {
+            if (options.contentError !== undefined) {
+              throw options.contentError;
+            }
+            return { data: options.contentData ?? fileContentsResponse };
+          },
         ),
         listCommits: vi.fn(
           async (_params: Parameters<OctokitLike["rest"]["repos"]["listCommits"]>[0]) => ({
@@ -186,6 +232,29 @@ function makeOctokit(options: StubOptions = {}) {
           async (_params: Parameters<OctokitLike["rest"]["repos"]["getCommit"]>[0]) => ({
             data: options.commitData ?? commitResponse,
           }),
+        ),
+        createOrUpdateFileContents: vi.fn(
+          async (
+            _params: Parameters<
+              OctokitLike["rest"]["repos"]["createOrUpdateFileContents"]
+            >[0],
+          ) => ({ data: { commit: { sha: "newcommit" } } }),
+        ),
+      },
+      git: {
+        getRef: vi.fn(
+          async (params: Parameters<OctokitLike["rest"]["git"]["getRef"]>[0]) => {
+            const sha = refShas[params.ref];
+            if (sha === undefined) {
+              throw notFound();
+            }
+            return { data: { object: { sha } } };
+          },
+        ),
+        createRef: vi.fn(
+          async (
+            _params: Parameters<OctokitLike["rest"]["git"]["createRef"]>[0],
+          ) => ({ data: { ref: "created" } }),
         ),
       },
       search: {
@@ -202,6 +271,16 @@ function makeOctokit(options: StubOptions = {}) {
         ),
       },
     },
+    graphql: vi.fn(
+      async (_query: string, _variables: Record<string, unknown>) => {
+        const page = graphqlPages[graphqlCalls];
+        graphqlCalls += 1;
+        if (page === undefined) {
+          throw new Error("stub ran out of scripted GraphQL pages");
+        }
+        return page;
+      },
+    ),
   } satisfies OctokitLike;
   return octokit;
 }
@@ -878,5 +957,144 @@ describe("createReview", () => {
         comments,
       }),
     ).rejects.toThrow();
+  });
+});
+
+describe("listReviewThreads", () => {
+  it("walks every page, passing the previous page's end cursor", async () => {
+    const { octokit, client } = makeClient({
+      graphqlPages: [
+        threadPage([thread("first", { isResolved: true })], {
+          hasNextPage: true,
+          endCursor: "cursor-1",
+        }),
+        threadPage([thread("second", { isOutdated: true })]),
+      ],
+    });
+
+    const threads = await client.listReviewThreads(ref);
+
+    expect(threads).toEqual([
+      { body: "first", isResolved: true, isOutdated: false },
+      { body: "second", isResolved: false, isOutdated: true },
+    ]);
+    expect(octokit.graphql).toHaveBeenCalledTimes(2);
+    expect(octokit.graphql.mock.calls[0]?.[1]).toEqual({
+      owner: "octo-org",
+      name: "example-service",
+      number: 42,
+      cursor: null,
+    });
+    expect(octokit.graphql.mock.calls[1]?.[1]).toEqual(
+      expect.objectContaining({ cursor: "cursor-1" }),
+    );
+  });
+
+  it("drops threads that carry no comments", async () => {
+    const { client } = makeClient({
+      graphqlPages: [threadPage([thread(undefined), thread("kept")])],
+    });
+
+    await expect(client.listReviewThreads(ref)).resolves.toEqual([
+      { body: "kept", isResolved: false, isOutdated: false },
+    ]);
+  });
+
+  it("returns nothing for a pull request with no threads", async () => {
+    const { octokit, client } = makeClient();
+
+    await expect(client.listReviewThreads(ref)).resolves.toEqual([]);
+    expect(octokit.graphql).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects a malformed GraphQL response", async () => {
+    const { client } = makeClient({ graphqlPages: [{ repository: null }] });
+
+    await expect(client.listReviewThreads(ref)).rejects.toThrow();
+  });
+});
+
+const writeRequest = {
+  owner: "octo-org",
+  repo: "example-service",
+  branch: "ai-review-memory",
+  path: ".github/pr-review-memory.md",
+  content: "# Dismissed findings\n",
+  message: "Record dismissed findings",
+};
+
+describe("writeFileOnBranch", () => {
+  it("branches the default branch head when the branch does not exist", async () => {
+    const { octokit, client } = makeClient({ contentError: notFound() });
+
+    await client.writeFileOnBranch(writeRequest);
+
+    expect(octokit.rest.repos.get).toHaveBeenCalledExactlyOnceWith({
+      owner: "octo-org",
+      repo: "example-service",
+    });
+    expect(octokit.rest.git.createRef).toHaveBeenCalledExactlyOnceWith({
+      owner: "octo-org",
+      repo: "example-service",
+      ref: "refs/heads/ai-review-memory",
+      sha: defaultBranchSha,
+    });
+    expect(
+      octokit.rest.repos.createOrUpdateFileContents,
+    ).toHaveBeenCalledExactlyOnceWith({
+      owner: "octo-org",
+      repo: "example-service",
+      path: ".github/pr-review-memory.md",
+      message: "Record dismissed findings",
+      content: Buffer.from("# Dismissed findings\n", "utf8").toString("base64"),
+      branch: "ai-review-memory",
+    });
+  });
+
+  it("leaves an existing branch alone", async () => {
+    const { octokit, client } = makeClient({
+      refShas: { "heads/ai-review-memory": headSha },
+      contentError: notFound(),
+    });
+
+    await client.writeFileOnBranch(writeRequest);
+
+    expect(octokit.rest.repos.get).not.toHaveBeenCalled();
+    expect(octokit.rest.git.createRef).not.toHaveBeenCalled();
+  });
+
+  it("passes the current blob SHA when the file already exists", async () => {
+    const { octokit, client } = makeClient({
+      refShas: { "heads/ai-review-memory": headSha },
+    });
+
+    await client.writeFileOnBranch(writeRequest);
+
+    expect(octokit.rest.repos.getContent).toHaveBeenCalledExactlyOnceWith({
+      owner: "octo-org",
+      repo: "example-service",
+      path: ".github/pr-review-memory.md",
+      ref: "ai-review-memory",
+    });
+    expect(octokit.rest.repos.createOrUpdateFileContents).toHaveBeenCalledWith(
+      expect.objectContaining({ sha: "def456" }),
+    );
+  });
+
+  it("rejects when the default branch itself cannot be resolved", async () => {
+    const { client } = makeClient({ refShas: {} });
+
+    await expect(client.writeFileOnBranch(writeRequest)).rejects.toThrow(
+      /no main branch/,
+    );
+  });
+
+  it("rejects when reading the existing file fails for any other reason", async () => {
+    const { client } = makeClient({
+      refShas: { "heads/ai-review-memory": headSha },
+      contentError: Object.assign(new Error("boom"), { status: 500 }),
+    });
+
+    await expect(client.writeFileOnBranch(writeRequest)).rejects.toThrow("boom");
   });
 });

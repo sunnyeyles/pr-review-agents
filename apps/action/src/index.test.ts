@@ -14,7 +14,13 @@ import {
   validRemotePrompt,
 } from "../../../packages/ai/src/agent-test-support.js";
 import { createCapturingLogger } from "@pr-review/logging";
-import type { FileContentsRequest, GithubInstallationClient } from "@pr-review/github";
+import type {
+  FileContentsRequest,
+  GithubInstallationClient,
+  ReviewThread,
+  WriteFileRequest,
+} from "@pr-review/github";
+import { MEMORY_FILE_PATH } from "@pr-review/reviewer";
 import { afterAll, describe, expect, it, vi } from "vitest";
 
 const originalGithubActions = vi.hoisted(() => {
@@ -90,6 +96,10 @@ interface Harness {
   fileReads: { path: string; ref: string }[];
   /** How many times a review agent called the model. */
   modelCalls: () => number;
+  /** Pull requests whose review threads were listed. */
+  threadListings: number[];
+  /** Every file written to a branch, in order. */
+  writes: { branch: string; path: string; content: string }[];
   exitCodes: number[];
 }
 
@@ -100,6 +110,8 @@ interface HarnessOptions {
   config?: string | Error | undefined;
   /** Fails every model call, after tracing has already started. */
   modelError?: Error | undefined;
+  /** The review threads a merged pull request carries. */
+  reviewThreads?: readonly ReviewThread[] | undefined;
 }
 
 function harness(
@@ -117,6 +129,8 @@ function harness(
   let modelCalls = 0;
   const readPaths: string[] = [];
   const fileReads: Harness["fileReads"] = [];
+  const threadListings: number[] = [];
+  const writes: Harness["writes"] = [];
   const exitCodes: number[] = [];
 
   const configured = options.config ?? agentConfigYaml;
@@ -124,15 +138,32 @@ function harness(
     ...makeGithub(),
     getFileContents: vi.fn(async (request: FileContentsRequest) => {
       fileReads.push({ path: request.path, ref: request.ref });
+      // The branch starts without a memory file, as a first run would.
+      if (request.path === MEMORY_FILE_PATH) {
+        throw httpError(404);
+      }
       if (configured instanceof Error) {
         throw configured;
       }
       return configured;
     }),
+    listReviewThreads: vi.fn(async (ref) => {
+      threadListings.push(ref.pullRequestNumber);
+      return [...(options.reviewThreads ?? [])];
+    }),
+    writeFileOnBranch: vi.fn(async (request: WriteFileRequest) => {
+      writes.push({
+        branch: request.branch,
+        path: request.path,
+        content: request.content,
+      });
+    }),
   };
 
   return {
     entries,
+    threadListings,
+    writes,
     modelConfigs,
     tokenConfigs,
     promptClientConfigs,
@@ -556,6 +587,107 @@ describe("runAction", () => {
       { level: "info", event: "review.skipped", reason: "action ignored: labeled" },
     ]);
     expect(fileReads).toEqual([]);
+  });
+});
+
+/** A merged pull_request `closed` event: the one the action learns from. */
+function mergedEvent(merged = true): string {
+  return pullRequestEvent({
+    action: "closed",
+    pull_request: {
+      number: 42,
+      merged,
+      base: { sha: baseSha },
+      head: { sha: headSha, repo: { full_name: "octo-org/example-service" } },
+    },
+  });
+}
+
+/** A resolved thread carrying both markers our findings post. */
+const postedThread: ReviewThread = {
+  body: [
+    "**Missing tenant check**",
+    "",
+    "<!-- pr-review-finding: src/sessions.ts|Missing tenant check -->",
+    "<!-- pr-review-category: security -->",
+  ].join("\n"),
+  isResolved: false,
+  isOutdated: false,
+};
+
+describe("review memory", () => {
+  const memoryEnv = { ...reviewEnv, "INPUT_MEMORY-BRANCH": "pr-review-memory" };
+
+  it("records the outcomes of a merged pull request", async () => {
+    const { environment, threadListings, writes, modelConfigs, entries } =
+      harness(memoryEnv, mergedEvent(), { reviewThreads: [postedThread] });
+
+    await expect(runAction(environment)).resolves.toBeUndefined();
+
+    expect(threadListings).toEqual([42]);
+    expect(writes).toEqual([
+      {
+        branch: "pr-review-memory",
+        path: MEMORY_FILE_PATH,
+        content: expect.stringContaining('"ignored": 1'),
+      },
+    ]);
+    // No model is needed to learn, so none is built.
+    expect(modelConfigs).toEqual([]);
+    expect(entries).toContainEqual(
+      expect.objectContaining({ event: "memory.updated", signals: 1 }),
+    );
+  });
+
+  it("is a no-op skip on a merge when no branch is configured", async () => {
+    const { environment, entries, threadListings, writes, tokenConfigs } =
+      harness(reviewEnv, mergedEvent(), { reviewThreads: [postedThread] });
+
+    await expect(runAction(environment)).resolves.toBeUndefined();
+
+    expect(entries).toEqual([
+      { level: "info", event: "review.skipped", reason: "memory-branch not set" },
+    ]);
+    expect(threadListings).toEqual([]);
+    expect(writes).toEqual([]);
+    expect(tokenConfigs).toEqual([]);
+  });
+
+  it("skips a pull request that was closed without merging", async () => {
+    const { environment, entries, threadListings } = harness(
+      memoryEnv,
+      mergedEvent(false),
+    );
+
+    await expect(runAction(environment)).resolves.toBeUndefined();
+
+    expect(entries).toEqual([
+      {
+        level: "info",
+        event: "review.skipped",
+        reason: "pull request closed without merging",
+      },
+    ]);
+    expect(threadListings).toEqual([]);
+  });
+
+  it("gives the review a memory store that reads the branch", async () => {
+    const { environment, fileReads } = harness(memoryEnv);
+
+    await runAction(environment);
+
+    expect(fileReads).toContainEqual({
+      path: MEMORY_FILE_PATH,
+      ref: "pr-review-memory",
+    });
+  });
+
+  it("reads no memory file when no branch is configured", async () => {
+    const { environment, fileReads } = harness(reviewEnv);
+
+    await runAction(environment);
+
+    expect(fileReads.every((read) => read.path !== MEMORY_FILE_PATH)).toBe(true);
   });
 });
 

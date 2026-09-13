@@ -12,7 +12,11 @@ import {
 } from "@pr-review/logging";
 import { generateText, isStepCount } from "ai";
 
-import { buildReviewSystemPrompt, type AgentDefinition } from "./definition.js";
+import {
+  buildReviewSystemPrompt,
+  renderRepositoryHints,
+  type AgentDefinition,
+} from "./definition.js";
 import { extractAgentOutput } from "./output.js";
 import type { ReviewModel } from "../model.js";
 import type { ReviewAgent, ReviewContext } from "../agent-contract.js";
@@ -102,6 +106,15 @@ export interface ReviewAgentDeps {
   systemPrompts?: ManagedPrompts | undefined;
 }
 
+/** Adds the hint block unless the prompt already carries it. */
+function appendRepositoryHints(
+  prompt: string,
+  hints: readonly string[] | undefined,
+): string {
+  const block = renderRepositoryHints(hints);
+  return prompt.includes(block) ? prompt : `${prompt}${block}`;
+}
+
 /**
  * Builds one review agent: the given agent over the shared runtime,
  * with its tools bound to one installation's GitHub client.
@@ -111,8 +124,12 @@ export function createReviewAgent(
   deps: ReviewAgentDeps,
 ): ReviewAgent {
   const maxTurns = deps.maxTurns ?? DEFAULT_MAX_TURNS;
+  const managed = deps.systemPrompts?.[agent.category];
+  // A managed prompt knows nothing of this run's hints, so they are appended.
   const systemPrompt =
-    deps.systemPrompts?.[agent.category] ?? buildReviewSystemPrompt(agent);
+    managed === undefined
+      ? buildReviewSystemPrompt(agent)
+      : appendRepositoryHints(managed, agent.repositoryHints);
   const logger = deps.logger ?? createConsoleLogger();
   const model =
     agent.model === undefined || deps.createModel === undefined

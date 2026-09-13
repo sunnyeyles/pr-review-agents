@@ -41,7 +41,9 @@ import {
   type StructuredLogger,
 } from "@pr-review/logging";
 import {
+  createBranchMemoryStore,
   createCheckRunPublisher,
+  learnFromMergedPullRequest,
   reviewCorrelation,
   reviewPullRequest,
   runReviewPipeline,
@@ -254,11 +256,34 @@ export async function runAction(
   const payload: unknown = JSON.parse(await environment.readEventFile(eventPath));
   const eventName = env["GITHUB_EVENT_NAME"] ?? "";
 
+  // Empty disables the memory entirely: no branch is read, and none written.
+  const memoryBranch = getInput(env, "memory-branch");
+
   // An event that will not be reviewed is a clean no-op: it must not fail
   // on configuration, and it has no base commit to read one from anyway.
   const inspection = inspectEvent(payload, eventName);
   if (!inspection.review) {
-    logger.info("review.skipped", { reason: inspection.reason });
+    if (inspection.learn !== true) {
+      logger.info("review.skipped", { reason: inspection.reason });
+      return;
+    }
+    if (memoryBranch === "") {
+      logger.info("review.skipped", { reason: "memory-branch not set" });
+      return;
+    }
+    // Before any model wiring: a merge must not fail on a missing api-key.
+    const learnClient = environment.createTokenClient({
+      token: requireInput(env, "github-token"),
+    });
+    await learnFromMergedPullRequest(inspection.target, {
+      client: learnClient,
+      store: createBranchMemoryStore(
+        learnClient,
+        inspection.target,
+        memoryBranch,
+      ),
+      logger,
+    });
     return;
   }
   const { target, isFork, baseSha } = inspection;
@@ -346,6 +371,10 @@ export async function runAction(
         logger,
       }),
       logger,
+      memoryStore:
+        memoryBranch === ""
+          ? undefined
+          : createBranchMemoryStore(client, target, memoryBranch),
     });
   } finally {
     // A flush failure never fails a review that already ran.
