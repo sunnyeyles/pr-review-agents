@@ -2,6 +2,7 @@ import {
   emptyTokenUsage,
   type AgentDefinition,
   type ReviewContext,
+  type SynthesisHints,
 } from "@pr-review/ai";
 import type {
   ChangedFile,
@@ -156,6 +157,7 @@ function makeDeps(
       _client: GithubInstallationClient,
       _context: ReviewContext,
       _agents: readonly AgentDefinition[],
+      _hints: SynthesisHints,
     ) => review,
   );
   const { logger, entries } = createCapturingLogger();
@@ -200,6 +202,7 @@ describe("reviewPullRequest", () => {
         diff,
       },
       agents,
+      { keep: [], drop: [] },
     );
   });
 
@@ -795,5 +798,50 @@ describe("reviewPullRequest: repository hints", () => {
     expect(entries).toContainEqual(
       expect.objectContaining({ level: "error", event: "memory.invalid" }),
     );
+  });
+});
+
+describe("reviewPullRequest: orchestrator memory", () => {
+  it("hands the pipeline the synthesis hints the memory earns", async () => {
+    const { deps, runReviewPipeline, entries } = makeDeps(reviewResult(), {
+      memoryStore: readOnlyStore(memoryFile()),
+      now: () => NOW,
+    });
+
+    await reviewPullRequest(target, deps);
+
+    expect(runReviewPipeline.mock.calls[0]?.[3]).toEqual({
+      keep: [],
+      drop: ['Correctness: Findings like "assignment instead of comparison in".'],
+    });
+    expect(entries).toContainEqual(
+      expect.objectContaining({
+        event: "memory.hints_attached",
+        synthesisKeepCount: 0,
+        synthesisDropCount: 1,
+      }),
+    );
+  });
+
+  it("keeps a shape the repository has acted on", async () => {
+    const { deps, runReviewPipeline } = makeDeps(reviewResult(), {
+      memoryStore: readOnlyStore(memoryFile({ ignored: 0, resolved: 4 })),
+      now: () => NOW,
+    });
+
+    await reviewPullRequest(target, deps);
+
+    expect(runReviewPipeline.mock.calls[0]?.[3]).toEqual({
+      keep: ['Correctness: Findings like "assignment instead of comparison in".'],
+      drop: [],
+    });
+  });
+
+  it("synthesises unhinted when there is no memory store", async () => {
+    const { deps, runReviewPipeline } = makeDeps(reviewResult());
+
+    await reviewPullRequest(target, deps);
+
+    expect(runReviewPipeline.mock.calls[0]?.[3]).toEqual({ keep: [], drop: [] });
   });
 });

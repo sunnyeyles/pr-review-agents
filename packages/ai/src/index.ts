@@ -36,7 +36,10 @@ export {
 export {
   SynthesisError,
   createSynthesiser,
+  emptySynthesisHints,
+  renderSynthesisHints,
   type Synthesiser,
+  type SynthesisHints,
 } from "./agents/synthesiser.js";
 export {
   DEFAULT_LANGFUSE_BASE_URL,

@@ -35,6 +35,7 @@ export {
 } from "./learn-from-merge.js";
 export {
   computeHints,
+  computeSynthesisHints,
   createBranchMemoryStore,
   emptyMemory,
   MEMORY_FILE_PATH,
@@ -44,7 +45,9 @@ export {
   writeMemory,
   HINT_CAP,
   HINT_IGNORED_THRESHOLD,
+  HINT_RESOLVED_THRESHOLD,
   MEMORY_TTL_DAYS,
+  SYNTHESIS_HINT_CAP,
   type FindingOutcome,
   type FindingSignal,
   type MemoryStore,

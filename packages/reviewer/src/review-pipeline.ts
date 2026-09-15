@@ -6,6 +6,7 @@ import {
   type ReviewAgent,
   type ReviewContext,
   type Synthesiser,
+  type SynthesisHints,
   type TokenUsage,
 } from "@pr-review/ai";
 import { errorMessage, errorName } from "@pr-review/logging";
@@ -89,6 +90,7 @@ function join(
 async function synthesise(
   synthesiser: Synthesiser,
   candidates: unknown[],
+  hints: SynthesisHints | undefined,
 ): Promise<SynthesisState> {
   if (candidates.length === 0) {
     return skippedSynthesis();
@@ -96,7 +98,7 @@ async function synthesise(
 
   const startedAt = Date.now();
   try {
-    const result = await synthesiser.synthesise(candidates);
+    const result = await synthesiser.synthesise(candidates, hints);
     return {
       outcome: "completed",
       candidates: result.findings,
@@ -131,6 +133,7 @@ export async function runReviewPipeline(
   agents: readonly ReviewAgent[],
   synthesiser: Synthesiser,
   context: ReviewContext,
+  hints?: SynthesisHints,
 ): Promise<ReviewPipelineResult> {
   if (agents.length === 0) {
     throw new Error("runReviewPipeline requires at least one review agent");
@@ -140,7 +143,7 @@ export async function runReviewPipeline(
     agents.map((agent) => runAgent(agent, context)),
   );
   const { candidates, agentFailures } = join(outcomes);
-  const synthesis = await synthesise(synthesiser, candidates);
+  const synthesis = await synthesise(synthesiser, candidates, hints);
 
   return {
     candidates,

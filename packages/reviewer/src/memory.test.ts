@@ -4,12 +4,14 @@ import { describe, expect, it } from "vitest";
 
 import {
   computeHints,
+  computeSynthesisHints,
   emptyMemory,
   readMemory,
   recordSignals,
   titleShape,
   writeMemory,
   HINT_CAP,
+  SYNTHESIS_HINT_CAP,
   type FindingSignal,
   type MemoryStore,
 } from "./memory.js";
@@ -184,5 +186,62 @@ describe("computeHints", () => {
     const injected = shape({ shape: 'a"\nb', ignored: 5 });
 
     expect(computeHints(memory([injected]), NOW).get("security")?.[0]).toContain('like "ab"');
+  });
+});
+
+describe("computeSynthesisHints", () => {
+  it("keeps a shape resolved three times and never ignored", () => {
+    const hints = computeSynthesisHints(memory([shape({ resolved: 3 })]), NOW);
+
+    expect(hints.keep).toEqual([
+      'Security: Findings like "missing tenant check in".',
+    ]);
+    expect(hints.drop).toEqual([]);
+  });
+
+  it("stays quiet at two resolves", () => {
+    expect(
+      computeSynthesisHints(memory([shape({ resolved: 2 })]), NOW).keep,
+    ).toEqual([]);
+  });
+
+  it("keeps nothing for a shape the repository has also ignored", () => {
+    const mixed = memory([shape({ resolved: 9, ignored: 1 })]);
+
+    expect(computeSynthesisHints(mixed, NOW).keep).toEqual([]);
+  });
+
+  it("drops a shape ignored five times and never resolved", () => {
+    const hints = computeSynthesisHints(memory([shape({ ignored: 5 })]), NOW);
+
+    expect(hints.drop).toEqual([
+      'Security: Findings like "missing tenant check in".',
+    ]);
+    expect(hints.keep).toEqual([]);
+  });
+
+  it("forgets a shape whose last signal has expired", () => {
+    const stale = memory([
+      shape({ resolved: 9, lastSignalAt: daysBefore(91) }),
+      shape({ ignored: 9, lastSignalAt: daysBefore(91) }),
+    ]);
+
+    expect(computeSynthesisHints(stale, NOW)).toEqual({ keep: [], drop: [] });
+  });
+
+  it("caps each list, keeping the strongest signals", () => {
+    const shapes = Array.from({ length: 8 }, (_, index) =>
+      shape({ shape: `pattern ${"x".repeat(index + 1)}`, resolved: 3 + index }),
+    );
+    const { keep } = computeSynthesisHints(memory(shapes), NOW);
+
+    expect(keep).toHaveLength(SYNTHESIS_HINT_CAP);
+    expect(keep[0]).toContain("x".repeat(8));
+  });
+
+  it("strips quotes and newlines from an untrusted shape", () => {
+    const injected = memory([shape({ shape: 'a"\nb', ignored: 5 })]);
+
+    expect(computeSynthesisHints(injected, NOW).drop[0]).toContain('like "ab"');
   });
 });

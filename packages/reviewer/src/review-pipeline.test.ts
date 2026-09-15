@@ -240,6 +240,27 @@ describe("runReviewPipeline: synthesis (spec §16)", () => {
     expect(result.findings).toEqual([refined]);
   });
 
+  it("passes the repository's synthesis hints to the synthesiser", async () => {
+    const raw = makeFinding();
+    const hints = { keep: ["Security: Findings like \"broken auth\"."], drop: [] };
+    let seen: unknown;
+    const synthesiser: Synthesiser = {
+      async synthesise(candidates, given) {
+        seen = given;
+        return { findings: candidates as ReviewFinding[], usage: emptyTokenUsage() };
+      },
+    };
+
+    await runReviewPipeline(
+      [agent("correctness", async () => [raw])],
+      synthesiser,
+      context,
+      hints,
+    );
+
+    expect(seen).toEqual(hints);
+  });
+
   it("falls back to the raw candidates when synthesis fails, and still validates them", async () => {
     const raw = makeFinding();
     const failing: Synthesiser = {

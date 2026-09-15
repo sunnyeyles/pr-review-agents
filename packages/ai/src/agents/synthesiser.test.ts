@@ -396,3 +396,61 @@ describe("the synthesis system prompt", () => {
     );
   });
 });
+
+describe("repository history in the synthesis prompt", () => {
+  const hints = {
+    keep: ['Security: Findings like "missing tenant check in".'],
+    drop: ['Docs drift: Findings like "readme out of date".'],
+  };
+
+  it("says nothing when the repository has no history", () => {
+    expect(
+      buildSynthesisSystemPrompt(configuredAgents, { keep: [], drop: [] }),
+    ).toBe(SYNTHESIS_SYSTEM_PROMPT);
+  });
+
+  it("carries both lists, each under its own instruction", () => {
+    const prompt = buildSynthesisSystemPrompt(configuredAgents, hints);
+
+    expect(prompt).toContain("# Repository history");
+    expect(prompt).toContain("were acted on");
+    expect(prompt).toContain('- Security: Findings like "missing tenant check in".');
+    expect(prompt).toContain("repeatedly left unaddressed");
+    expect(prompt).toContain('- Docs drift: Findings like "readme out of date".');
+  });
+
+  it("omits the empty list rather than heading an empty one", () => {
+    const prompt = buildSynthesisSystemPrompt(configuredAgents, {
+      keep: hints.keep,
+      drop: [],
+    });
+
+    expect(prompt).toContain("were acted on");
+    expect(prompt).not.toContain("repeatedly left unaddressed");
+  });
+
+  it("keeps the history above the security rules it must not override", () => {
+    const prompt = buildSynthesisSystemPrompt(configuredAgents, hints);
+
+    expect(prompt.indexOf("# Repository history")).toBeLessThan(
+      prompt.indexOf("# Security rules"),
+    );
+    expect(prompt).toContain("never a rule");
+  });
+
+  it("reaches the model for the run that was given hints, and no other", async () => {
+    const { model, calls } = makeTextModel([
+      finalFindingsJson([combinedFinding]),
+      finalFindingsJson([combinedFinding]),
+    ]);
+    const synthesiser = createSynthesiser({ model, agents: configuredAgents });
+
+    await synthesiser.synthesise([correctnessDuplicate], hints);
+    await synthesiser.synthesise([correctnessDuplicate]);
+
+    expect(systemOf(calls[0])).toBe(
+      buildSynthesisSystemPrompt(configuredAgents, hints),
+    );
+    expect(systemOf(calls[1])).toBe(SYNTHESIS_SYSTEM_PROMPT);
+  });
+});

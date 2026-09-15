@@ -392,7 +392,7 @@ export async function runAction(
       agents,
       // `activeAgents` is the subset the path gate woke, decided once the
       // changed files are known.
-      runReviewPipeline: (reviewClient, context, activeAgents) =>
+      runReviewPipeline: (reviewClient, context, activeAgents, hints) =>
         runReviewPipeline(
           createReviewAgents(
             {
@@ -405,6 +405,7 @@ export async function runAction(
           ),
           synthesiser,
           context,
+          hints,
         ),
       // Check run first; job summary when the token cannot create one (forks).
       publishReview: createFallbackPublisher({

@@ -4,7 +4,9 @@
  */
 import { httpStatus, type GithubInstallationClient } from "@pr-review/github";
 import { errorMessage, type StructuredLogger } from "@pr-review/logging";
+import { type SynthesisHints } from "@pr-review/ai";
 import {
+  categoryLabel,
   reviewMemorySchema,
   type MemoryShape,
   type ReviewMemory,
@@ -23,6 +25,12 @@ export const HINT_IGNORED_THRESHOLD = 5;
 
 /** At most this many hints reach the prompt, across every category. */
 export const HINT_CAP = 10;
+
+/** A shape needs this many resolves, and no ignore, before it earns a keep hint. */
+export const HINT_RESOLVED_THRESHOLD = 3;
+
+/** At most this many hints per list reach the synthesiser. */
+export const SYNTHESIS_HINT_CAP = 5;
 
 /** A shape with no fresh signal for this long is forgotten. */
 export const MEMORY_TTL_DAYS = 90;
@@ -207,4 +215,39 @@ export function computeHints(
     hints.set(shape.category, forCategory);
   }
   return hints;
+}
+
+/** Shapes this repository acted on, and shapes it left alone, for the synthesiser. */
+export function computeSynthesisHints(
+  memory: ReviewMemory,
+  now: Date,
+): SynthesisHints {
+  const fresh = memory.shapes.filter((shape) => isFresh(shape, now));
+  const keep = fresh
+    .filter(
+      (shape) =>
+        shape.resolved >= HINT_RESOLVED_THRESHOLD && shape.ignored === 0,
+    )
+    .sort((a, b) => b.resolved - a.resolved);
+  const drop = fresh
+    .filter(
+      (shape) =>
+        shape.ignored >= HINT_IGNORED_THRESHOLD && shape.resolved === 0,
+    )
+    .sort((a, b) => b.ignored - a.ignored);
+
+  return {
+    keep: describe(keep),
+    drop: describe(drop),
+  };
+}
+
+/** Category-qualified, since the synthesiser sees every category at once. */
+function describe(shapes: readonly MemoryShape[]): string[] {
+  return shapes
+    .slice(0, SYNTHESIS_HINT_CAP)
+    .map(
+      (shape) =>
+        `${categoryLabel(shape.category)}: ${hintSentence(shape.shape)}`,
+    );
 }

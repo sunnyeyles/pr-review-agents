@@ -3,10 +3,12 @@
  * rather than in each delivery-path wrapper.
  */
 import {
+  emptySynthesisHints,
   gateAgentsByPaths,
   withRepositoryHints,
   type AgentDefinition,
   type ReviewContext,
+  type SynthesisHints,
 } from "@pr-review/ai";
 import type {
   ExistingReviewComment,
@@ -28,7 +30,13 @@ import {
   type PublishReview,
   type PublishReviewComments,
 } from "./publish-review.js";
-import { computeHints, readMemory, type MemoryStore } from "./memory.js";
+import {
+  computeHints,
+  computeSynthesisHints,
+  emptyMemory,
+  readMemory,
+  type MemoryStore,
+} from "./memory.js";
 import { renderNoAgentMatched } from "./render-check-run.js";
 import { verifyPatches, type PatchSummary } from "./validate-patches.js";
 import { postedFindingKeys } from "./render-review.js";
@@ -48,6 +56,7 @@ interface ReviewPullRequestDeps {
     client: GithubInstallationClient,
     context: ReviewContext,
     agents: readonly AgentDefinition[],
+    hints: SynthesisHints,
   ) => Promise<ReviewPipelineResult>;
   /** Defaults to publishing a check run through `client`. */
   publishReview?: PublishReview | undefined;
@@ -83,25 +92,39 @@ async function listPostedComments(
   }
 }
 
-/** The same agents carrying this repository's hints; unhinted if the read fails. */
+/** One memory read serves both readers: the agents and the synthesiser. */
+interface HintedRun {
+  agents: readonly AgentDefinition[];
+  synthesisHints: SynthesisHints;
+}
+
+/** The run's hints; unhinted when there is no store or the read fails. */
 async function attachRepositoryHints(
   agents: readonly AgentDefinition[],
-  store: MemoryStore,
+  store: MemoryStore | undefined,
   target: ReviewTarget,
   logger: StructuredLogger,
   now: Date,
-): Promise<readonly AgentDefinition[]> {
-  let hints: ReadonlyMap<string, readonly string[]>;
+): Promise<HintedRun> {
+  const unhinted: HintedRun = { agents, synthesisHints: emptySynthesisHints() };
+  if (store === undefined) {
+    return unhinted;
+  }
+
+  let memory = emptyMemory();
   try {
-    hints = computeHints(await readMemory(store, logger), now);
+    memory = await readMemory(store, logger);
   } catch (error) {
     logger.error("memory.read_failed", {
       ...reviewCorrelation(target),
       reason: errorMessage(error),
       fallback: "reviewing without repository hints",
     });
-    return agents;
+    return unhinted;
   }
+
+  const hints = computeHints(memory, now);
+  const synthesisHints = computeSynthesisHints(memory, now);
 
   let hintCount = 0;
   for (const sentences of hints.values()) {
@@ -113,10 +136,15 @@ async function attachRepositoryHints(
     agents: agents
       .map((agent) => agent.category)
       .filter((category) => (hints.get(category)?.length ?? 0) > 0),
+    synthesisKeepCount: synthesisHints.keep.length,
+    synthesisDropCount: synthesisHints.drop.length,
   });
-  return agents.map((agent) =>
-    withRepositoryHints(agent, hints.get(agent.category) ?? []),
-  );
+  return {
+    agents: agents.map((agent) =>
+      withRepositoryHints(agent, hints.get(agent.category) ?? []),
+    ),
+    synthesisHints,
+  };
 }
 
 /** Logs the synthesis outcome: skipped, completed, or failed. */
@@ -201,10 +229,13 @@ export async function reviewPullRequest(
     diffLength: diff.length,
   });
 
-  const hinted =
-    memoryStore === undefined
-      ? agents
-      : await attachRepositoryHints(agents, memoryStore, target, logger, now());
+  const { agents: hinted, synthesisHints } = await attachRepositoryHints(
+    agents,
+    memoryStore,
+    target,
+    logger,
+    now(),
+  );
 
   const { active, skipped } = gateAgentsByPaths(hinted, filenames);
   const skippedNames = skipped.map((skip) => skip.agent);
@@ -239,6 +270,7 @@ export async function reviewPullRequest(
       diff,
     },
     active,
+    synthesisHints,
   );
   logSynthesisOutcome(logger, target, review);
 

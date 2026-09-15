@@ -207,6 +207,17 @@ Synthesis failure is softer still: it falls back to the raw candidates and
 reports `synthesis.outcome: "failed"` on the result rather than failing the
 review.
 
+### Review memory
+
+With [`memory-branch`](#configuration) set, one read of the memory file serves
+both halves of the pipeline. The agents get the deprioritisation hints they
+have always had; the synthesiser gets its own `# Repository history` block —
+up to five shapes this repository acted on (three resolves, no ignores) to
+keep, and up to five it has repeatedly left alone (five ignores, no resolves)
+to cut first. Both lists are evidence, not rules: the prompt still forbids
+inventing a finding, and a shape with no signal for 90 days is forgotten.
+`memory.hints_attached` logs the counts that reached each side.
+
 ---
 
 ## Configuration
@@ -223,7 +234,7 @@ Set as `with:` inputs on the Action step ([`apps/action/action.yml`](apps/action
 | `agents` | no (default `all`) | Which of the configured agents run: `all`, or a comma-separated subset of their names. Naming a subset also overrides any [path filters](#path-filters). |
 | `agent-config` | no (default `.github/pr-review-agents.yml`) | Path to the YAML file naming the agents. Required — nothing runs until a repository names it. |
 | `fix` | no (default `false`) | Whether verified [fixes](#fixes) are committed to the pull request branch. `true` turns it on; any other value leaves it off. Needs `contents: write`. |
-| `memory-branch` | no (default: empty, the feature off) | Branch the action stores its review memory on: one JSON file recording what this repository did with each past finding, so repeatedly ignored shapes are deprioritised later. Needs `contents: write` and `closed` in the workflow's `types`. |
+| `memory-branch` | no (default: empty, the feature off) | Branch the action stores its review memory on: one JSON file recording what this repository did with each past finding. Repeatedly ignored shapes are deprioritised for the agents and cut first by the synthesiser; shapes the repository acted on are the ones the synthesiser keeps. Needs `contents: write` and `closed` in the workflow's `types`. |
 | `langfuse-public-key` | no | Supply this and the secret key to fetch the agent system prompts from [Langfuse](#seeding-the-managed-prompts) and export traces there. Both unset is the default, and runs on the in-code prompts. |
 | `langfuse-secret-key` | no | The other half. Setting only one of the two disables both features and logs `langfuse.disabled_incomplete_credentials`. |
 | `langfuse-base-url` | no (default `https://cloud.langfuse.com`) | Langfuse host, for a self-hosted or regional instance. Keys are region-scoped: the wrong host 401s and drops every trace. |
@@ -614,6 +625,6 @@ counters: `inputTokens`, `cacheCreationInputTokens`, `cacheReadInputTokens`,
 
 ## Out of scope
 
-By design there is no database, review history, dashboard, automatic fixing,
-automatic merging or approval, vector database, repository embeddings, or
-persistent agent memory.
+By design there is no dashboard, automatic merging or approval, vector
+database, or repository embeddings. What memory there is stays a single JSON
+file of finding shapes — see [Review memory](#review-memory).
