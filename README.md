@@ -516,6 +516,35 @@ Required repository configuration for the release workflow:
 
 ---
 
+## Deploying the web app
+
+`apps/web` is the deploy target; the root `vercel.json` is what makes the
+monorepo build on Vercel:
+
+| Setting | Value |
+| --- | --- |
+| Install | `pnpm install --frozen-lockfile` |
+| Build | `pnpm turbo run build --filter=@pr-review/web` |
+| Output | `apps/web/.next` |
+| Ignore | `npx turbo-ignore @pr-review/web` |
+
+Root Directory stays at the repo root — Vercel needs the workspace to resolve
+`@pr-review/db`. The ignore step skips a build when nothing `apps/web` depends
+on changed.
+
+Import the repo at vercel.com/new, or from a checkout with a token:
+
+```bash
+vercel link --yes
+vercel deploy --prod
+```
+
+`packages/db` reads `DATABASE_URL` at call time, not at build time, so the
+build is green without it. Set it in Project Settings → Environment Variables
+before the app reads from the database.
+
+---
+
 ## Observability
 
 Structured single-line JSON logs land in the workflow run's own log stream,
